@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { Teacher } from "@prisma/client";
+type Teacher = { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; notes: string; createdAt: Date };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
