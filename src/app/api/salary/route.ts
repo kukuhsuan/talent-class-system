@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { Teacher } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  const results = teachers.map((teacher) => {
+  const results = teachers.map((teacher: Teacher) => {
     const myRecords = attendances.filter(
       (a) => a.actualTeacherId === teacher.id && !a.cancelled
     );
