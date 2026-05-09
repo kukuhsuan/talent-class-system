@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Teacher {
+  id              Int          @id @default(autoincrement())
+  name            String       @unique
+  rateAfterSchool Int          @default(500)
+  rateInSchool    Int          @default(500)
+  rateDemo        Int          @default(200)
+  travelFee       Int          @default(0)
+  notes           String       @default("")
+  createdAt       DateTime     @default(now())
+  courses         Course[]
+  attendances     Attendance[] @relation("ActualTeacher")
+  substitutions   Substitute[] @relation("SubstituteTeacher")
+  absences        Substitute[] @relation("OriginalTeacher")
+}
+
+model Course {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique
+  region      String       @default("")
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  teacherId   Int
+  school      String
+  courseType  String
+  dayOfWeek   String       @default("")
+  time        String       @default("")
+  category    String       @default("課後")
+  enrollCount String       @default("")
+  isActive    Boolean      @default(true)
+  notes       String       @default("")
+  createdAt   DateTime     @default(now())
+  attendances Attendance[]
+}
+
+model Attendance {
+  id              Int      @id @default(autoincrement())
+  date            DateTime
+  course          Course   @relation(fields: [courseId], references: [id])
+  courseId        Int
+  actualTeacher   Teacher  @relation("ActualTeacher", fields: [actualTeacherId], references: [id])
+  actualTeacherId Int
+  studentCount    Int?
+  cancelled       Boolean  @default(false)
+  category        String   @default("課後")
+  hours           Float    @default(1)
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+}
+
+model Substitute {
+  id                  Int      @id @default(autoincrement())
+  date                DateTime
+  school              String
+  courseType          String   @default("")
+  originalTeacher     Teacher  @relation("OriginalTeacher", fields: [originalTeacherId], references: [id])
+  originalTeacherId   Int
+  substituteTeacher   Teacher? @relation("SubstituteTeacher", fields: [substituteTeacherId], references: [id])
+  substituteTeacherId Int?
+  confirmed           Boolean  @default(false)
+  fee                 Int?
+  notes               String   @default("")
+  createdAt           DateTime @default(now())
+}
