@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-type Teacher = { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; notes: string; createdAt: Date };
+
+type TeacherRow = { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; notes: string; createdAt: Date };
+type AttendanceRow = { id: number; actualTeacherId: number; cancelled: boolean; category: string; hours: number; course: { teacherId: number } };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -10,7 +12,7 @@ export async function GET(req: NextRequest) {
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
 
-  const [teachers, attendances] = await Promise.all([
+  const [teachers, attendancesRaw] = await Promise.all([
     prisma.teacher.findMany({ orderBy: { name: "asc" } }),
     prisma.attendance.findMany({
       where: { date: { gte: start, lt: end } },
@@ -18,11 +20,12 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  const results = teachers.map((teacher: Teacher) => {
+  const attendances = attendancesRaw as unknown as AttendanceRow[];
+
+  const results = (teachers as unknown as TeacherRow[]).map((teacher) => {
     const myRecords = attendances.filter(
       (a) => a.actualTeacherId === teacher.id && !a.cancelled
     );
-
     const regularRecords = myRecords.filter(
       (a) => a.category !== "Demo" && a.category !== "試上"
     );
@@ -42,17 +45,7 @@ export async function GET(req: NextRequest) {
     const travelPay = (regularHours + demoHours) * teacher.travelFee;
     const total = regularPay + demoPay + travelPay;
 
-    return {
-      teacher,
-      regularHours,
-      subHours,
-      demoHours,
-      regularPay,
-      demoPay,
-      travelPay,
-      total,
-      hasActivity: myRecords.length > 0,
-    };
+    return { teacher, regularHours, subHours, demoHours, regularPay, demoPay, travelPay, total, hasActivity: myRecords.length > 0 };
   });
 
   return NextResponse.json({ year, month, results });
