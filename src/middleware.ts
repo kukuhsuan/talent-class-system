@@ -5,7 +5,7 @@ const secret = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "talent-class-secret-change-in-prod"
 );
 
-const PUBLIC = ["/login", "/api/auth"];
+const PUBLIC = ["/login", "/api/auth", "/api/admin"];
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
