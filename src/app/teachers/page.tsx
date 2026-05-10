@@ -2,12 +2,12 @@
 import { useEffect, useState } from "react";
 
 type Teacher = {
-  id: number; name: string; rateAfterSchool: number; rateInSchool: number;
+  id: number; name: string; email: string; rateAfterSchool: number; rateInSchool: number;
   rateDemo: number; travelFee: number; notes: string;
 };
 
 const EMPTY: Omit<Teacher, "id"> = {
-  name: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "",
+  name: "", email: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "",
 };
 
 export default function TeachersPage() {
@@ -37,7 +37,7 @@ export default function TeachersPage() {
   };
 
   const edit = (t: Teacher) => {
-    setForm({ name: t.name, rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes });
+    setForm({ name: t.name, email: t.email ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes });
     setEditing(t.id); setShowForm(true);
   };
 
@@ -63,6 +63,10 @@ export default function TeachersPage() {
             <div className="col-span-2 md:col-span-1">
               <label>老師姓名 *</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名" />
+            </div>
+            <div className="col-span-2">
+              <label>Email</label>
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="teacher@gmail.com" />
             </div>
             <div>
               <label>課後時薪（元）</label>
@@ -101,6 +105,7 @@ export default function TeachersPage() {
             <thead>
               <tr>
                 <th>姓名</th>
+                <th>Email</th>
                 <th>課後時薪</th>
                 <th>課內時薪</th>
                 <th>Demo 時薪</th>
@@ -113,6 +118,7 @@ export default function TeachersPage() {
               {filtered.map((t) => (
                 <tr key={t.id}>
                   <td className="font-medium">{t.name}</td>
+                  <td className="text-xs text-slate-500">{t.email || "—"}</td>
                   <td className="text-center">${t.rateAfterSchool}</td>
                   <td className="text-center">${t.rateInSchool}</td>
                   <td className="text-center">${t.rateDemo}</td>
@@ -127,7 +133,7 @@ export default function TeachersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="text-center text-slate-400 py-8">尚無資料</td></tr>
+                <tr><td colSpan={8} className="text-center text-slate-400 py-8">尚無資料</td></tr>
               )}
             </tbody>
           </table>

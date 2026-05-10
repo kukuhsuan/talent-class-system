@@ -25,6 +25,7 @@ export default function SalaryPage() {
   const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [sending, setSending] = useState<number | null>(null);
+  const [emailing, setEmailing] = useState<number | null>(null);
   const [sentMsg, setSentMsg] = useState("");
 
   const load = async () => {
@@ -71,6 +72,35 @@ export default function SalaryPage() {
       await sendSalary(r.teacher.id, r.teacher.name);
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
+  };
+
+  const emailSalary = async (teacherId: number, teacherName: string) => {
+    setEmailing(teacherId);
+    setSentMsg("");
+    const res = await fetch("/api/salary/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teacherId, year, month }),
+    });
+    const json = await res.json();
+    setEmailing(null);
+    if (res.ok) {
+      setSentMsg(`Email 已寄給 ${teacherName}`);
+      setTimeout(() => setSentMsg(""), 4000);
+    } else {
+      alert(json.error ?? "寄送失敗");
+    }
+  };
+
+  const emailAll = async () => {
+    if (!data) return;
+    const withEmail = active.filter((r) => (r.teacher as { email?: string }).email);
+    if (!confirm(`確定寄送薪資條 Email 給 ${withEmail.length} 位有設定信箱的老師？`)) return;
+    for (const r of withEmail) {
+      await emailSalary(r.teacher.id, r.teacher.name);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    setSentMsg(`已寄送給 ${withEmail.length} 位老師`);
   };
 
   const active = data?.results.filter((r) => r.hasActivity) ?? [];
@@ -146,9 +176,13 @@ export default function SalaryPage() {
             <div className="p-4 border-b border-slate-100 flex justify-between items-center flex-wrap gap-2">
               <span className="font-semibold text-slate-700">{year}年 {month}月 薪資明細</span>
               <div className="flex gap-2 flex-wrap">
+                <button onClick={emailAll}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
+                  一鍵寄送 Email
+                </button>
                 <button onClick={sendAll}
                   className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
-                  一鍵傳送全部薪資條
+                  一鍵傳送 LINE
                 </button>
                 <a href={`/api/export/salary?year=${year}&month=${month}`} download
                   className="bg-slate-600 hover:bg-slate-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
@@ -172,11 +206,18 @@ export default function SalaryPage() {
                     </div>
                     <div className="flex items-center gap-2 ml-2" onClick={(e) => e.stopPropagation()}>
                       <button
+                        onClick={() => emailSalary(r.teacher.id, r.teacher.name)}
+                        disabled={emailing === r.teacher.id || !r.hasActivity}
+                        className="bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 whitespace-nowrap"
+                      >
+                        {emailing === r.teacher.id ? "寄送中..." : "寄 Email"}
+                      </button>
+                      <button
                         onClick={() => sendSalary(r.teacher.id, r.teacher.name)}
                         disabled={sending === r.teacher.id || !r.hasActivity}
                         className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 whitespace-nowrap"
                       >
-                        {sending === r.teacher.id ? "傳送中..." : "傳薪資條"}
+                        {sending === r.teacher.id ? "傳送中..." : "傳 LINE"}
                       </button>
                       {r.hasActivity && (
                         <span className="text-slate-400 text-sm w-4 text-center">{expanded.has(r.teacher.id) ? "▲" : "▼"}</span>
