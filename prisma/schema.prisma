@@ -7,15 +7,17 @@ datasource db {
 }
 
 model School {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  region    String   @default("")
-  address   String   @default("")
-  phone     String   @default("")
-  contact   String   @default("")
-  notes     String   @default("")
-  createdAt DateTime @default(now())
-  courses   Course[]
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  region       String   @default("")
+  address      String   @default("")
+  phone        String   @default("")
+  contact      String   @default("")
+  notes        String   @default("")
+  lineUserId   String?
+  lineBindCode String?  @unique
+  createdAt    DateTime @default(now())
+  courses      Course[]
 }
 
 model Teacher {
@@ -26,6 +28,9 @@ model Teacher {
   rateDemo        Int          @default(200)
   travelFee       Int          @default(0)
   notes           String       @default("")
+  lineUserId      String?      @unique
+  lineBindCode    String?      @unique
+  lineRegion      String       @default("")
   createdAt       DateTime     @default(now())
   courses         Course[]
   attendances     Attendance[] @relation("ActualTeacher")
@@ -54,18 +59,20 @@ model Course {
 }
 
 model Attendance {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   date            DateTime
-  course          Course   @relation(fields: [courseId], references: [id])
+  course          Course    @relation(fields: [courseId], references: [id])
   courseId        Int
-  actualTeacher   Teacher  @relation("ActualTeacher", fields: [actualTeacherId], references: [id])
+  actualTeacher   Teacher   @relation("ActualTeacher", fields: [actualTeacherId], references: [id])
   actualTeacherId Int
   studentCount    Int?
-  cancelled       Boolean  @default(false)
-  category        String   @default("課後")
-  hours           Float    @default(1)
-  notes           String   @default("")
-  createdAt       DateTime @default(now())
+  cancelled       Boolean   @default(false)
+  category        String    @default("課後")
+  hours           Float     @default(1)
+  notes           String    @default("")
+  reportContent   String    @default("")
+  reportSentAt    DateTime?
+  createdAt       DateTime  @default(now())
 }
 
 model Substitute {

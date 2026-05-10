@@ -11,6 +11,7 @@ const NAV = [
   { href: "/schools", label: "園所管理" },
   { href: "/substitutes", label: "代課紀錄" },
   { href: "/salary", label: "薪資計算" },
+  { href: "/notify", label: "LINE 通知" },
 ];
 
 export default function NavBar() {
