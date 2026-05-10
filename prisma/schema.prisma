@@ -51,6 +51,7 @@ model Course {
   dayOfWeek   String       @default("")
   time        String       @default("")
   category    String       @default("課後")
+  department  String       @default("幼兒園")
   enrollCount String       @default("")
   isActive    Boolean      @default(true)
   notes       String       @default("")

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useDepartment } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string; dayOfWeek: string; time: string; region: string };
@@ -9,6 +10,7 @@ type Attendance = { id: number; date: string; course: Course; actualTeacher: Tea
 const DAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
 export default function Home() {
+  const { dept } = useDepartment();
   const [seeded, setSeeded] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [todayCourses, setTodayCourses] = useState<Course[]>([]);
@@ -25,9 +27,11 @@ export default function Home() {
 
   useEffect(() => {
     async function load() {
+      const deptQ = dept ? `?dept=${encodeURIComponent(dept)}` : "";
+      const attQ = dept ? `?year=${year}&month=${month}&dept=${encodeURIComponent(dept)}` : `?year=${year}&month=${month}`;
       const [courses, attendance, teachers] = await Promise.all([
-        fetch("/api/schedule").then((r) => r.json()),
-        fetch(`/api/attendance?year=${year}&month=${month}`).then((r) => r.json()),
+        fetch(`/api/schedule${deptQ}`).then((r) => r.json()),
+        fetch(`/api/attendance${attQ}`).then((r) => r.json()),
         fetch("/api/teachers").then((r) => r.json()),
       ]);
 
@@ -42,7 +46,7 @@ export default function Home() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [dept]);
 
   function getAttendanceForCourse(courseId: number) {
     return todayAttendance.find((a) => a.course.id === courseId);

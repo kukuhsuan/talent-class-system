@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const dept = searchParams.get("dept") ?? "";
   const courses = await prisma.course.findMany({
+    where: dept ? { department: dept } : {},
     include: { teacher: true, schoolRel: true },
     orderBy: [{ region: "asc" }, { dayOfWeek: "asc" }],
   });
@@ -23,6 +26,7 @@ export async function POST(req: NextRequest) {
       dayOfWeek: data.dayOfWeek ?? "",
       time: data.time ?? "",
       category: data.category ?? "課後",
+      department: data.department ?? "幼兒園",
       enrollCount: data.enrollCount ?? "",
       isActive: data.isActive ?? true,
       notes: data.notes ?? "",

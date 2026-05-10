@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 const NAV = [
   { href: "/", label: "今日概況" },
@@ -11,12 +12,14 @@ const NAV = [
   { href: "/schools", label: "園所管理" },
   { href: "/substitutes", label: "代課紀錄" },
   { href: "/salary", label: "薪資計算" },
+  { href: "/progress", label: "課程進度" },
   { href: "/notify", label: "LINE 通知" },
 ];
 
 export default function NavBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { dept, setDept } = useDepartment();
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -44,6 +47,27 @@ export default function NavBar() {
         <button onClick={logout} className="text-blue-200 hover:text-white text-sm ml-2 whitespace-nowrap transition-colors">
           登出
         </button>
+      </div>
+      <div className="max-w-7xl mx-auto px-4 pb-1 flex gap-1">
+        <button
+          onClick={() => setDept("")}
+          className={`px-3 py-0.5 rounded-t text-xs font-medium transition-colors ${
+            dept === "" ? "bg-white text-blue-900" : "text-blue-200 hover:text-white"
+          }`}
+        >
+          全部
+        </button>
+        {DEPARTMENTS.map((d) => (
+          <button
+            key={d}
+            onClick={() => setDept(d)}
+            className={`px-3 py-0.5 rounded-t text-xs font-medium transition-colors ${
+              dept === d ? "bg-white text-blue-900" : "text-blue-200 hover:text-white"
+            }`}
+          >
+            {d}
+          </button>
+        ))}
       </div>
     </header>
   );

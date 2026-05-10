@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useDepartment } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string };
@@ -16,6 +17,7 @@ const EMPTY_FORM = {
 };
 
 export default function AttendancePage() {
+  const { dept } = useDepartment();
   const [records, setRecords] = useState<Attendance[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -25,14 +27,17 @@ export default function AttendancePage() {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
 
-  const load = () =>
+  const load = () => {
+    const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
+    if (dept) params.set("dept", dept);
     Promise.all([
-      fetch(`/api/attendance?year=${filterYear}&month=${filterMonth}`).then((r) => r.json()),
-      fetch("/api/courses").then((r) => r.json()),
+      fetch(`/api/attendance?${params}`).then((r) => r.json()),
+      fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
       fetch("/api/teachers").then((r) => r.json()),
     ]).then(([a, c, t]) => { setRecords(a); setCourses(c); setTeachers(t); });
+  };
 
-  useEffect(() => { load(); }, [filterYear, filterMonth]);
+  useEffect(() => { load(); }, [filterYear, filterMonth, dept]);
 
   const onCourseChange = (courseId: number) => {
     const c = courses.find((x) => x.id === courseId);

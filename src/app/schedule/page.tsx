@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useDepartment } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string; dayOfWeek: string; time: string; region: string; enrollCount: string };
@@ -15,15 +16,20 @@ const catColor: Record<string, string> = {
 };
 
 export default function SchedulePage() {
+  const { dept } = useDepartment();
   const [courses, setCourses] = useState<Course[]>([]);
   const [filterRegion, setFilterRegion] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/schedule" + (filterRegion ? `?region=${encodeURIComponent(filterRegion)}` : ""))
+    const params = new URLSearchParams();
+    if (filterRegion) params.set("region", filterRegion);
+    if (dept) params.set("dept", dept);
+    const qs = params.toString();
+    fetch("/api/schedule" + (qs ? `?${qs}` : ""))
       .then((r) => r.json())
       .then((data) => { setCourses(data); setLoading(false); });
-  }, [filterRegion]);
+  }, [filterRegion, dept]);
 
   const allRegions = [...new Set(courses.map((c) => c.region).filter(Boolean))].sort();
 

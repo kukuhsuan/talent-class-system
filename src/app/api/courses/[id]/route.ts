@@ -17,6 +17,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       dayOfWeek: data.dayOfWeek ?? "",
       time: data.time ?? "",
       category: data.category ?? "課後",
+      department: data.department ?? "幼兒園",
       enrollCount: data.enrollCount ?? "",
       isActive: data.isActive ?? true,
       notes: data.notes ?? "",

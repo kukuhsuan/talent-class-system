@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
 type School = { id: number; name: string; region: string };
 type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number;
   school: string; schoolId: number | null; courseType: string; dayOfWeek: string; time: string;
-  category: string; enrollCount: string; isActive: boolean; notes: string;
+  category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
 };
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -14,26 +15,27 @@ const CATS = ["課後", "課內", "Demo", "試上"];
 
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, school: "", schoolId: null as number | null,
-  courseType: "", dayOfWeek: "星期一", time: "", category: "課後", enrollCount: "", isActive: true, notes: "",
+  courseType: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as string, enrollCount: "", isActive: true, notes: "",
 };
 
 export default function CoursesPage() {
+  const { dept } = useDepartment();
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState({ ...EMPTY_FORM, department: dept || "幼兒園" });
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
 
   const load = () =>
     Promise.all([
-      fetch("/api/courses").then((r) => r.json()),
+      fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
       fetch("/api/teachers").then((r) => r.json()),
       fetch("/api/schools").then((r) => r.json()),
     ]).then(([c, t, s]) => { setCourses(c); setTeachers(t); setSchools(s); });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [dept]);
 
   function selectSchool(schoolId: number) {
     const s = schools.find((s) => s.id === schoolId);
@@ -62,7 +64,7 @@ export default function CoursesPage() {
   const edit = (c: Course) => {
     setForm({ code: c.code, region: c.region, teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
-      enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes });
+      department: c.department || "幼兒園", enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes });
     setEditing(c.id); setShowForm(true);
   };
 
@@ -135,6 +137,12 @@ export default function CoursesPage() {
               <label>類別</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                 {CATS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>部門</label>
+              <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
+                {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
