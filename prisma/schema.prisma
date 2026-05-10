@@ -6,6 +6,18 @@ datasource db {
   provider = "sqlite"
 }
 
+model School {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  region    String   @default("")
+  address   String   @default("")
+  phone     String   @default("")
+  contact   String   @default("")
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  courses   Course[]
+}
+
 model Teacher {
   id              Int          @id @default(autoincrement())
   name            String       @unique
@@ -28,6 +40,8 @@ model Course {
   teacher     Teacher      @relation(fields: [teacherId], references: [id])
   teacherId   Int
   school      String
+  schoolId    Int?
+  schoolRel   School?      @relation(fields: [schoolId], references: [id])
   courseType  String
   dayOfWeek   String       @default("")
   time        String       @default("")

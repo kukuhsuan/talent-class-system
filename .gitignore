@@ -45,3 +45,4 @@ dev.db
 dev.db-shm
 dev.db-wal
 .env.local
+.env*.local

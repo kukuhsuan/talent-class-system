@@ -2,24 +2,25 @@
 import { useEffect, useState } from "react";
 
 type Teacher = { id: number; name: string };
+type School = { id: number; name: string; region: string };
 type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number;
-  school: string; courseType: string; dayOfWeek: string; time: string;
+  school: string; schoolId: number | null; courseType: string; dayOfWeek: string; time: string;
   category: string; enrollCount: string; isActive: boolean; notes: string;
 };
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 const CATS = ["課後", "課內", "Demo", "試上"];
-const REGIONS = ["台北", "新北", "桃園", "新竹", "苗栗", "台中", "彰化", "台南", "高雄", "宜蘭", "其他"];
 
 const EMPTY_FORM = {
-  code: "", region: "台北", teacherId: 0, school: "", courseType: "",
-  dayOfWeek: "星期一", time: "", category: "課後", enrollCount: "", isActive: true, notes: "",
+  code: "", region: "", teacherId: 0, school: "", schoolId: null as number | null,
+  courseType: "", dayOfWeek: "星期一", time: "", category: "課後", enrollCount: "", isActive: true, notes: "",
 };
 
 export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -29,9 +30,16 @@ export default function CoursesPage() {
     Promise.all([
       fetch("/api/courses").then((r) => r.json()),
       fetch("/api/teachers").then((r) => r.json()),
-    ]).then(([c, t]) => { setCourses(c); setTeachers(t); });
+      fetch("/api/schools").then((r) => r.json()),
+    ]).then(([c, t, s]) => { setCourses(c); setTeachers(t); setSchools(s); });
 
   useEffect(() => { load(); }, []);
+
+  function selectSchool(schoolId: number) {
+    const s = schools.find((s) => s.id === schoolId);
+    if (s) setForm((f) => ({ ...f, schoolId: s.id, school: s.name, region: s.region }));
+    else setForm((f) => ({ ...f, schoolId: null }));
+  }
 
   const save = async () => {
     if (!form.code.trim() || !form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
@@ -52,25 +60,25 @@ export default function CoursesPage() {
   };
 
   const edit = (c: Course) => {
-    setForm({ code: c.code, region: c.region, teacherId: c.teacherId, school: c.school, courseType: c.courseType, dayOfWeek: c.dayOfWeek, time: c.time, category: c.category, enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes });
+    setForm({ code: c.code, region: c.region, teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
+      courseType: c.courseType, dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
+      enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes });
     setEditing(c.id); setShowForm(true);
   };
 
+  const regions = [...new Set(courses.map((c) => c.region).filter(Boolean))].sort();
   const filtered = courses.filter((c) => !filterRegion || c.region === filterRegion);
-  const regions = [...new Set(courses.map((c) => c.region))].sort();
 
   const catColor: Record<string, string> = {
-    課後: "bg-blue-100 text-blue-700",
-    課內: "bg-green-100 text-green-700",
-    Demo: "bg-orange-100 text-orange-700",
-    試上: "bg-purple-100 text-purple-700",
+    課後: "bg-blue-100 text-blue-700", 課內: "bg-green-100 text-green-700",
+    Demo: "bg-orange-100 text-orange-700", 試上: "bg-purple-100 text-purple-700",
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">📚 課程排班</h1>
+          <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
           <p className="text-sm text-slate-500">共 {courses.length} 門課程</p>
         </div>
         <button onClick={() => { setForm(EMPTY_FORM); setEditing(null); setShowForm(true); }}
@@ -81,21 +89,26 @@ export default function CoursesPage() {
 
       {showForm && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
-          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "編輯課程" : "新增課程"}</h2>
+          <h2 className="font-semibold text-slate-700 mb-4">{editing != null ? "編輯課程" : "新增課程"}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label>課程編號 *</label>
               <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="C050" />
             </div>
             <div>
-              <label>地區</label>
-              <select value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })}>
-                {REGIONS.map((r) => <option key={r}>{r}</option>)}
+              <label>園所（從資料庫選）</label>
+              <select value={form.schoolId ?? ""} onChange={(e) => selectSchool(Number(e.target.value))}>
+                <option value="">-- 選擇園所 --</option>
+                {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${s.region}] ` : ""}{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label>學校名稱 *</label>
+              <label>學校名稱 * <span className="text-xs text-gray-400">（可手填）</span></label>
               <input value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value })} placeholder="學校簡稱" />
+            </div>
+            <div>
+              <label>地區</label>
+              <input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="台北市" />
             </div>
             <div>
               <label>負責老師 *</label>
@@ -147,12 +160,10 @@ export default function CoursesPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex gap-3">
-          <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="max-w-[140px]">
-            <option value="">全部地區</option>
-            {regions.map((r) => <option key={r}>{r}</option>)}
-          </select>
-          <span className="text-sm text-slate-500 self-center">共 {filtered.length} 門</span>
+        <div className="p-4 border-b border-slate-100 flex gap-3 flex-wrap">
+          <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-xs border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
+          {regions.map((r) => <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
+          <span className="text-sm text-slate-500 self-center ml-2">共 {filtered.length} 門</span>
         </div>
         <div className="overflow-x-auto">
           <table>

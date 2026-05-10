@@ -101,6 +101,7 @@ export default function SalaryPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center">
               <span className="font-semibold text-slate-700">{year}年 {month}月 薪資明細</span>
+              <div className="flex gap-2">
               <button onClick={() => {
                 const rows = displayed.filter((r) => r.hasActivity);
                 const csv = [
@@ -115,6 +116,11 @@ export default function SalaryPage() {
               }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
                 匯出 CSV
               </button>
+              <a href={`/api/export/salary?year=${year}&month=${month}`} download
+                className="bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
+                匯出 Excel
+              </a>
+            </div>
             </div>
             <div className="overflow-x-auto">
               <table>

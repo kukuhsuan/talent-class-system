@@ -71,10 +71,16 @@ export default function AttendancePage() {
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
           <p className="text-sm text-slate-500">共 {records.length} 筆</p>
         </div>
-        <button onClick={() => { setForm({ ...EMPTY_FORM, date: today() }); setEditing(null); setShowForm(true); }}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
-          + 新增上課紀錄
-        </button>
+        <div className="flex gap-2">
+          <a href={`/api/export/attendance?year=${filterYear}&month=${filterMonth}`} download
+            className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
+            匯出 Excel
+          </a>
+          <button onClick={() => { setForm({ ...EMPTY_FORM, date: today() }); setEditing(null); setShowForm(true); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
+            + 新增上課紀錄
+          </button>
+        </div>
       </div>
 
       {showForm && (
