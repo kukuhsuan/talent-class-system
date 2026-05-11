@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildSchoolReportMessage, buildStudentCountBoard, generateBindCode,
+  buildReportRequestMessage, buildProgressSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, generateBindCode,
 } from "@/lib/line";
 
 type LineEvent = {
@@ -45,11 +45,23 @@ export async function handleWebhook(req: NextRequest, region: LineRegion) {
 
 async function handleFollow(userId: string, replyToken: string, token: string, region: LineRegion) {
   if (region === "school") {
-    await replyMessage(replyToken, [{
-      type: "text",
-      text: "歡迎！請傳送您的園所綁定碼（6位英數字），即可開始接收課程回報。",
-    }], token);
+    const school = await prisma.school.findFirst({ where: { lineUserId: userId } } as never) as { name: string } | null;
+    if (school) {
+      await replyMessage(replyToken, [{ type: "text", text: `歡迎回來，${school.name}！課程回報將會傳送到這裡。` }], token);
+      return;
+    }
+    await replyMessage(replyToken, [{ type: "text", text: "歡迎！請傳送您的園所綁定碼（6位英數字），即可開始接收課程回報。" }], token);
   } else {
+    // Auto-bind: check if userId already in DB
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (teacher) {
+      await prisma.teacher.update({ where: { id: teacher.id }, data: { lineRegion: region } } as never);
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: `歡迎，${teacher.name} 老師！✅ 已自動完成綁定。\n\n傳送「報課」可查看今日課程並回報。`,
+      }], token);
+      return;
+    }
     await replyMessage(replyToken, [{
       type: "text",
       text: "歡迎加入！請傳送您的老師綁定碼（6位英數字），管理員可在系統「通知管理」頁面取得您的綁定碼。",
@@ -180,6 +192,29 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const action = params.get("action");
   const attendanceId = Number(params.get("id"));
 
+  if (action === "select_progress") {
+    await replyMessage(replyToken, [buildProgressSelectMessage(attendanceId)], token);
+    return;
+  }
+
+  if (action === "report_progress") {
+    const content = decodeURIComponent(params.get("content") ?? "");
+    await prisma.attendance.update({
+      where: { id: attendanceId },
+      data: { reportContent: content, reportSentAt: new Date() },
+    });
+    const attInfo = await prisma.attendance.findUnique({
+      where: { id: attendanceId }, include: { course: true },
+    }) as unknown as { course: { department: string } } | null;
+    const dept = attInfo?.course?.department || "幼兒園";
+    await replyMessage(replyToken, [
+      { type: "text", text: `✅ 已記錄：【${content}】\n請點選今日出席人數：` },
+      buildStudentCountBoard(dept),
+    ], token);
+    await forwardReportToSchool(attendanceId, token);
+    return;
+  }
+
   if (action === "report") {
     const status = params.get("status");
     const cancelled = status === "cancelled";
@@ -190,7 +225,6 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     });
 
     if (!cancelled) {
-      // Look up course department for the number board
       const attInfo = await prisma.attendance.findUnique({
         where: { id: attendanceId }, include: { course: true },
       }) as unknown as { course: { department: string } } | null;
@@ -201,8 +235,8 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       ], token);
       await forwardReportToSchool(attendanceId, token);
     } else {
+      // 停課不轉發給園所，只回覆老師
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
-      await forwardReportToSchool(attendanceId, token);
     }
     return;
   }
@@ -211,7 +245,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     pendingDetails.set(userId, attendanceId);
     await replyMessage(replyToken, [{
       type: "text",
-      text: "請輸入課程回報（例如：出席15人，教了跳繩和基本動作，孩子很投入）：",
+      text: "請輸入今日課程內容（例如：蛙跳核心訓練及平衡感訓練）：",
     }], token);
     return;
   }

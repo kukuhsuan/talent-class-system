@@ -91,7 +91,7 @@ export function buildReminderMessage(opts: {
   };
 }
 
-// Build post-class report request
+// Build post-class report request (cream/coffee theme)
 export function buildReportRequestMessage(opts: {
   school: string;
   courseType: string;
@@ -105,40 +105,41 @@ export function buildReportRequestMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#059669",
-        contents: [{ type: "text", text: "課程回報", color: "#ffffff", weight: "bold", size: "lg" }],
+        backgroundColor: "#6F4E37",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "☕ 課程回報", color: "#FDF6EE", weight: "bold", size: "lg" },
+        ],
       },
       body: {
         type: "box",
         layout: "vertical",
+        backgroundColor: "#FDF6EE",
         spacing: "sm",
+        paddingAll: "16px",
         contents: [
-          { type: "text", text: `${opts.school}`, weight: "bold" },
-          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#555555" },
-          { type: "text", text: "請選擇課程狀況：", size: "sm", margin: "md" },
+          { type: "text", text: opts.school, weight: "bold", color: "#4A2C17", size: "lg" },
+          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#8B6347" },
+          { type: "separator", margin: "md", color: "#E8D5C0" },
+          { type: "text", text: "請選擇今日課程狀況：", size: "sm", color: "#8B6347", margin: "md" },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
         spacing: "sm",
+        backgroundColor: "#FDF6EE",
         contents: [
           {
             type: "button",
             style: "primary",
-            color: "#059669",
-            action: { type: "postback", label: "正常上課", data: `action=report&id=${opts.attendanceId}&status=normal` },
+            color: "#6F4E37",
+            action: { type: "postback", label: "✅ 已上課 — 選擇進度", data: `action=select_progress&id=${opts.attendanceId}` },
           },
           {
             type: "button",
             style: "secondary",
-            action: { type: "postback", label: "填寫詳細回報", data: `action=report_detail&id=${opts.attendanceId}` },
-          },
-          {
-            type: "button",
-            style: "secondary",
-            color: "#EF4444",
-            action: { type: "postback", label: "停課", data: `action=report&id=${opts.attendanceId}&status=cancelled` },
+            action: { type: "postback", label: "⚪ 停課", data: `action=report&id=${opts.attendanceId}&status=cancelled` },
           },
         ],
       },
@@ -146,7 +147,47 @@ export function buildReportRequestMessage(opts: {
   };
 }
 
-// Format report for school notification
+// Preset progress options card
+export function buildProgressSelectMessage(attendanceId: number) {
+  const presets = ["依進度上課", "特別活動", "期末複習", "成果展示", "戶外活動", "體能測驗"];
+  return {
+    type: "flex",
+    altText: "請選擇今日課程進度",
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#C8956C",
+        paddingAll: "14px",
+        contents: [{ type: "text", text: "📋 今日課程進度", color: "#FDF6EE", weight: "bold" }],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FDF6EE",
+        spacing: "sm",
+        paddingAll: "14px",
+        contents: [
+          ...presets.map((p) => ({
+            type: "button",
+            style: "secondary" as const,
+            color: "#E8D5C0",
+            action: { type: "postback", label: p, data: `action=report_progress&id=${attendanceId}&content=${encodeURIComponent(p)}` },
+          })),
+          {
+            type: "button",
+            style: "primary" as const,
+            color: "#8B5E3C",
+            action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${attendanceId}` },
+          },
+        ],
+      },
+    },
+  };
+}
+
+// Format report for school notification (cream/coffee theme)
 export function buildSchoolReportMessage(opts: {
   teacherName: string;
   school: string;
@@ -156,29 +197,60 @@ export function buildSchoolReportMessage(opts: {
   content: string;
   cancelled: boolean;
 }) {
-  const status = opts.cancelled ? "⚠️ 停課" : "✅ 正常上課";
   return {
     type: "flex",
-    altText: `課程回報：${opts.school} ${opts.courseType}`,
+    altText: `本週課程完成報告：${opts.school} ${opts.courseType}`,
     contents: {
       type: "bubble",
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: opts.cancelled ? "#EF4444" : "#059669",
-        contents: [{ type: "text", text: `課程回報 ${status}`, color: "#ffffff", weight: "bold" }],
+        backgroundColor: "#6F4E37",
+        paddingAll: "16px",
+        contents: [{ type: "text", text: "🌟 本週課程完成報告", color: "#FDF6EE", weight: "bold", size: "md" }],
       },
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "sm",
+        backgroundColor: "#FDF6EE",
+        spacing: "md",
+        paddingAll: "16px",
         contents: [
-          { type: "text", text: opts.date, size: "sm", color: "#888888" },
-          { type: "text", text: opts.school, weight: "bold" },
-          { type: "text", text: `課程：${opts.courseType}`, size: "sm" },
-          { type: "text", text: `老師：${opts.teacherName}`, size: "sm" },
-          ...(opts.studentCount != null ? [{ type: "text", text: `出席人數：${opts.studentCount} 人`, size: "sm" }] : []),
-          ...(opts.content ? [{ type: "text", text: `內容：${opts.content}`, size: "sm", wrap: true }] : []),
+          { type: "text", text: opts.school, weight: "bold", color: "#4A2C17", size: "xl" },
+          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#8B6347" },
+          { type: "separator", color: "#E8D5C0", margin: "sm" },
+          { type: "text", text: `教練：${opts.teacherName}`, size: "sm", color: "#4A2C17", margin: "sm" },
+          ...(opts.studentCount != null ? [{
+            type: "box", layout: "horizontal", margin: "sm",
+            contents: [
+              { type: "text", text: "✅ 完成進度：", size: "sm", color: "#6F4E37", flex: 0 },
+              { type: "text", text: opts.content || "正常上課", size: "sm", color: "#4A2C17", weight: "bold", wrap: true },
+            ],
+          }] : []),
+          ...(opts.content && !opts.studentCount ? [{
+            type: "box", layout: "vertical", margin: "sm",
+            backgroundColor: "#F0E0CC", cornerRadius: "8px", paddingAll: "10px",
+            contents: [
+              { type: "text", text: "📌 主題：", size: "xs", color: "#8B6347" },
+              { type: "text", text: opts.content, size: "sm", color: "#4A2C17", wrap: true, margin: "xs" },
+            ],
+          }] : []),
+          ...(opts.studentCount != null ? [{
+            type: "box", layout: "horizontal", margin: "sm",
+            backgroundColor: "#F0E0CC", cornerRadius: "8px", paddingAll: "10px",
+            contents: [
+              { type: "text", text: "👦 出席人數", size: "sm", color: "#8B6347", flex: 1 },
+              { type: "text", text: `${opts.studentCount} 人`, size: "md", color: "#4A2C17", weight: "bold", align: "end" },
+            ],
+          }] : []),
+          {
+            type: "box", layout: "vertical", margin: "sm",
+            backgroundColor: "#F0E0CC", cornerRadius: "8px", paddingAll: "10px",
+            contents: [
+              { type: "text", text: "💡 學習重點：", size: "xs", color: "#8B6347" },
+              { type: "text", text: "教練依據現場狀況與孩童需求，進行專屬客製化教學。", size: "xs", color: "#8B6347", wrap: true, margin: "xs" },
+            ],
+          },
         ],
       },
     },
