@@ -71,22 +71,29 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   if (countMatch) {
     const dept = countMatch[1];
     const count = parseInt(countMatch[2]);
-    const bound2 = await (prisma.teacher as unknown as { findFirst: (q: object) => Promise<{ id: number; name: string } | null> }).findFirst({ where: { lineUserId: userId } });
-    if (bound2) {
+    try {
+      const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+      if (!teacher) {
+        await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+        return;
+      }
       const today = new Date();
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const end = new Date(start.getTime() + 86400000);
+      // Find today's most recent uncancelled attendance (no department filter to be safe)
       const att = await prisma.attendance.findFirst({
-        where: { actualTeacherId: bound2.id, date: { gte: start, lt: end }, cancelled: false, studentCount: null,
-          course: { department: dept } },
+        where: { actualTeacherId: teacher.id, date: { gte: start, lt: end }, cancelled: false },
         orderBy: { id: "desc" },
       });
       if (att) {
         await prisma.attendance.update({ where: { id: att.id }, data: { studentCount: count } });
         await replyMessage(replyToken, [{ type: "text", text: `✅ 已記錄 ${dept} 出席 ${count} 人！` }], token);
       } else {
-        await replyMessage(replyToken, [{ type: "text", text: `找不到今日 ${dept} 待填課程，出席人數未記錄。` }], token);
+        await replyMessage(replyToken, [{ type: "text", text: `找不到今日課程紀錄，請請管理員先建立出勤紀錄。` }], token);
       }
+    } catch (e) {
+      console.error("studentCount error:", e);
+      await replyMessage(replyToken, [{ type: "text", text: "儲存出席人數時發生錯誤，請稍後再試。" }], token);
     }
     return;
   }
