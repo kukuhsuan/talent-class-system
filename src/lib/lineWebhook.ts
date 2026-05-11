@@ -76,20 +76,37 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const today = new Date();
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const end = new Date(start.getTime() + 86400000);
-    const todayAtts = await prisma.attendance.findMany({
-      where: { actualTeacherId: teacher.id, date: { gte: start, lt: end }, cancelled: false },
-      include: { course: true },
-      orderBy: { id: "asc" },
-    }) as unknown as Array<{ id: number; reportContent: string; course: { school: string; courseType: string } }>;
+    const dayNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+    const todayDay = dayNames[today.getDay()];
 
-    if (todayAtts.length === 0) {
-      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，今天沒有待回報的課程。` }], token);
+    // Find today's scheduled courses for this teacher
+    const courses = await prisma.course.findMany({
+      where: { teacherId: teacher.id, dayOfWeek: todayDay, isActive: true },
+    }) as unknown as Array<{ id: number; school: string; courseType: string; category: string }>;
+
+    if (courses.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，今天（${todayDay}）沒有排課。` }], token);
       return;
     }
-    const messages = todayAtts.map((a) => buildReportRequestMessage({ school: a.course.school, courseType: a.course.courseType, attendanceId: a.id }));
+
+    // Find or auto-create attendance records
+    const atts: Array<{ id: number; school: string; courseType: string }> = [];
+    for (const course of courses) {
+      let att = await prisma.attendance.findFirst({
+        where: { courseId: course.id, date: { gte: start, lt: end } },
+      }) as { id: number } | null;
+      if (!att) {
+        att = await prisma.attendance.create({
+          data: { date: today, courseId: course.id, actualTeacherId: teacher.id, category: course.category, hours: 1 },
+        }) as { id: number };
+      }
+      atts.push({ id: att.id, school: course.school, courseType: course.courseType });
+    }
+
+    const messages = atts.map((a) => buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
     await replyMessage(replyToken, [
-      { type: "text", text: `${teacher.name} 老師，您今天有 ${todayAtts.length} 堂課，請依序回報：` },
-      ...messages.slice(0, 4), // LINE 單次最多 5 則
+      { type: "text", text: `${teacher.name} 老師，您今天有 ${atts.length} 堂課，請依序回報：` },
+      ...messages.slice(0, 4),
     ], token);
     return;
   }
