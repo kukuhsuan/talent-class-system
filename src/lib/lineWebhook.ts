@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildSchoolReportMessage, generateBindCode,
+  buildReportRequestMessage, buildSchoolReportMessage, buildStudentCountBoard, generateBindCode,
 } from "@/lib/line";
 
 type LineEvent = {
@@ -66,6 +66,31 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
+  // Parse student count report: "幼兒園 16", "國小 12", "安親 8"
+  const countMatch = text.match(/^(幼兒園|國小|安親)\s+(\d+)$/);
+  if (countMatch) {
+    const dept = countMatch[1];
+    const count = parseInt(countMatch[2]);
+    const bound2 = await (prisma.teacher as unknown as { findFirst: (q: object) => Promise<{ id: number; name: string } | null> }).findFirst({ where: { lineUserId: userId } });
+    if (bound2) {
+      const today = new Date();
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const end = new Date(start.getTime() + 86400000);
+      const att = await prisma.attendance.findFirst({
+        where: { actualTeacherId: bound2.id, date: { gte: start, lt: end }, cancelled: false, studentCount: null,
+          course: { department: dept } },
+        orderBy: { id: "desc" },
+      });
+      if (att) {
+        await prisma.attendance.update({ where: { id: att.id }, data: { studentCount: count } });
+        await replyMessage(replyToken, [{ type: "text", text: `✅ 已記錄 ${dept} 出席 ${count} 人！` }], token);
+      } else {
+        await replyMessage(replyToken, [{ type: "text", text: `找不到今日 ${dept} 待填課程，出席人數未記錄。` }], token);
+      }
+    }
+    return;
+  }
+
   const upper = text.toUpperCase();
 
   if (region === "school") {
@@ -113,12 +138,16 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     });
 
     if (!cancelled) {
-      // Ask for student count
-      pendingDetails.set(userId, attendanceId);
-      await replyMessage(replyToken, [{
-        type: "text",
-        text: "請輸入今天的出席人數（數字），或直接傳送「無」略過：",
-      }], token);
+      // Look up course department for the number board
+      const attInfo = await prisma.attendance.findUnique({
+        where: { id: attendanceId }, include: { course: true },
+      }) as unknown as { course: { department: string } } | null;
+      const dept = attInfo?.course?.department || "幼兒園";
+      await replyMessage(replyToken, [
+        { type: "text", text: "✅ 已記錄正常上課！請點選今日出席人數：" },
+        buildStudentCountBoard(dept),
+      ], token);
+      await forwardReportToSchool(attendanceId, token);
     } else {
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
       await forwardReportToSchool(attendanceId, token);
@@ -138,21 +167,27 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
 
 async function saveDetailedReport(userId: string, attendanceId: number, text: string, replyToken: string, token: string, region: LineRegion) {
   void region;
-  const numMatch = text.match(/\d+/);
-  const count = numMatch ? parseInt(numMatch[0]) : null;
-  const content = text === "無" ? "" : text;
+  // Strip "自訂：" prefix if present
+  const content = text.replace(/^自訂[：:]\s*/, "").trim() || "";
 
   await prisma.attendance.update({
     where: { id: attendanceId },
-    data: {
-      studentCount: count,
-      reportContent: content,
-      reportSentAt: new Date(),
-      ...(count != null ? {} : {}),
-    },
+    data: { reportContent: content, reportSentAt: new Date() },
   });
 
-  await replyMessage(replyToken, [{ type: "text", text: `✅ 回報已儲存！感謝 ${userId.slice(0, 4)}... 老師的回報。` }], token);
+  // Look up the course department to send the right number board
+  const att = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+    include: { course: true },
+  }) as unknown as { course: { department: string } } | null;
+
+  const dept = att?.course?.department || "幼兒園";
+  const countBoard = buildStudentCountBoard(dept);
+
+  await replyMessage(replyToken, [
+    { type: "text", text: `✅ 成功記錄：【${content}】\n🚀 已同步發送綠色圖卡推播給園所！` },
+    countBoard,
+  ], token);
   await forwardReportToSchool(attendanceId, token);
 }
 

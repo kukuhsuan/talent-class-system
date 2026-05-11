@@ -124,10 +124,12 @@ export default function Home() {
                       att.cancelled ? (
                         <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">停課</span>
                       ) : (
-                        <div>
+                        <div className="flex flex-col items-end gap-1">
                           <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">已登記</span>
-                          {att.studentCount != null && <div className="text-xs text-slate-400 mt-1">{att.studentCount} 人</div>}
-                          {att.actualTeacher.id !== c.teacherId && <div className="text-xs text-orange-500 mt-1">代：{att.actualTeacher.name}</div>}
+                          {att.studentCount != null
+                            ? <span className="text-sm font-bold text-blue-600">👦 {att.studentCount} 人</span>
+                            : <span className="text-xs text-amber-500">待回報人數</span>}
+                          {att.actualTeacher.id !== c.teacherId && <div className="text-xs text-orange-500">代：{att.actualTeacher.name}</div>}
                         </div>
                       )
                     ) : (
@@ -140,6 +142,24 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Today student count summary */}
+      {!loading && todayAttendance.filter((a) => !a.cancelled && a.studentCount != null).length > 0 && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
+          <h3 className="font-semibold text-blue-800 mb-3">📊 今日出席人數回報</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {todayAttendance.filter((a) => !a.cancelled && a.studentCount != null).map((a) => (
+              <div key={a.id} className="bg-white rounded-lg px-3 py-2 flex items-center justify-between">
+                <span className="text-sm text-slate-700 truncate">{a.course.school}</span>
+                <span className="text-sm font-bold text-blue-600 ml-2 shrink-0">{a.studentCount} 人</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-blue-500 mt-2">
+            共 {todayAttendance.filter((a) => !a.cancelled && a.studentCount != null).reduce((s, a) => s + (a.studentCount ?? 0), 0)} 人出席
+          </p>
+        </div>
+      )}
 
       {/* Quick links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

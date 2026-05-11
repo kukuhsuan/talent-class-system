@@ -185,6 +185,34 @@ export function buildSchoolReportMessage(opts: {
   };
 }
 
+// Student count board (幼兒園報數盤)
+export function buildStudentCountBoard(department: string, min = 5, max = 30) {
+  const nums = Array.from({ length: max - min + 1 }, (_, i) => i + min);
+  const rows: object[] = [];
+  for (let i = 0; i < nums.length; i += 4) {
+    const chunk = nums.slice(i, i + 4);
+    rows.push({
+      type: "box", layout: "horizontal", spacing: "sm",
+      contents: chunk.map((n) => ({
+        type: "button", style: "secondary", height: "sm",
+        action: { type: "message", label: String(n), text: `${department} ${n}` },
+      })),
+    });
+  }
+  return {
+    type: "flex",
+    altText: `🔵 ${department}報數盤`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#92400E",
+        contents: [{ type: "text", text: `🔵 ${department}報數盤`, color: "#ffffff", weight: "bold" }],
+      },
+      body: { type: "box", layout: "vertical", spacing: "sm", contents: rows },
+    },
+  };
+}
+
 export function generateBindCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
