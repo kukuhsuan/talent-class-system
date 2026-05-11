@@ -66,6 +66,34 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
+  // Self-report trigger: teacher types "報課"
+  if (text === "報課") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const end = new Date(start.getTime() + 86400000);
+    const todayAtts = await prisma.attendance.findMany({
+      where: { actualTeacherId: teacher.id, date: { gte: start, lt: end }, cancelled: false },
+      include: { course: true },
+      orderBy: { id: "asc" },
+    }) as unknown as Array<{ id: number; reportContent: string; course: { school: string; courseType: string } }>;
+
+    if (todayAtts.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，今天沒有待回報的課程。` }], token);
+      return;
+    }
+    const messages = todayAtts.map((a) => buildReportRequestMessage({ school: a.course.school, courseType: a.course.courseType, attendanceId: a.id }));
+    await replyMessage(replyToken, [
+      { type: "text", text: `${teacher.name} 老師，您今天有 ${todayAtts.length} 堂課，請依序回報：` },
+      ...messages.slice(0, 4), // LINE 單次最多 5 則
+    ], token);
+    return;
+  }
+
   // Parse student count report: "幼兒園 16", "國小 12", "安親 8"
   const countMatch = text.match(/^(幼兒園|國小|安親)\s+(\d+)$/);
   if (countMatch) {
