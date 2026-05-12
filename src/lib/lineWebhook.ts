@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildProgressSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, generateBindCode,
+  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, generateBindCode,
 } from "@/lib/line";
 
 type LineEvent = {
@@ -193,7 +193,13 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const attendanceId = Number(params.get("id"));
 
   if (action === "select_progress") {
-    await replyMessage(replyToken, [buildProgressSelectMessage(attendanceId)], token);
+    // Look up course type for this attendance record
+    const attForCurriculum = await prisma.attendance.findUnique({
+      where: { id: attendanceId },
+      include: { course: true },
+    }) as unknown as { course: { courseType: string } } | null;
+    const courseType = attForCurriculum?.course?.courseType ?? "";
+    await replyMessage(replyToken, [buildCurriculumSelectMessage(attendanceId, courseType)], token);
     return;
   }
 

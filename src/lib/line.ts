@@ -15,6 +15,225 @@ export function courseLabel(code: string): string {
   return COURSE_LABEL[code] ?? COURSE_LABEL[code.toUpperCase()] ?? code;
 }
 
+// Course curriculum data (lesson number → title)
+export const COURSE_CURRICULUM: Record<string, Array<{ lesson: number; title: string }>> = {
+  足球: [
+    { lesson: 1, title: "點球、炒蛋" },
+    { lesson: 2, title: "點球、炒蛋（流暢度）" },
+    { lesson: 3, title: "移動式點球、炒蛋" },
+    { lesson: 4, title: "移動式點球（進階）" },
+    { lesson: 5, title: "後拉球" },
+    { lesson: 6, title: "側拉球" },
+    { lesson: 7, title: "側拉球、後拉球" },
+    { lesson: 8, title: "S 型盤球" },
+    { lesson: 9, title: "S 型盤球（進階）" },
+    { lesson: 10, title: "W 型盤球" },
+    { lesson: 11, title: "W 型盤球（穩定）" },
+    { lesson: 12, title: "運球" },
+    { lesson: 13, title: "運球（抬頭看路）" },
+    { lesson: 14, title: "盤運球" },
+    { lesson: 15, title: "停球" },
+    { lesson: 16, title: "停球（紅綠燈）" },
+    { lesson: 17, title: "移動中停球" },
+    { lesson: 18, title: "彈地球" },
+    { lesson: 19, title: "2 碼射門" },
+    { lesson: 20, title: "2 碼射門＋障礙物" },
+    { lesson: 21, title: "1v1 搶球＋射門" },
+    { lesson: 22, title: "3 碼射門" },
+    { lesson: 23, title: "2人傳球射門" },
+    { lesson: 24, title: "2v2 搶球＋射門" },
+  ],
+  高爾夫: [
+    { lesson: 1, title: "高爾夫禮儀" },
+    { lesson: 2, title: "基本概念" },
+    { lesson: 3, title: "基本動作" },
+    { lesson: 4, title: "高爾夫短推桿" },
+    { lesson: 5, title: "基礎短切推桿" },
+    { lesson: 6, title: "專注力切推桿" },
+    { lesson: 7, title: "力量控制" },
+    { lesson: 8, title: "穩定切推桿" },
+    { lesson: 9, title: "節律切推桿" },
+    { lesson: 10, title: "判斷力切推桿" },
+    { lesson: 11, title: "想像力切推桿" },
+    { lesson: 12, title: "切滾球練習" },
+    { lesson: 13, title: "規則概念" },
+    { lesson: 14, title: "基本動作小競賽" },
+    { lesson: 15, title: "切桿（二階）" },
+    { lesson: 16, title: "高拋球（避障）" },
+    { lesson: 17, title: "切桿進階 9L3Y" },
+    { lesson: 18, title: "切桿進階（穩定）" },
+    { lesson: 19, title: "切桿短距離競賽" },
+    { lesson: 20, title: "切桿中短距離競賽" },
+  ],
+  冰壺: [
+    { lesson: 1, title: "發壺練習" },
+    { lesson: 2, title: "發壺技巧調整" },
+    { lesson: 3, title: "技術實練＆分組比賽" },
+    { lesson: 4, title: "3碼距離推壺" },
+    { lesson: 5, title: "冰壺過山洞" },
+    { lesson: 6, title: "技術實練＆障礙練習" },
+    { lesson: 7, title: "冰壺大風吹" },
+    { lesson: 8, title: "技術實練＆目標瞄準" },
+    { lesson: 9, title: "5碼距離推壺" },
+    { lesson: 10, title: "技術實練＆障礙練習２" },
+    { lesson: 11, title: "技術實練＆目標瞄準２" },
+    { lesson: 12, title: "紳士遊戲" },
+    { lesson: 13, title: "技術實練" },
+    { lesson: 14, title: "紳士競賽" },
+    { lesson: 15, title: "距離力道控制技巧" },
+    { lesson: 16, title: "技術實練（總複習）" },
+    { lesson: 17, title: "我是瞄準王" },
+  ],
+  棒球: [
+    { lesson: 1, title: "樂樂棒球禮儀、規則" },
+    { lesson: 2, title: "基本概念" },
+    { lesson: 3, title: "投球基本動作" },
+    { lesson: 4, title: "短距離傳接球" },
+    { lesson: 5, title: "中長距離投球" },
+    { lesson: 6, title: "專注力壘間傳球" },
+    { lesson: 7, title: "內野守備練習" },
+    { lesson: 8, title: "內野守備節律" },
+    { lesson: 9, title: "守備判斷力" },
+    { lesson: 10, title: "高飛球與滾地球" },
+    { lesson: 11, title: "綜合守備練習" },
+    { lesson: 12, title: "打擊、短打練習" },
+    { lesson: 13, title: "推打、拉打教學" },
+    { lesson: 14, title: "守備、跑壘教學" },
+    { lesson: 15, title: "裁判員與教練模擬" },
+    { lesson: 16, title: "投球守備打擊跑壘測驗" },
+    { lesson: 17, title: "模擬比賽教學" },
+    { lesson: 18, title: "全壘打大賽" },
+    { lesson: 19, title: "投準大賽" },
+    { lesson: 20, title: "分組對抗賽" },
+  ],
+  舞蹈: [
+    { lesson: 1, title: "課程介紹、認識時間空間力量" },
+    { lesson: 2, title: "身體部位的運用" },
+    { lesson: 3, title: "動作的運用（上肢）" },
+    { lesson: 4, title: "動作的運用（空間移位）" },
+    { lesson: 5, title: "時間：快慢節奏" },
+    { lesson: 6, title: "空間：大小高低方向" },
+    { lesson: 7, title: "力量：強弱輕重" },
+    { lesson: 8, title: "主題：魔鏡最像的人" },
+    { lesson: 9, title: "主題：我的一天" },
+    { lesson: 10, title: "主題：會跳舞的衛生紙" },
+    { lesson: 11, title: "主題：我的身體會說話" },
+    { lesson: 12, title: "主題：跟動物做朋友" },
+    { lesson: 13, title: "主題：身體停止器" },
+    { lesson: 14, title: "基礎芭蕾（一）" },
+    { lesson: 15, title: "基礎芭蕾＋灌籃高手" },
+    { lesson: 16, title: "基礎芭蕾（二）" },
+    { lesson: 17, title: "基礎芭蕾（三）青蛙生長記" },
+    { lesson: 18, title: "基礎芭蕾（四）呼拉圈" },
+    { lesson: 19, title: "彩排三首舞碼" },
+    { lesson: 20, title: "期末呈現" },
+  ],
+  體能: [
+    { lesson: 1, title: "聽聲辨位（圓盤）" },
+    { lesson: 2, title: "華麗的舞步（標盤）" },
+    { lesson: 3, title: "動物旅行（欄架）" },
+    { lesson: 4, title: "穿越時光隧道" },
+    { lesson: 5, title: "步步高升（繩梯）" },
+    { lesson: 6, title: "來去自如（三角錐）" },
+    { lesson: 7, title: "萬里長城（哨子）" },
+    { lesson: 8, title: "麥可喬登（球）" },
+    { lesson: 9, title: "動物園（標盤）" },
+    { lesson: 10, title: "官兵抓強盜" },
+    { lesson: 11, title: "巨猩喬揚（繩梯）" },
+    { lesson: 12, title: "穿越時光隧道（進階）" },
+    { lesson: 13, title: "動物旅行（進階）" },
+    { lesson: 14, title: "小小守門員（足球）" },
+    { lesson: 15, title: "聽聲辨位（進階）" },
+    { lesson: 16, title: "彈簧腿（高低欄架）" },
+    { lesson: 17, title: "官兵抓強盜（進階）" },
+    { lesson: 18, title: "萬里長城（進階）" },
+    { lesson: 19, title: "華麗的舞步（進階）" },
+    { lesson: 20, title: "步步高升（速度）" },
+  ],
+  籃球: [
+    { lesson: 1, title: "原地球感" },
+    { lesson: 2, title: "左右手運球" },
+    { lesson: 3, title: "左右手交換運球" },
+    { lesson: 4, title: "左右手帶球運球" },
+    { lesson: 5, title: "雙手投籃" },
+    { lesson: 6, title: "單手投籃" },
+    { lesson: 7, title: "定點接球投籃" },
+    { lesson: 8, title: "傳接球投籃" },
+    { lesson: 9, title: "帶球跑動式" },
+    { lesson: 10, title: "帶球跨步" },
+    { lesson: 11, title: "運球上籃" },
+    { lesson: 12, title: "連續運球上籃" },
+    { lesson: 13, title: "帶球定點式" },
+    { lesson: 14, title: "下肢折返式訓練" },
+    { lesson: 15, title: "左右手投籃" },
+    { lesson: 16, title: "左右手帶球投籃" },
+    { lesson: 17, title: "基本團隊訓練規則" },
+    { lesson: 18, title: "模擬比賽" },
+    { lesson: 19, title: "競賽訓練" },
+    { lesson: 20, title: "團隊訓練" },
+  ],
+};
+
+// Build curriculum selection carousel for a course type
+export function buildCurriculumSelectMessage(attendanceId: number, courseType: string): object {
+  const label = courseLabel(courseType);
+  const curriculum = COURSE_CURRICULUM[label] ?? COURSE_CURRICULUM[courseType] ?? [];
+
+  // Fallback to generic presets if no curriculum
+  if (curriculum.length === 0) {
+    return buildProgressSelectMessage(attendanceId);
+  }
+
+  const PAGE_SIZE = 9;
+  const pages: Array<typeof curriculum> = [];
+  for (let i = 0; i < curriculum.length; i += PAGE_SIZE) {
+    pages.push(curriculum.slice(i, i + PAGE_SIZE));
+  }
+
+  const bubbles = pages.map((page, pi) => {
+    const startLesson = page[0].lesson;
+    const endLesson = page[page.length - 1].lesson;
+    return {
+      type: "bubble",
+      size: "kilo",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#6F4E37", paddingAll: "12px",
+        contents: [
+          { type: "text", text: `📋 ${label}課程進度`, color: "#FDF6EE", weight: "bold", size: "sm" },
+          { type: "text", text: `第 ${startLesson}～${endLesson} 堂`, color: "#E8D5C0", size: "xs", margin: "xs" },
+        ],
+      },
+      body: {
+        type: "box", layout: "vertical", backgroundColor: "#FDF6EE", spacing: "xs", paddingAll: "10px",
+        contents: page.map((c) => ({
+          type: "button",
+          style: "secondary" as const,
+          color: "#E8D5C0",
+          height: "sm" as const,
+          action: {
+            type: "postback",
+            label: `第${c.lesson}堂 ${c.title}`.slice(0, 20),
+            data: `action=report_progress&id=${attendanceId}&content=${encodeURIComponent(`第${c.lesson}堂 ${c.title}`)}&lesson=${c.lesson}`,
+          },
+        })),
+      },
+      footer: {
+        type: "box", layout: "vertical", backgroundColor: "#FDF6EE", paddingAll: "8px",
+        contents: [{
+          type: "button", style: "primary" as const, color: "#8B5E3C", height: "sm" as const,
+          action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${attendanceId}` },
+        }],
+      },
+    };
+  });
+
+  return {
+    type: "flex",
+    altText: `${label} 請選擇今日課程進度`,
+    contents: { type: "carousel", contents: bubbles },
+  };
+}
+
 export type LineRegion = "north" | "south" | "school";
 
 export function getLineConfig(region: LineRegion) {
@@ -275,7 +494,7 @@ export function buildSchoolReportMessage(opts: {
 }
 
 // Student count board (幼兒園報數盤)
-export function buildStudentCountBoard(department: string, min = 5, max = 30) {
+export function buildStudentCountBoard(department: string, min = 1, max = 40) {
   const nums = Array.from({ length: max - min + 1 }, (_, i) => i + min);
   const rows: object[] = [];
   for (let i = 0; i < nums.length; i += 4) {
