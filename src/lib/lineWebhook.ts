@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, generateBindCode,
+  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildScheduleMessage, courseLabel, generateBindCode,
 } from "@/lib/line";
 
 type LineEvent = {
@@ -132,6 +132,40 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
+  // Teacher queries their own schedule: "課表" or "查課表"
+  if (text === "課表" || text === "查課表") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    const courses = await prisma.course.findMany({
+      where: { teacherId: teacher.id, isActive: true },
+      orderBy: [{ dayOfWeek: "asc" }, { time: "asc" }],
+    }) as unknown as Array<{ school: string; courseType: string; dayOfWeek: string; time: string }>;
+
+    if (courses.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有排定的課程。` }], token);
+      return;
+    }
+
+    const DAY_ORDER = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
+    const sorted = [...courses].sort((a, b) => DAY_ORDER.indexOf(a.dayOfWeek) - DAY_ORDER.indexOf(b.dayOfWeek));
+
+    // Week label: this week Mon–Sun
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMon = day === 0 ? -6 : 1 - day;
+    const mon = new Date(now); mon.setDate(now.getDate() + diffToMon);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const weekLabel = `${fmt(mon)} ~ ${fmt(sun)}`;
+
+    const msg = buildScheduleMessage({ teacherName: teacher.name, weekLabel, courses: sorted });
+    await replyMessage(replyToken, [msg], token);
+    return;
+  }
+
   // Fallback: legacy "幼兒園 16" / "安親 8" text-based count (kept for manual entry)
   const countMatch = text.match(/^(幼兒園|國小|安親)\s+(\d+)$/);
   if (countMatch) {
@@ -185,7 +219,10 @@ async function handleText(userId: string, text: string, replyToken: string, regi
 
   const bound = await prisma.teacher.findFirst({ where: { lineUserId: userId } });
   if (bound) {
-    await replyMessage(replyToken, [{ type: "text", text: `您好，${bound.name} 老師！如需課程回報請等候系統訊息，或聯絡管理員。` }], token);
+    await replyMessage(replyToken, [{
+      type: "text",
+      text: `您好，${bound.name} 老師！\n\n可用指令：\n📅 課表 — 查詢本週課程\n📝 報課 — 回報今日出席`,
+    }], token);
     return;
   }
 
