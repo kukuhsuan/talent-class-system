@@ -141,63 +141,77 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     }
     const courses = await prisma.course.findMany({
       where: { teacherId: teacher.id, isActive: true },
-    }) as unknown as Array<{ school: string; courseType: string; dayOfWeek: string; time: string }>;
+    }) as unknown as Array<{ school: string; courseType: string; dayOfWeek: string; time: string; department: string }>;
 
     if (courses.length === 0) {
       await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有排定的課程。` }], token);
       return;
     }
 
-    // Build 8 weeks (≈2 months) starting from this Monday
+    // 安親班固定 7-8月；若已過8月則顯示隔年7-8月
     const DAY_JS: Record<string, number> = {
       "星期一": 1, "星期二": 2, "星期三": 3, "星期四": 4,
       "星期五": 5, "星期六": 6, "星期日": 0,
     };
-    const DAY_SHORT: Record<string, string> = {
-      "星期一": "一", "星期二": "二", "星期三": "三", "星期四": "四",
-      "星期五": "五", "星期六": "六", "星期日": "日",
-    };
     const now = new Date();
-    const jsDay = now.getDay();
-    const diffToMon = jsDay === 0 ? -6 : 1 - jsDay;
-    const thisMonday = new Date(now);
-    thisMonday.setDate(now.getDate() + diffToMon);
-    thisMonday.setHours(0, 0, 0, 0);
+    // 決定年份：已超過8月底就用隔年
+    let targetYear = now.getFullYear();
+    if (now.getMonth() >= 8) targetYear += 1; // 9月以後顯示隔年
+
+    const julFirst = new Date(targetYear, 6, 1);   // 7/1
+    const augLast  = new Date(targetYear, 7, 31);  // 8/31
+
+    // 找到7/1當週的週一
+    const julDay = julFirst.getDay();
+    const diffToMon = julDay === 0 ? -6 : 1 - julDay;
+    const firstMonday = new Date(julFirst);
+    firstMonday.setDate(julFirst.getDate() + diffToMon);
+    firstMonday.setHours(0, 0, 0, 0);
 
     const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
-    const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
-    const weeks = Array.from({ length: 8 }, (_, wi) => {
-      const mon = new Date(thisMonday);
-      mon.setDate(thisMonday.getDate() + wi * 7);
-      const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+    // 安親班課程優先（有 department 含「安親」的優先顯示）
+    const anqinCourses = courses.filter((c: { department?: string }) => c.department?.includes("安親"));
+    const displayCourses = anqinCourses.length > 0 ? anqinCourses : courses;
+
+    const weeks: Array<{ label: string; month: string; entries: object[] }> = [];
+    let cursor = new Date(firstMonday);
+    while (cursor <= augLast) {
+      const mon = new Date(cursor);
       const sat = new Date(mon); sat.setDate(mon.getDate() + 5);
 
-      // All course occurrences this week
-      const entries = courses
-        .filter((c) => DAY_JS[c.dayOfWeek] !== undefined)
-        .map((c) => {
-          const d = new Date(mon);
-          const targetDay = DAY_JS[c.dayOfWeek];
-          const diff = targetDay === 0 ? 6 : targetDay - 1;
-          d.setDate(mon.getDate() + diff);
-          return {
-            date: fmtShort(d),
-            dayShort: DAY_SHORT[c.dayOfWeek] ?? "",
-            school: c.school,
-            courseType: c.courseType,
-            time: c.time,
-            sortKey: diff,
-          };
-        })
-        .sort((a, b) => a.sortKey - b.sortKey);
+      // Only include weeks that overlap with Jul–Aug
+      const weekEnd = new Date(mon); weekEnd.setDate(mon.getDate() + 6);
+      if (weekEnd >= julFirst && mon <= augLast) {
+        const entries = displayCourses
+          .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
+          .map((c: { dayOfWeek: string; school: string; courseType: string; time: string }) => {
+            const d = new Date(mon);
+            const targetDay = DAY_JS[c.dayOfWeek];
+            const diff = targetDay === 0 ? 6 : targetDay - 1;
+            d.setDate(mon.getDate() + diff);
+            // Only include dates within Jul-Aug
+            if (d < julFirst || d > augLast) return null;
+            return {
+              date: fmt(d),
+              dayShort: c.dayOfWeek.replace("星期", ""),
+              school: c.school,
+              courseType: c.courseType,
+              time: c.time,
+              sortKey: diff,
+            };
+          })
+          .filter(Boolean)
+          .sort((a: { sortKey: number }, b: { sortKey: number }) => a.sortKey - b.sortKey);
 
-      return {
-        label: `${fmt(mon)} ~ ${fmt(sat)}`,
-        month: `${mon.getMonth() + 1}月`,
-        entries,
-      };
-    });
+        weeks.push({
+          label: `${fmt(mon)} ~ ${fmt(sat)}`,
+          month: `${mon.getMonth() + 1}月`,
+          entries,
+        });
+      }
+      cursor.setDate(cursor.getDate() + 7);
+    }
 
     const msg = buildTwoMonthScheduleMessage({ teacherName: teacher.name, weeks });
     await replyMessage(replyToken, [msg], token);
