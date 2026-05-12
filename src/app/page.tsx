@@ -27,22 +27,22 @@ export default function Home() {
 
   useEffect(() => {
     async function load() {
-      const deptQ = dept ? `?dept=${encodeURIComponent(dept)}` : "";
-      const attQ = dept ? `?year=${year}&month=${month}&dept=${encodeURIComponent(dept)}` : `?year=${year}&month=${month}`;
-      const [courses, attendance, teachers] = await Promise.all([
-        fetch(`/api/schedule${deptQ}`).then((r) => r.json()),
-        fetch(`/api/attendance${attQ}`).then((r) => r.json()),
-        fetch("/api/teachers").then((r) => r.json()),
-      ]);
+      const params = new URLSearchParams({ year: String(year), month: String(month) });
+      if (dept) params.set("dept", dept);
+      const data = await fetch(`/api/dashboard?${params}`).then((r) => r.json());
 
-      const todayC = (courses as Course[]).filter((c) => c.dayOfWeek === todayDayName);
-      const todayA = (attendance as Attendance[]).filter((a) => a.date.slice(0, 10) === todayStr);
-      const monthCount = (attendance as Attendance[]).filter((a) => !a.cancelled).length;
+      const courses: Course[] = data.courses ?? [];
+      const attendance: Attendance[] = data.attendance ?? [];
+      const teacherCount: number = data.teacherCount ?? 0;
+
+      const todayC = courses.filter((c) => c.dayOfWeek === todayDayName);
+      const todayA = attendance.filter((a) => a.date.slice(0, 10) === todayStr);
+      const monthCount = attendance.filter((a) => !a.cancelled).length;
 
       setTodayCourses(todayC);
       setTodayAttendance(todayA);
-      setStats({ teachers: teachers.length, courses: courses.length, monthAttendance: monthCount });
-      setSeeded(teachers.length > 0);
+      setStats({ teachers: teacherCount, courses: courses.length, monthAttendance: monthCount });
+      setSeeded(teacherCount > 0);
       setLoading(false);
     }
     load();
@@ -81,18 +81,18 @@ export default function Home() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
-          <div className="text-3xl font-bold text-blue-600">{loading ? "—" : todayCourses.length}</div>
-          <div className="text-sm text-slate-500 mt-1">今日課程</div>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
-          <div className="text-3xl font-bold text-green-600">{loading ? "—" : stats.monthAttendance}</div>
-          <div className="text-sm text-slate-500 mt-1">{month}月出課次數</div>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
-          <div className="text-3xl font-bold text-purple-600">{loading ? "—" : stats.courses}</div>
-          <div className="text-sm text-slate-500 mt-1">開課中課程</div>
-        </div>
+        {[
+          { label: "今日課程", value: loading ? null : todayCourses.length, color: "text-blue-600" },
+          { label: `${month}月出課次數`, value: loading ? null : stats.monthAttendance, color: "text-green-600" },
+          { label: "開課中課程", value: loading ? null : stats.courses, color: "text-purple-600" },
+        ].map((s) => (
+          <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+            {s.value === null
+              ? <div className="h-9 bg-slate-100 rounded-lg animate-pulse mx-auto w-12 mb-1" />
+              : <div className={`text-3xl font-bold ${s.color}`}>{s.value}</div>}
+            <div className="text-sm text-slate-500 mt-1">{s.label}</div>
+          </div>
+        ))}
       </div>
 
       {/* Today courses */}
@@ -102,7 +102,17 @@ export default function Home() {
           <Link href="/attendance" className="text-sm text-blue-600 hover:underline">去登記出勤</Link>
         </div>
         {loading ? (
-          <div className="py-12 text-center text-slate-400">載入中...</div>
+          <div className="divide-y divide-slate-100">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="px-5 py-4 flex items-center gap-4 animate-pulse">
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-100 rounded w-2/3" />
+                  <div className="h-3 bg-slate-100 rounded w-1/2" />
+                </div>
+                <div className="h-6 w-14 bg-slate-100 rounded-full" />
+              </div>
+            ))}
+          </div>
         ) : todayCourses.length === 0 ? (
           <div className="py-12 text-center text-slate-400">今天沒有課程</div>
         ) : (
