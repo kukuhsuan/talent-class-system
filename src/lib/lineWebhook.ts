@@ -101,7 +101,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       return;
     }
 
-    const atts: Array<{ id: number; school: string; courseType: string }> = [];
+    const atts: Array<{ id: number; school: string; courseType: string; department: string }> = [];
     for (const course of courses) {
       let att = await prisma.attendance.findFirst({
         where: { courseId: course.id, date: { gte: start, lt: end } },
@@ -111,14 +111,24 @@ async function handleText(userId: string, text: string, replyToken: string, regi
           data: { date: today, courseId: course.id, actualTeacherId: teacher.id, category: course.category, hours: 1 },
         }) as { id: number };
       }
-      atts.push({ id: att.id, school: course.school, courseType: course.courseType });
+      atts.push({ id: att.id, school: course.school, courseType: course.courseType, department: course.department });
     }
 
-    const messages = atts.map((a) => buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
-    await replyMessage(replyToken, [
+    // 安親班：直接跳出算盤（不需填課程進度）
+    // 其他班：先顯示課程進度選擇卡
+    const replyMsgs: object[] = [
       { type: "text", text: `${teacher.name} 老師，您今天有 ${atts.length} 堂課，請依序回報：` },
-      ...messages.slice(0, 4),
-    ], token);
+    ];
+    for (const a of atts.slice(0, 3)) {
+      if (a.department.includes("安親")) {
+        replyMsgs.push(
+          buildStudentCountBoard(a.id, "A", a.department),
+        );
+      } else {
+        replyMsgs.push(buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
+      }
+    }
+    await replyMessage(replyToken, replyMsgs, token);
     return;
   }
 
