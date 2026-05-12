@@ -53,6 +53,14 @@ export default function NotifyPage() {
     setSending(null);
   }
 
+  async function sendSchedule() {
+    setSending(-998);
+    const res = await fetch("/api/line/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+    const data = await res.json();
+    setMsg(`課程表已發送給 ${data.sent} 位老師，${data.skipped} 位略過`);
+    setSending(null);
+  }
+
   async function sendReportRequest(attendanceId: number) {
     setSending(attendanceId);
     const res = await fetch("/api/line/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "report_request", attendanceId }) });
@@ -71,10 +79,16 @@ export default function NotifyPage() {
           <h1 className="text-xl font-bold text-slate-800">LINE 通知管理</h1>
           <p className="text-sm text-slate-500">管理老師/園所綁定，發送課程提醒與回報請求</p>
         </div>
-        <button onClick={sendReminder} disabled={sending === -999}
-          className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
-          {sending === -999 ? "發送中..." : "發送明日課程提醒"}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={sendSchedule} disabled={sending === -998}
+            className="bg-amber-700 hover:bg-amber-800 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+            {sending === -998 ? "發送中..." : "📅 發送課程表"}
+          </button>
+          <button onClick={sendReminder} disabled={sending === -999}
+            className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+            {sending === -999 ? "發送中..." : "發送明日課程提醒"}
+          </button>
+        </div>
       </div>
 
       {msg && (

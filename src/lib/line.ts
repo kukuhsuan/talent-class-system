@@ -1,5 +1,20 @@
 import crypto from "crypto";
 
+// Course type full name mapping
+export const COURSE_LABEL: Record<string, string> = {
+  FT: "足球", ft: "足球",
+  P: "體能", p: "體能",
+  G: "高爾夫", g: "高爾夫",
+  D: "舞蹈", d: "舞蹈",
+  B: "棒球", b: "棒球",
+  BK: "棒球", bk: "棒球",
+  冰壺: "冰壺",
+};
+
+export function courseLabel(code: string): string {
+  return COURSE_LABEL[code] ?? COURSE_LABEL[code.toUpperCase()] ?? code;
+}
+
 export type LineRegion = "north" | "south" | "school";
 
 export function getLineConfig(region: LineRegion) {
@@ -91,15 +106,16 @@ export function buildReminderMessage(opts: {
   };
 }
 
-// Build post-class report request (cream/coffee theme)
+// Build post-class report request (cream/coffee theme, no cancel option)
 export function buildReportRequestMessage(opts: {
   school: string;
   courseType: string;
   attendanceId: number;
 }) {
+  const label = courseLabel(opts.courseType);
   return {
     type: "flex",
-    altText: `請回報 ${opts.school} ${opts.courseType} 課程狀況`,
+    altText: `請回報 ${opts.school} ${label} 課程`,
     contents: {
       type: "bubble",
       header: {
@@ -119,9 +135,9 @@ export function buildReportRequestMessage(opts: {
         paddingAll: "16px",
         contents: [
           { type: "text", text: opts.school, weight: "bold", color: "#4A2C17", size: "lg" },
-          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#8B6347" },
+          { type: "text", text: `課程：${label}`, size: "sm", color: "#8B6347" },
           { type: "separator", margin: "md", color: "#E8D5C0" },
-          { type: "text", text: "請選擇今日課程狀況：", size: "sm", color: "#8B6347", margin: "md" },
+          { type: "text", text: "請選擇今日課程進度：", size: "sm", color: "#8B6347", margin: "md" },
         ],
       },
       footer: {
@@ -134,12 +150,13 @@ export function buildReportRequestMessage(opts: {
             type: "button",
             style: "primary",
             color: "#6F4E37",
-            action: { type: "postback", label: "✅ 已上課 — 選擇進度", data: `action=select_progress&id=${opts.attendanceId}` },
+            action: { type: "postback", label: "📋 選擇課程進度", data: `action=select_progress&id=${opts.attendanceId}` },
           },
           {
             type: "button",
-            style: "secondary",
-            action: { type: "postback", label: "⚪ 停課", data: `action=report&id=${opts.attendanceId}&status=cancelled` },
+            style: "primary",
+            color: "#C8956C",
+            action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${opts.attendanceId}` },
           },
         ],
       },
@@ -281,6 +298,77 @@ export function buildStudentCountBoard(department: string, min = 5, max = 30) {
         contents: [{ type: "text", text: `🔵 ${department}報數盤`, color: "#ffffff", weight: "bold" }],
       },
       body: { type: "box", layout: "vertical", spacing: "sm", contents: rows },
+    },
+  };
+}
+
+// Build weekly schedule message for teacher
+export function buildScheduleMessage(opts: {
+  teacherName: string;
+  weekLabel: string; // e.g. "5/13 ~ 5/17"
+  courses: Array<{ school: string; courseType: string; dayOfWeek: string; time: string }>;
+}) {
+  const rows = opts.courses.map((c) => ({
+    type: "box",
+    layout: "horizontal",
+    paddingTop: "6px",
+    paddingBottom: "6px",
+    contents: [
+      { type: "text", text: c.dayOfWeek.replace("星期", ""), size: "sm", color: "#8B6347", flex: 1, align: "center" as const },
+      { type: "text", text: courseLabel(c.courseType), size: "sm", color: "#4A2C17", flex: 2 },
+      { type: "text", text: c.school, size: "sm", color: "#4A2C17", flex: 3, wrap: true },
+      { type: "text", text: c.time || "—", size: "xs", color: "#8B6347", flex: 2, align: "end" as const },
+    ],
+  }));
+
+  return {
+    type: "flex",
+    altText: `${opts.teacherName} 老師 ${opts.weekLabel} 課程表`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#6F4E37",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "📅 本週課程表", color: "#FDF6EE", weight: "bold", size: "lg" },
+          { type: "text", text: `${opts.teacherName} 老師　${opts.weekLabel}`, color: "#E8D5C0", size: "sm", margin: "xs" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FDF6EE",
+        paddingAll: "14px",
+        spacing: "none",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "星期", size: "xs", color: "#C8956C", flex: 1, align: "center" as const, weight: "bold" },
+              { type: "text", text: "課程", size: "xs", color: "#C8956C", flex: 2, weight: "bold" },
+              { type: "text", text: "地點", size: "xs", color: "#C8956C", flex: 3, weight: "bold" },
+              { type: "text", text: "時間", size: "xs", color: "#C8956C", flex: 2, align: "end" as const, weight: "bold" },
+            ],
+          },
+          { type: "separator", margin: "sm", color: "#E8D5C0" },
+          ...rows,
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FDF6EE",
+        contents: [{
+          type: "text",
+          text: "祝教學順利，謝謝您！☕",
+          size: "xs",
+          color: "#C8956C",
+          align: "center" as const,
+        }],
+      },
     },
   };
 }
