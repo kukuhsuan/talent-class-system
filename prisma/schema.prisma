@@ -68,6 +68,8 @@ model Attendance {
   actualTeacher   Teacher   @relation("ActualTeacher", fields: [actualTeacherId], references: [id])
   actualTeacherId Int
   studentCount    Int?
+  studentCountA   Int?
+  studentCountB   Int?
   cancelled       Boolean   @default(false)
   category        String    @default("課後")
   hours           Float     @default(1)

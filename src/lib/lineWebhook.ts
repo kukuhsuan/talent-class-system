@@ -16,6 +16,8 @@ type LineEvent = {
 
 // Track teachers mid-report (userId -> attendanceId awaiting detail)
 const pendingDetails = new Map<string, number>();
+// Track teachers who've submitted A班, now awaiting B班 (userId -> attendanceId)
+const pendingGroupB = new Map<string, number>();
 
 export async function handleWebhook(req: NextRequest, region: LineRegion) {
   const body = await req.text();
@@ -52,7 +54,6 @@ async function handleFollow(userId: string, replyToken: string, token: string, r
     }
     await replyMessage(replyToken, [{ type: "text", text: "歡迎！請傳送您的園所綁定碼（6位英數字），即可開始接收課程回報。" }], token);
   } else {
-    // Auto-bind: check if userId already in DB
     const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
     if (teacher) {
       await prisma.teacher.update({ where: { id: teacher.id }, data: { lineRegion: region } } as never);
@@ -91,17 +92,15 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const dayNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
     const todayDay = dayNames[today.getDay()];
 
-    // Find today's scheduled courses for this teacher
     const courses = await prisma.course.findMany({
       where: { teacherId: teacher.id, dayOfWeek: todayDay, isActive: true },
-    }) as unknown as Array<{ id: number; school: string; courseType: string; category: string }>;
+    }) as unknown as Array<{ id: number; school: string; courseType: string; category: string; department: string }>;
 
     if (courses.length === 0) {
       await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，今天（${todayDay}）沒有排課。` }], token);
       return;
     }
 
-    // Find or auto-create attendance records
     const atts: Array<{ id: number; school: string; courseType: string }> = [];
     for (const course of courses) {
       let att = await prisma.attendance.findFirst({
@@ -123,7 +122,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
-  // Parse student count report: "幼兒園 16", "國小 12", "安親 8"
+  // Fallback: legacy "幼兒園 16" / "安親 8" text-based count (kept for manual entry)
   const countMatch = text.match(/^(幼兒園|國小|安親)\s+(\d+)$/);
   if (countMatch) {
     const dept = countMatch[1];
@@ -137,7 +136,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       const today = new Date();
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const end = new Date(start.getTime() + 86400000);
-      // Find today's most recent uncancelled attendance (no department filter to be safe)
       const att = await prisma.attendance.findFirst({
         where: { actualTeacherId: teacher.id, date: { gte: start, lt: end }, cancelled: false },
         orderBy: { id: "desc" },
@@ -146,7 +144,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
         await prisma.attendance.update({ where: { id: att.id }, data: { studentCount: count } });
         await replyMessage(replyToken, [{ type: "text", text: `✅ 已記錄 ${dept} 出席 ${count} 人！` }], token);
       } else {
-        await replyMessage(replyToken, [{ type: "text", text: `找不到今日課程紀錄，請請管理員先建立出勤紀錄。` }], token);
+        await replyMessage(replyToken, [{ type: "text", text: "找不到今日課程紀錄，請管理員先建立出勤紀錄。" }], token);
       }
     } catch (e) {
       console.error("studentCount error:", e);
@@ -158,7 +156,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   const upper = text.toUpperCase();
 
   if (region === "school") {
-    // School binding
     const school = await prisma.school.findFirst({ where: { lineBindCode: upper } });
     if (school) {
       await prisma.school.update({ where: { id: school.id }, data: { lineUserId: userId } });
@@ -169,7 +166,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
-  // Teacher binding
   const teacher = await prisma.teacher.findFirst({ where: { lineBindCode: upper } });
   if (teacher) {
     await prisma.teacher.update({ where: { id: teacher.id }, data: { lineUserId: userId, lineRegion: region } });
@@ -177,7 +173,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
-  // Check if already bound teacher
   const bound = await prisma.teacher.findFirst({ where: { lineUserId: userId } });
   if (bound) {
     await replyMessage(replyToken, [{ type: "text", text: `您好，${bound.name} 老師！如需課程回報請等候系統訊息，或聯絡管理員。` }], token);
@@ -193,7 +188,6 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const attendanceId = Number(params.get("id"));
 
   if (action === "select_progress") {
-    // Look up course type for this attendance record
     const attForCurriculum = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { course: true },
@@ -212,19 +206,23 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     const attInfo = await prisma.attendance.findUnique({
       where: { id: attendanceId }, include: { course: true },
     }) as unknown as { course: { department: string } } | null;
-    const dept = attInfo?.course?.department || "幼兒園";
-    await replyMessage(replyToken, [
-      { type: "text", text: `✅ 已記錄：【${content}】\n請點選今日出席人數：` },
-      buildStudentCountBoard(dept),
-    ], token);
+    const dept = attInfo?.course?.department ?? "幼兒園";
+    await sendCountBoard(attendanceId, dept, replyToken, token, `✅ 已記錄：【${content}】\n請填寫今日出席人數：`);
     await forwardReportToSchool(attendanceId, token);
+    return;
+  }
+
+  // New: handle count board submission via postback
+  if (action === "report_count") {
+    const group = params.get("group") ?? "";
+    const count = Number(params.get("count"));
+    await handleCountSubmit(userId, attendanceId, group, count, replyToken, token);
     return;
   }
 
   if (action === "report") {
     const status = params.get("status");
     const cancelled = status === "cancelled";
-
     await prisma.attendance.update({
       where: { id: attendanceId },
       data: { cancelled, reportContent: cancelled ? "停課" : "正常上課", reportSentAt: new Date() },
@@ -234,14 +232,10 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       const attInfo = await prisma.attendance.findUnique({
         where: { id: attendanceId }, include: { course: true },
       }) as unknown as { course: { department: string } } | null;
-      const dept = attInfo?.course?.department || "幼兒園";
-      await replyMessage(replyToken, [
-        { type: "text", text: "✅ 已記錄正常上課！請點選今日出席人數：" },
-        buildStudentCountBoard(dept),
-      ], token);
+      const dept = attInfo?.course?.department ?? "幼兒園";
+      await sendCountBoard(attendanceId, dept, replyToken, token, "✅ 已記錄正常上課！請填寫今日出席人數：");
       await forwardReportToSchool(attendanceId, token);
     } else {
-      // 停課不轉發給園所，只回覆老師
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
     }
     return;
@@ -257,9 +251,85 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 }
 
+// Decide whether to show A班 board (安親) or single board (幼兒園/國小)
+async function sendCountBoard(
+  attendanceId: number,
+  dept: string,
+  replyToken: string,
+  token: string,
+  prefixText: string,
+) {
+  const isAnqin = dept.includes("安親");
+  if (isAnqin) {
+    await replyMessage(replyToken, [
+      { type: "text", text: `${prefixText}\n安親班需分別填寫 A班 與 B班 人數：` },
+      buildStudentCountBoard(attendanceId, "A", dept),
+    ], token);
+  } else {
+    const max = dept.includes("幼兒園") ? 25 : 40;
+    await replyMessage(replyToken, [
+      { type: "text", text: prefixText },
+      buildStudentCountBoard(attendanceId, "", dept, 1, max),
+    ], token);
+  }
+}
+
+// Handle count board postback
+async function handleCountSubmit(
+  userId: string,
+  attendanceId: number,
+  group: string,
+  count: number,
+  replyToken: string,
+  token: string,
+) {
+  if (group === "A") {
+    // Save A班 count, show B班 board
+    await prisma.attendance.update({
+      where: { id: attendanceId },
+      data: { studentCountA: count } as never,
+    });
+    pendingGroupB.set(userId, attendanceId);
+    await replyMessage(replyToken, [
+      { type: "text", text: `✅ A班 已記錄 ${count} 人，請繼續填寫 B班 人數：` },
+      buildStudentCountBoard(attendanceId, "B", "安親", 1, 40),
+    ], token);
+    return;
+  }
+
+  if (group === "B") {
+    pendingGroupB.delete(userId);
+    // Save B班 count, compute total
+    const attA = await prisma.attendance.findUnique({ where: { id: attendanceId } }) as unknown as { studentCountA: number | null } | null;
+    const countA = attA?.studentCountA ?? 0;
+    const total = countA + count;
+    await prisma.attendance.update({
+      where: { id: attendanceId },
+      data: { studentCountB: count, studentCount: total } as never,
+    });
+    await replyMessage(replyToken, [{
+      type: "text",
+      text: `✅ 出席人數已記錄！\nA班：${countA} 人 ＋ B班：${count} 人 ＝ 合計 ${total} 人`,
+    }], token);
+    await forwardReportToSchool(attendanceId, token);
+    return;
+  }
+
+  // Single class (幼兒園 / 國小)
+  await prisma.attendance.update({
+    where: { id: attendanceId },
+    data: { studentCount: count },
+  });
+  const attInfo = await prisma.attendance.findUnique({
+    where: { id: attendanceId }, include: { course: true },
+  }) as unknown as { course: { department: string } } | null;
+  const dept = attInfo?.course?.department ?? "幼兒園";
+  await replyMessage(replyToken, [{ type: "text", text: `✅ ${dept} 出席 ${count} 人，已記錄！` }], token);
+  await forwardReportToSchool(attendanceId, token);
+}
+
 async function saveDetailedReport(userId: string, attendanceId: number, text: string, replyToken: string, token: string, region: LineRegion) {
   void region;
-  // Strip "自訂：" prefix if present
   const content = text.replace(/^自訂[：:]\s*/, "").trim() || "";
 
   await prisma.attendance.update({
@@ -267,19 +337,25 @@ async function saveDetailedReport(userId: string, attendanceId: number, text: st
     data: { reportContent: content, reportSentAt: new Date() },
   });
 
-  // Look up the course department to send the right number board
   const att = await prisma.attendance.findUnique({
     where: { id: attendanceId },
     include: { course: true },
   }) as unknown as { course: { department: string } } | null;
 
-  const dept = att?.course?.department || "幼兒園";
-  const countBoard = buildStudentCountBoard(dept);
-
-  await replyMessage(replyToken, [
-    { type: "text", text: `✅ 成功記錄：【${content}】\n🚀 已同步發送綠色圖卡推播給園所！` },
-    countBoard,
-  ], token);
+  const dept = att?.course?.department ?? "幼兒園";
+  const isAnqin = dept.includes("安親");
+  if (isAnqin) {
+    await replyMessage(replyToken, [
+      { type: "text", text: `✅ 成功記錄：【${content}】\n安親班請分別填寫 A班 與 B班 人數：` },
+      buildStudentCountBoard(attendanceId, "A", dept),
+    ], token);
+  } else {
+    const max = dept.includes("幼兒園") ? 25 : 40;
+    await replyMessage(replyToken, [
+      { type: "text", text: `✅ 成功記錄：【${content}】\n請填寫今日出席人數：` },
+      buildStudentCountBoard(attendanceId, "", dept, 1, max),
+    ], token);
+  }
   await forwardReportToSchool(attendanceId, token);
 }
 
@@ -294,12 +370,20 @@ async function forwardReportToSchool(attendanceId: number, _teacherToken: string
   if (!school?.lineUserId) return;
 
   const schoolCfg = getLineConfig("school");
+
+  // Build display studentCount: prefer total; if A/B exist, compute
+  const attData = att as unknown as { studentCount: number | null; studentCountA: number | null; studentCountB: number | null };
+  const displayCount = attData.studentCount ??
+    (attData.studentCountA != null && attData.studentCountB != null
+      ? attData.studentCountA + attData.studentCountB
+      : attData.studentCountA ?? attData.studentCountB ?? null);
+
   const msg = buildSchoolReportMessage({
     teacherName: att.actualTeacher.name,
     school: att.course.school,
     courseType: att.course.courseType,
     date: att.date.toISOString().slice(0, 10),
-    studentCount: att.studentCount,
+    studentCount: displayCount,
     content: att.reportContent,
     cancelled: att.cancelled,
   });

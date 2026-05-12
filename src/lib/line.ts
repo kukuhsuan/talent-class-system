@@ -197,18 +197,18 @@ export function buildCurriculumSelectMessage(attendanceId: number, courseType: s
       type: "bubble",
       size: "kilo",
       header: {
-        type: "box", layout: "vertical", backgroundColor: "#6F4E37", paddingAll: "12px",
+        type: "box", layout: "vertical", backgroundColor: "#7B9E87", paddingAll: "12px",
         contents: [
-          { type: "text", text: `📋 ${label}課程進度`, color: "#FDF6EE", weight: "bold", size: "sm" },
-          { type: "text", text: `第 ${startLesson}～${endLesson} 堂`, color: "#E8D5C0", size: "xs", margin: "xs" },
+          { type: "text", text: `📋 ${label}課程進度`, color: "#F6F3EE", weight: "bold", size: "sm" },
+          { type: "text", text: `第 ${startLesson}～${endLesson} 堂`, color: "#DDD8D0", size: "xs", margin: "xs" },
         ],
       },
       body: {
-        type: "box", layout: "vertical", backgroundColor: "#FDF6EE", spacing: "xs", paddingAll: "10px",
+        type: "box", layout: "vertical", backgroundColor: "#F6F3EE", spacing: "xs", paddingAll: "10px",
         contents: page.map((c) => ({
           type: "button",
           style: "secondary" as const,
-          color: "#E8D5C0",
+          color: "#DDD8D0",
           height: "sm" as const,
           action: {
             type: "postback",
@@ -218,9 +218,9 @@ export function buildCurriculumSelectMessage(attendanceId: number, courseType: s
         })),
       },
       footer: {
-        type: "box", layout: "vertical", backgroundColor: "#FDF6EE", paddingAll: "8px",
+        type: "box", layout: "vertical", backgroundColor: "#F6F3EE", paddingAll: "8px",
         contents: [{
-          type: "button", style: "primary" as const, color: "#8B5E3C", height: "sm" as const,
+          type: "button", style: "primary" as const, color: "#5C8A78", height: "sm" as const,
           action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${attendanceId}` },
         }],
       },
@@ -295,7 +295,7 @@ export function buildReminderMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#1E40AF",
+        backgroundColor: "#6B8FAB",
         contents: [{ type: "text", text: "課程提醒", color: "#ffffff", weight: "bold", size: "lg" }],
       },
       body: {
@@ -340,41 +340,41 @@ export function buildReportRequestMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#6F4E37",
+        backgroundColor: "#7B9E87",
         paddingAll: "16px",
         contents: [
-          { type: "text", text: "☕ 課程回報", color: "#FDF6EE", weight: "bold", size: "lg" },
+          { type: "text", text: "📝 課程回報", color: "#F6F3EE", weight: "bold", size: "lg" },
         ],
       },
       body: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#FDF6EE",
+        backgroundColor: "#F6F3EE",
         spacing: "sm",
         paddingAll: "16px",
         contents: [
-          { type: "text", text: opts.school, weight: "bold", color: "#4A2C17", size: "lg" },
-          { type: "text", text: `課程：${label}`, size: "sm", color: "#8B6347" },
-          { type: "separator", margin: "md", color: "#E8D5C0" },
-          { type: "text", text: "請選擇今日課程進度：", size: "sm", color: "#8B6347", margin: "md" },
+          { type: "text", text: opts.school, weight: "bold", color: "#2E2B27", size: "lg" },
+          { type: "text", text: `課程：${label}`, size: "sm", color: "#6B6358" },
+          { type: "separator", margin: "md", color: "#DDD8D0" },
+          { type: "text", text: "請選擇今日課程進度：", size: "sm", color: "#6B6358", margin: "md" },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
         spacing: "sm",
-        backgroundColor: "#FDF6EE",
+        backgroundColor: "#F6F3EE",
         contents: [
           {
             type: "button",
             style: "primary",
-            color: "#6F4E37",
+            color: "#7B9E87",
             action: { type: "postback", label: "📋 選擇課程進度", data: `action=select_progress&id=${opts.attendanceId}` },
           },
           {
             type: "button",
             style: "primary",
-            color: "#C8956C",
+            color: "#8BA4B2",
             action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${opts.attendanceId}` },
           },
         ],
@@ -394,27 +394,27 @@ export function buildProgressSelectMessage(attendanceId: number) {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#C8956C",
+        backgroundColor: "#8BA4B2",
         paddingAll: "14px",
-        contents: [{ type: "text", text: "📋 今日課程進度", color: "#FDF6EE", weight: "bold" }],
+        contents: [{ type: "text", text: "📋 今日課程進度", color: "#F6F3EE", weight: "bold" }],
       },
       body: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#FDF6EE",
+        backgroundColor: "#F6F3EE",
         spacing: "sm",
         paddingAll: "14px",
         contents: [
           ...presets.map((p) => ({
             type: "button",
             style: "secondary" as const,
-            color: "#E8D5C0",
+            color: "#DDD8D0",
             action: { type: "postback", label: p, data: `action=report_progress&id=${attendanceId}&content=${encodeURIComponent(p)}` },
           })),
           {
             type: "button",
             style: "primary" as const,
-            color: "#8B5E3C",
+            color: "#5C8A78",
             action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${attendanceId}` },
           },
         ],
@@ -441,50 +441,50 @@ export function buildSchoolReportMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#6F4E37",
+        backgroundColor: "#7B9E87",
         paddingAll: "16px",
-        contents: [{ type: "text", text: "🌟 本週課程完成報告", color: "#FDF6EE", weight: "bold", size: "md" }],
+        contents: [{ type: "text", text: "🌟 本週課程完成報告", color: "#F6F3EE", weight: "bold", size: "md" }],
       },
       body: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#FDF6EE",
+        backgroundColor: "#F6F3EE",
         spacing: "md",
         paddingAll: "16px",
         contents: [
-          { type: "text", text: opts.school, weight: "bold", color: "#4A2C17", size: "xl" },
-          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#8B6347" },
-          { type: "separator", color: "#E8D5C0", margin: "sm" },
-          { type: "text", text: `教練：${opts.teacherName}`, size: "sm", color: "#4A2C17", margin: "sm" },
+          { type: "text", text: opts.school, weight: "bold", color: "#2E2B27", size: "xl" },
+          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#6B6358" },
+          { type: "separator", color: "#DDD8D0", margin: "sm" },
+          { type: "text", text: `教練：${opts.teacherName}`, size: "sm", color: "#2E2B27", margin: "sm" },
           ...(opts.studentCount != null ? [{
             type: "box", layout: "horizontal", margin: "sm",
             contents: [
-              { type: "text", text: "✅ 完成進度：", size: "sm", color: "#6F4E37", flex: 0 },
-              { type: "text", text: opts.content || "正常上課", size: "sm", color: "#4A2C17", weight: "bold", wrap: true },
+              { type: "text", text: "✅ 完成進度：", size: "sm", color: "#7B9E87", flex: 0 },
+              { type: "text", text: opts.content || "正常上課", size: "sm", color: "#2E2B27", weight: "bold", wrap: true },
             ],
           }] : []),
           ...(opts.content && !opts.studentCount ? [{
             type: "box", layout: "vertical", margin: "sm",
-            backgroundColor: "#F0E0CC", cornerRadius: "8px", paddingAll: "10px",
+            backgroundColor: "#EAE4DC", cornerRadius: "8px", paddingAll: "10px",
             contents: [
-              { type: "text", text: "📌 主題：", size: "xs", color: "#8B6347" },
-              { type: "text", text: opts.content, size: "sm", color: "#4A2C17", wrap: true, margin: "xs" },
+              { type: "text", text: "📌 主題：", size: "xs", color: "#6B6358" },
+              { type: "text", text: opts.content, size: "sm", color: "#2E2B27", wrap: true, margin: "xs" },
             ],
           }] : []),
           ...(opts.studentCount != null ? [{
             type: "box", layout: "horizontal", margin: "sm",
-            backgroundColor: "#F0E0CC", cornerRadius: "8px", paddingAll: "10px",
+            backgroundColor: "#EAE4DC", cornerRadius: "8px", paddingAll: "10px",
             contents: [
-              { type: "text", text: "👦 出席人數", size: "sm", color: "#8B6347", flex: 1 },
-              { type: "text", text: `${opts.studentCount} 人`, size: "md", color: "#4A2C17", weight: "bold", align: "end" },
+              { type: "text", text: "👦 出席人數", size: "sm", color: "#6B6358", flex: 1 },
+              { type: "text", text: `${opts.studentCount} 人`, size: "md", color: "#2E2B27", weight: "bold", align: "end" },
             ],
           }] : []),
           {
             type: "box", layout: "vertical", margin: "sm",
-            backgroundColor: "#F0E0CC", cornerRadius: "8px", paddingAll: "10px",
+            backgroundColor: "#EAE4DC", cornerRadius: "8px", paddingAll: "10px",
             contents: [
-              { type: "text", text: "💡 學習重點：", size: "xs", color: "#8B6347" },
-              { type: "text", text: "教練依據現場狀況與孩童需求，進行專屬客製化教學。", size: "xs", color: "#8B6347", wrap: true, margin: "xs" },
+              { type: "text", text: "💡 學習重點：", size: "xs", color: "#6B6358" },
+              { type: "text", text: "教練依據現場狀況與孩童需求，進行專屬客製化教學。", size: "xs", color: "#6B6358", wrap: true, margin: "xs" },
             ],
           },
         ],
@@ -493,30 +493,52 @@ export function buildSchoolReportMessage(opts: {
   };
 }
 
-// Student count board (幼兒園報數盤)
-export function buildStudentCountBoard(department: string, min = 1, max = 40) {
-  const nums = Array.from({ length: max - min + 1 }, (_, i) => i + min);
+// Student count board — uses postback so group info is carried
+// group: "" = single class (幼兒園/國小), "A" = 安親A班, "B" = 安親B班
+export function buildStudentCountBoard(
+  attendanceId: number,
+  group: "" | "A" | "B",
+  department: string,
+  min = 1,
+  max = 40,
+) {
+  const isAnqin = group !== "";
+  const headerLabel = isAnqin ? `👥 ${department} ${group}班 人數` : `👥 ${department} 出席人數`;
+  const headerColor = isAnqin && group === "B" ? "#8BA4B2" : "#7B9E87";
+  const maxCount = isAnqin ? 40 : 25; // 安親 max 40, 幼兒園 max 25
+  const actualMax = Math.min(max, maxCount);
+
+  const nums = Array.from({ length: actualMax - min + 1 }, (_, i) => i + min);
   const rows: object[] = [];
-  for (let i = 0; i < nums.length; i += 4) {
-    const chunk = nums.slice(i, i + 4);
+  for (let i = 0; i < nums.length; i += 5) {
+    const chunk = nums.slice(i, i + 5);
     rows.push({
-      type: "box", layout: "horizontal", spacing: "sm",
+      type: "box", layout: "horizontal", spacing: "xs",
       contents: chunk.map((n) => ({
-        type: "button", style: "secondary", height: "sm",
-        action: { type: "message", label: String(n), text: `${department} ${n}` },
+        type: "button", style: "secondary", height: "sm", color: "#EAE4DC",
+        action: {
+          type: "postback",
+          label: String(n),
+          data: `action=report_count&id=${attendanceId}&group=${group}&count=${n}`,
+        },
       })),
     });
   }
+
   return {
     type: "flex",
-    altText: `🔵 ${department}報數盤`,
+    altText: headerLabel,
     contents: {
       type: "bubble",
       header: {
-        type: "box", layout: "vertical", backgroundColor: "#92400E",
-        contents: [{ type: "text", text: `🔵 ${department}報數盤`, color: "#ffffff", weight: "bold" }],
+        type: "box", layout: "vertical", backgroundColor: headerColor, paddingAll: "12px",
+        contents: [{ type: "text", text: headerLabel, color: "#ffffff", weight: "bold", size: "sm" }],
       },
-      body: { type: "box", layout: "vertical", spacing: "sm", contents: rows },
+      body: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "12px",
+        backgroundColor: "#F6F3EE",
+        contents: rows,
+      },
     },
   };
 }
@@ -533,10 +555,10 @@ export function buildScheduleMessage(opts: {
     paddingTop: "6px",
     paddingBottom: "6px",
     contents: [
-      { type: "text", text: c.dayOfWeek.replace("星期", ""), size: "sm", color: "#8B6347", flex: 1, align: "center" as const },
-      { type: "text", text: courseLabel(c.courseType), size: "sm", color: "#4A2C17", flex: 2 },
-      { type: "text", text: c.school, size: "sm", color: "#4A2C17", flex: 3, wrap: true },
-      { type: "text", text: c.time || "—", size: "xs", color: "#8B6347", flex: 2, align: "end" as const },
+      { type: "text", text: c.dayOfWeek.replace("星期", ""), size: "sm", color: "#6B6358", flex: 1, align: "center" as const },
+      { type: "text", text: courseLabel(c.courseType), size: "sm", color: "#2E2B27", flex: 2 },
+      { type: "text", text: c.school, size: "sm", color: "#2E2B27", flex: 3, wrap: true },
+      { type: "text", text: c.time || "—", size: "xs", color: "#6B6358", flex: 2, align: "end" as const },
     ],
   }));
 
@@ -548,17 +570,17 @@ export function buildScheduleMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#6F4E37",
+        backgroundColor: "#7B9E87",
         paddingAll: "16px",
         contents: [
-          { type: "text", text: "📅 本週課程表", color: "#FDF6EE", weight: "bold", size: "lg" },
-          { type: "text", text: `${opts.teacherName} 老師　${opts.weekLabel}`, color: "#E8D5C0", size: "sm", margin: "xs" },
+          { type: "text", text: "📅 本週課程表", color: "#F6F3EE", weight: "bold", size: "lg" },
+          { type: "text", text: `${opts.teacherName} 老師　${opts.weekLabel}`, color: "#DDD8D0", size: "sm", margin: "xs" },
         ],
       },
       body: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#FDF6EE",
+        backgroundColor: "#F6F3EE",
         paddingAll: "14px",
         spacing: "none",
         contents: [
@@ -566,25 +588,25 @@ export function buildScheduleMessage(opts: {
             type: "box",
             layout: "horizontal",
             contents: [
-              { type: "text", text: "星期", size: "xs", color: "#C8956C", flex: 1, align: "center" as const, weight: "bold" },
-              { type: "text", text: "課程", size: "xs", color: "#C8956C", flex: 2, weight: "bold" },
-              { type: "text", text: "地點", size: "xs", color: "#C8956C", flex: 3, weight: "bold" },
-              { type: "text", text: "時間", size: "xs", color: "#C8956C", flex: 2, align: "end" as const, weight: "bold" },
+              { type: "text", text: "星期", size: "xs", color: "#8BA4B2", flex: 1, align: "center" as const, weight: "bold" },
+              { type: "text", text: "課程", size: "xs", color: "#8BA4B2", flex: 2, weight: "bold" },
+              { type: "text", text: "地點", size: "xs", color: "#8BA4B2", flex: 3, weight: "bold" },
+              { type: "text", text: "時間", size: "xs", color: "#8BA4B2", flex: 2, align: "end" as const, weight: "bold" },
             ],
           },
-          { type: "separator", margin: "sm", color: "#E8D5C0" },
+          { type: "separator", margin: "sm", color: "#DDD8D0" },
           ...rows,
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#FDF6EE",
+        backgroundColor: "#F6F3EE",
         contents: [{
           type: "text",
           text: "祝教學順利，謝謝您！☕",
           size: "xs",
-          color: "#C8956C",
+          color: "#8BA4B2",
           align: "center" as const,
         }],
       },
