@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildScheduleMessage, courseLabel, generateBindCode,
+  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, courseLabel, generateBindCode,
 } from "@/lib/line";
 
 type LineEvent = {
@@ -141,7 +141,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     }
     const courses = await prisma.course.findMany({
       where: { teacherId: teacher.id, isActive: true },
-      orderBy: [{ dayOfWeek: "asc" }, { time: "asc" }],
     }) as unknown as Array<{ school: string; courseType: string; dayOfWeek: string; time: string }>;
 
     if (courses.length === 0) {
@@ -149,19 +148,58 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       return;
     }
 
-    const DAY_ORDER = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
-    const sorted = [...courses].sort((a, b) => DAY_ORDER.indexOf(a.dayOfWeek) - DAY_ORDER.indexOf(b.dayOfWeek));
-
-    // Week label: this week Mon–Sun
+    // Build 8 weeks (≈2 months) starting from this Monday
+    const DAY_JS: Record<string, number> = {
+      "星期一": 1, "星期二": 2, "星期三": 3, "星期四": 4,
+      "星期五": 5, "星期六": 6, "星期日": 0,
+    };
+    const DAY_SHORT: Record<string, string> = {
+      "星期一": "一", "星期二": "二", "星期三": "三", "星期四": "四",
+      "星期五": "五", "星期六": "六", "星期日": "日",
+    };
     const now = new Date();
-    const day = now.getDay();
-    const diffToMon = day === 0 ? -6 : 1 - day;
-    const mon = new Date(now); mon.setDate(now.getDate() + diffToMon);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
-    const weekLabel = `${fmt(mon)} ~ ${fmt(sun)}`;
+    const jsDay = now.getDay();
+    const diffToMon = jsDay === 0 ? -6 : 1 - jsDay;
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() + diffToMon);
+    thisMonday.setHours(0, 0, 0, 0);
 
-    const msg = buildScheduleMessage({ teacherName: teacher.name, weekLabel, courses: sorted });
+    const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const fmtShort = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+
+    const weeks = Array.from({ length: 8 }, (_, wi) => {
+      const mon = new Date(thisMonday);
+      mon.setDate(thisMonday.getDate() + wi * 7);
+      const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+      const sat = new Date(mon); sat.setDate(mon.getDate() + 5);
+
+      // All course occurrences this week
+      const entries = courses
+        .filter((c) => DAY_JS[c.dayOfWeek] !== undefined)
+        .map((c) => {
+          const d = new Date(mon);
+          const targetDay = DAY_JS[c.dayOfWeek];
+          const diff = targetDay === 0 ? 6 : targetDay - 1;
+          d.setDate(mon.getDate() + diff);
+          return {
+            date: fmtShort(d),
+            dayShort: DAY_SHORT[c.dayOfWeek] ?? "",
+            school: c.school,
+            courseType: c.courseType,
+            time: c.time,
+            sortKey: diff,
+          };
+        })
+        .sort((a, b) => a.sortKey - b.sortKey);
+
+      return {
+        label: `${fmt(mon)} ~ ${fmt(sat)}`,
+        month: `${mon.getMonth() + 1}月`,
+        entries,
+      };
+    });
+
+    const msg = buildTwoMonthScheduleMessage({ teacherName: teacher.name, weeks });
     await replyMessage(replyToken, [msg], token);
     return;
   }

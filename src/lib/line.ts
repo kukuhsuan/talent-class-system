@@ -614,6 +614,48 @@ export function buildScheduleMessage(opts: {
   };
 }
 
+// Build a 2-month schedule as a carousel (one bubble per week, ~8 weeks)
+export function buildTwoMonthScheduleMessage(opts: {
+  teacherName: string;
+  weeks: Array<{
+    label: string;       // e.g. "5/12（一）~ 5/16（五）"
+    month: string;       // e.g. "5月"
+    entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string }>;
+  }>;
+}): object {
+  const bubbles = opts.weeks.map((week) => ({
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box", layout: "horizontal", backgroundColor: "#7B9E87", paddingAll: "10px",
+      contents: [
+        { type: "text", text: week.month, color: "#DDD8D0", size: "xs", flex: 0 },
+        { type: "text", text: week.label, color: "#F6F3EE", size: "sm", weight: "bold", flex: 1, margin: "sm" },
+      ],
+    },
+    body: {
+      type: "box", layout: "vertical", backgroundColor: "#F6F3EE", paddingAll: "10px", spacing: "xs",
+      contents: week.entries.length > 0
+        ? week.entries.map((e) => ({
+          type: "box", layout: "horizontal", paddingTop: "4px", paddingBottom: "4px",
+          contents: [
+            { type: "text", text: `${e.date}`, size: "xs", color: "#6B6358", flex: 2 },
+            { type: "text", text: courseLabel(e.courseType), size: "xs", color: "#2E2B27", flex: 2 },
+            { type: "text", text: e.school, size: "xs", color: "#2E2B27", flex: 4, wrap: true },
+            { type: "text", text: e.time || "—", size: "xs", color: "#9A9088", flex: 2, align: "end" as const },
+          ],
+        }))
+        : [{ type: "text", text: "本週無課", size: "sm", color: "#9A9088", align: "center" as const }],
+    },
+  }));
+
+  return {
+    type: "flex",
+    altText: `${opts.teacherName} 老師近2個月課程表`,
+    contents: { type: "carousel", contents: bubbles },
+  };
+}
+
 export function generateBindCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
