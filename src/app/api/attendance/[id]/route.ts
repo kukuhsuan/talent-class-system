@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseAttendanceDay } from "@/lib/attendanceBatch";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await req.json();
   const record = await prisma.attendance.update({
     where: { id: Number(id) },
-    data: { ...data, date: data.date ? new Date(data.date) : undefined },
+    data: { ...data, date: data.date ? parseAttendanceDay(String(data.date).slice(0, 10)) : undefined },
     include: { course: true, actualTeacher: true },
   });
   return NextResponse.json(record);

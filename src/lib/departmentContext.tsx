@@ -11,8 +11,10 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
   const [dept, setDeptState] = useState<Department>("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("dept") as Department | null;
-    if (saved) setDeptState(saved);
+    queueMicrotask(() => {
+      const saved = localStorage.getItem("dept") as Department | null;
+      if (saved) setDeptState(saved);
+    });
   }, []);
 
   function setDept(d: Department) {

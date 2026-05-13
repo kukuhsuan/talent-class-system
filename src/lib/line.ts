@@ -190,7 +190,7 @@ export function buildCurriculumSelectMessage(attendanceId: number, courseType: s
     pages.push(curriculum.slice(i, i + PAGE_SIZE));
   }
 
-  const bubbles = pages.map((page, pi) => {
+  const bubbles = pages.map((page) => {
     const startLesson = page[0].lesson;
     const endLesson = page[page.length - 1].lesson;
     return {

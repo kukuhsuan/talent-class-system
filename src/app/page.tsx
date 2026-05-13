@@ -35,8 +35,12 @@ export default function Home() {
       const attendance: Attendance[] = data.attendance ?? [];
       const teacherCount: number = data.teacherCount ?? 0;
 
-      const todayC = courses.filter((c) => c.dayOfWeek === todayDayName);
       const todayA = attendance.filter((a) => a.date.slice(0, 10) === todayStr);
+      const fromWeekday = courses.filter((c) => c.dayOfWeek === todayDayName);
+      const fromScheduled = courses.filter((c) => todayA.some((a) => a.course.id === c.id));
+      const todayC = [...fromWeekday, ...fromScheduled].filter(
+        (c, i, arr) => arr.findIndex((x) => x.id === c.id) === i,
+      );
       const monthCount = attendance.filter((a) => !a.cancelled).length;
 
       setTodayCourses(todayC);
@@ -46,7 +50,7 @@ export default function Home() {
       setLoading(false);
     }
     load();
-  }, [dept]);
+  }, [dept, year, month, todayStr, todayDayName]);
 
   function getAttendanceForCourse(courseId: number) {
     return todayAttendance.find((a) => a.course.id === courseId);

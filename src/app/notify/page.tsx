@@ -5,7 +5,6 @@ type Teacher = { id: number; name: string; lineUserId: string | null; lineBindCo
 type School = { id: number; name: string; region: string; lineUserId: string | null; lineBindCode: string | null };
 type Attendance = { id: number; date: string; course: { school: string; courseType: string; code: string }; actualTeacher: { name: string; lineUserId: string | null }; reportSentAt: string | null; reportContent: string; cancelled: boolean; studentCount: number | null };
 
-const REGIONS = ["north", "south"] as const;
 const REGION_LABEL = { north: "北部", south: "南部" };
 
 export default function NotifyPage() {

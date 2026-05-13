@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
@@ -14,6 +14,7 @@ const CATS = ["課後", "課內", "Demo", "試上"];
 const EMPTY_FORM = {
   date: today(), courseId: 0, actualTeacherId: 0,
   studentCount: "", cancelled: false, category: "課後", hours: 1, notes: "",
+  extraDates: [] as string[],
 };
 
 export default function AttendancePage() {
@@ -27,7 +28,7 @@ export default function AttendancePage() {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
 
-  const load = () => {
+  const load = useCallback(() => {
     const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
     if (dept) params.set("dept", dept);
     Promise.all([
@@ -35,9 +36,9 @@ export default function AttendancePage() {
       fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
       fetch("/api/teachers").then((r) => r.json()),
     ]).then(([a, c, t]) => { setRecords(a); setCourses(c); setTeachers(t); });
-  };
+  }, [filterYear, filterMonth, dept]);
 
-  useEffect(() => { load(); }, [filterYear, filterMonth, dept]);
+  useEffect(() => { load(); }, [load]);
 
   const onCourseChange = (courseId: number) => {
     const c = courses.find((x) => x.id === courseId);
@@ -46,12 +47,28 @@ export default function AttendancePage() {
 
   const save = async () => {
     if (!form.courseId || !form.actualTeacherId || !form.date) return alert("請填寫必填欄位");
-    const body = JSON.stringify({ ...form, studentCount: form.studentCount === "" ? null : Number(form.studentCount) });
     const headers = { "Content-Type": "application/json" };
     if (editing !== null) {
+      const { extraDates: _x, ...rest } = form;
+      void _x;
+      const body = JSON.stringify({ ...rest, studentCount: form.studentCount === "" ? null : Number(form.studentCount) });
       await fetch(`/api/attendance/${editing}`, { method: "PUT", headers, body });
     } else {
-      await fetch("/api/attendance", { method: "POST", headers, body });
+      const dateSet = [...new Set([form.date, ...form.extraDates].map((d) => d.slice(0, 10)).filter(Boolean))];
+      const { extraDates: _x, date: _d, ...rest } = form;
+      void _x; void _d;
+      const body = JSON.stringify({
+        ...rest,
+        dates: dateSet,
+        studentCount: form.studentCount === "" ? null : Number(form.studentCount),
+      });
+      const res = await fetch("/api/attendance", { method: "POST", headers, body });
+      const data = await res.json();
+      if (data.created != null) {
+        const parts = [`已建立 ${data.created} 筆上課紀錄`];
+        if (data.skipped > 0) parts.push(`略過 ${data.skipped} 筆重複日期`);
+        alert(parts.join("；"));
+      }
     }
     setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
   };
@@ -63,7 +80,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, category: r.category, hours: r.hours, notes: r.notes });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, category: r.category, hours: r.hours, notes: r.notes, extraDates: [] });
     setEditing(r.id); setShowForm(true);
   };
 
@@ -81,7 +98,7 @@ export default function AttendancePage() {
             className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
             匯出 Excel
           </a>
-          <button onClick={() => { setForm({ ...EMPTY_FORM, date: today() }); setEditing(null); setShowForm(true); }}
+          <button onClick={() => { setForm({ ...EMPTY_FORM, date: today(), extraDates: [] }); setEditing(null); setShowForm(true); }}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
             + 新增上課紀錄
           </button>
@@ -96,6 +113,33 @@ export default function AttendancePage() {
               <label>上課日期 *</label>
               <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
+            {editing === null && (
+              <div className="col-span-2 md:col-span-3">
+                <label className="block text-sm font-medium text-slate-700 mb-1">其他上課日（選填，可不連續）</label>
+                <p className="text-xs text-slate-500 mb-2">與上方日期合併建立多筆紀錄；同日同課程已存在則略過。</p>
+                {form.extraDates.length === 0 && (
+                  <button type="button" onClick={() => setForm((f) => ({ ...f, extraDates: [""] }))}
+                    className="text-sm text-blue-600 hover:underline">+ 加入其他日期</button>
+                )}
+                <div className="flex flex-col gap-2 mt-1">
+                  {form.extraDates.map((d, i) => (
+                    <div key={i} className="flex flex-wrap items-center gap-2">
+                      <input type="date" value={d} onChange={(e) => {
+                        const next = [...form.extraDates];
+                        next[i] = e.target.value;
+                        setForm({ ...form, extraDates: next });
+                      }} />
+                      <button type="button" onClick={() => setForm((f) => ({ ...f, extraDates: f.extraDates.filter((_, j) => j !== i) }))}
+                        className="text-xs text-red-500 hover:underline">移除</button>
+                    </div>
+                  ))}
+                  {form.extraDates.length > 0 && (
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, extraDates: [...f.extraDates, ""] }))}
+                      className="self-start text-sm text-blue-600 hover:underline">+ 再加一個日期</button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="col-span-2">
               <label>課程 *</label>
               <select value={form.courseId} onChange={(e) => onCourseChange(Number(e.target.value))}>
