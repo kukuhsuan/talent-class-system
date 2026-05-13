@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
@@ -10,12 +10,19 @@ type Course = {
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
 };
 
+type DeptOption = (typeof DEPARTMENTS)[number];
+
+function coerceDept(s: string): DeptOption {
+  return (DEPARTMENTS as readonly string[]).includes(s) ? (s as DeptOption) : "幼兒園";
+}
+
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 const CATS = ["課後", "課內", "Demo", "試上"];
 
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, school: "", schoolId: null as number | null,
-  courseType: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as string, enrollCount: "", isActive: true, notes: "",
+  courseType: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "",
+  scheduledDates: [] as string[],
 };
 
 export default function CoursesPage() {
@@ -23,19 +30,22 @@ export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
-  const [form, setForm] = useState({ ...EMPTY_FORM, department: dept || "幼兒園" });
+  const [form, setForm] = useState({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") });
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
 
-  const load = () =>
-    Promise.all([
-      fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
-      fetch("/api/teachers").then((r) => r.json()),
-      fetch("/api/schools").then((r) => r.json()),
-    ]).then(([c, t, s]) => { setCourses(c); setTeachers(t); setSchools(s); });
+  const load = useCallback(
+    () =>
+      Promise.all([
+        fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
+        fetch("/api/teachers").then((r) => r.json()),
+        fetch("/api/schools").then((r) => r.json()),
+      ]).then(([c, t, s]) => { setCourses(c); setTeachers(t); setSchools(s); }),
+    [dept],
+  );
 
-  useEffect(() => { load(); }, [dept]);
+  useEffect(() => { load(); }, [load]);
 
   function selectSchool(schoolId: number) {
     const s = schools.find((s) => s.id === schoolId);
@@ -45,14 +55,15 @@ export default function CoursesPage() {
 
   const save = async () => {
     if (!form.code.trim() || !form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
-    const body = JSON.stringify(form);
+    const scheduledDates = [...new Set(form.scheduledDates.map((d) => d.trim().slice(0, 10)).filter(Boolean))];
+    const body = JSON.stringify({ ...form, scheduledDates: editing === null ? scheduledDates : [] });
     const headers = { "Content-Type": "application/json" };
     if (editing !== null) {
       await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
     } else {
       await fetch("/api/courses", { method: "POST", headers, body });
     }
-    setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
+    setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); load();
   };
 
   const del = async (id: number, code: string) => {
@@ -64,7 +75,7 @@ export default function CoursesPage() {
   const edit = (c: Course) => {
     setForm({ code: c.code, region: c.region, teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
-      department: c.department || "幼兒園", enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes });
+      department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes, scheduledDates: [] });
     setEditing(c.id); setShowForm(true);
   };
 
@@ -83,7 +94,7 @@ export default function CoursesPage() {
           <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
           <p className="text-sm text-slate-500">共 {courses.length} 門課程</p>
         </div>
-        <button onClick={() => { setForm(EMPTY_FORM); setEditing(null); setShowForm(true); }}
+        <button onClick={() => { setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(true); }}
           className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
           + 新增課程
         </button>
@@ -141,7 +152,7 @@ export default function CoursesPage() {
             </div>
             <div>
               <label>部門</label>
-              <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
+              <select value={form.department} onChange={(e) => setForm({ ...form, department: coerceDept(e.target.value) })}>
                 {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
@@ -153,6 +164,33 @@ export default function CoursesPage() {
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
+            {editing === null && (
+              <div className="col-span-2 md:col-span-4 border-t border-slate-100 pt-4 mt-1">
+                <label className="block text-sm font-medium text-slate-700 mb-2">預排上課日（選填，可多日、可不連續）</label>
+                <p className="text-xs text-slate-500 mb-2">儲存後會自動建立對應的上課紀錄；若留空則僅建立課程排班，之後請到「上課紀錄」手動新增。</p>
+                <div className="flex flex-col gap-2">
+                  {form.scheduledDates.length === 0 && (
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [""] }))}
+                      className="self-start text-sm text-blue-600 hover:underline">+ 加入日期</button>
+                  )}
+                  {form.scheduledDates.map((d, i) => (
+                    <div key={i} className="flex flex-wrap items-center gap-2">
+                      <input type="date" value={d} onChange={(e) => {
+                        const next = [...form.scheduledDates];
+                        next[i] = e.target.value;
+                        setForm({ ...form, scheduledDates: next });
+                      }} className="text-sm" />
+                      <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: f.scheduledDates.filter((_, j) => j !== i) }))}
+                        className="text-xs text-red-500 hover:underline">移除</button>
+                    </div>
+                  ))}
+                  {form.scheduledDates.length > 0 && (
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [...f.scheduledDates, ""] }))}
+                      className="self-start text-sm text-blue-600 hover:underline">+ 再加一個日期</button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex items-end pb-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="w-4 h-4" />

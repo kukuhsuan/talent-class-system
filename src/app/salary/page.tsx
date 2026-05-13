@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Teacher = { id: number; name: string; rateAfterSchool: number; travelFee: number };
 type Detail = {
@@ -28,15 +28,18 @@ export default function SalaryPage() {
   const [emailing, setEmailing] = useState<number | null>(null);
   const [sentMsg, setSentMsg] = useState("");
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    await Promise.resolve();
     setLoading(true);
     const res = await fetch(`/api/salary?year=${year}&month=${month}`);
     const json = await res.json();
     setData(json);
     setLoading(false);
-  };
+  }, [year, month]);
 
-  useEffect(() => { load(); }, [year, month]);
+  useEffect(() => {
+    void Promise.resolve().then(() => load());
+  }, [load]);
 
   const toggleExpand = (id: number) => {
     setExpanded((prev) => {

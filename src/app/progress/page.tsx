@@ -25,19 +25,25 @@ export default function ProgressPage() {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
-    if (dept) params.set("dept", dept);
-    if (filterTeacher) params.set("teacherId", filterTeacher);
-    if (filterSchool) params.set("school", filterSchool);
-    fetch(`/api/progress?${params}`)
-      .then((r) => r.json())
-      .then((data: ProgressRecord[]) => {
-        setRecords(data);
-        const schoolSet = [...new Set(data.map((r) => r.course.school))].sort();
-        setSchools(schoolSet);
-        setLoading(false);
-      });
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      setLoading(true);
+      const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
+      if (dept) params.set("dept", dept);
+      if (filterTeacher) params.set("teacherId", filterTeacher);
+      if (filterSchool) params.set("school", filterSchool);
+      const r = await fetch(`/api/progress?${params}`);
+      const data: ProgressRecord[] = await r.json();
+      if (cancelled) return;
+      setRecords(data);
+      const schoolSet = [...new Set(data.map((rec) => rec.course.school))].sort();
+      setSchools(schoolSet);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [filterYear, filterMonth, dept, filterTeacher, filterSchool]);
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);

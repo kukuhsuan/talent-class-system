@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, courseLabel, generateBindCode,
+  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
 
 type LineEvent = {
@@ -174,8 +174,12 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const anqinCourses = courses.filter((c: { department?: string }) => c.department?.includes("安親"));
     const displayCourses = anqinCourses.length > 0 ? anqinCourses : courses;
 
-    const weeks: Array<{ label: string; month: string; entries: object[] }> = [];
-    let cursor = new Date(firstMonday);
+    const weeks: Array<{
+      label: string;
+      month: string;
+      entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string }>;
+    }> = [];
+    const cursor = new Date(firstMonday);
     while (cursor <= augLast) {
       const mon = new Date(cursor);
       const sat = new Date(mon); sat.setDate(mon.getDate() + 5);
@@ -183,9 +187,17 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       // Only include weeks that overlap with Jul–Aug
       const weekEnd = new Date(mon); weekEnd.setDate(mon.getDate() + 6);
       if (weekEnd >= julFirst && mon <= augLast) {
+        type WeekEntryRow = {
+          date: string;
+          dayShort: string;
+          school: string;
+          courseType: string;
+          time: string;
+          sortKey: number;
+        };
         const entries = displayCourses
           .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
-          .map((c: { dayOfWeek: string; school: string; courseType: string; time: string }) => {
+          .map((c: { dayOfWeek: string; school: string; courseType: string; time: string }): WeekEntryRow | null => {
             const d = new Date(mon);
             const targetDay = DAY_JS[c.dayOfWeek];
             const diff = targetDay === 0 ? 6 : targetDay - 1;
@@ -201,8 +213,9 @@ async function handleText(userId: string, text: string, replyToken: string, regi
               sortKey: diff,
             };
           })
-          .filter(Boolean)
-          .sort((a: { sortKey: number }, b: { sortKey: number }) => a.sortKey - b.sortKey);
+          .filter((e): e is WeekEntryRow => e !== null)
+          .sort((a, b) => a.sortKey - b.sortKey)
+          .map(({ date, dayShort, school, courseType, time }) => ({ date, dayShort, school, courseType, time }));
 
         weeks.push({
           label: `${fmt(mon)} ~ ${fmt(sat)}`,
@@ -307,7 +320,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     }) as unknown as { course: { department: string } } | null;
     const dept = attInfo?.course?.department ?? "幼兒園";
     await sendCountBoard(attendanceId, dept, replyToken, token, `✅ 已記錄：【${content}】\n請填寫今日出席人數：`);
-    await forwardReportToSchool(attendanceId, token);
+    await forwardReportToSchool(attendanceId);
     return;
   }
 
@@ -333,7 +346,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       }) as unknown as { course: { department: string } } | null;
       const dept = attInfo?.course?.department ?? "幼兒園";
       await sendCountBoard(attendanceId, dept, replyToken, token, "✅ 已記錄正常上課！請填寫今日出席人數：");
-      await forwardReportToSchool(attendanceId, token);
+      await forwardReportToSchool(attendanceId);
     } else {
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
     }
@@ -410,7 +423,7 @@ async function handleCountSubmit(
       type: "text",
       text: `✅ 出席人數已記錄！\nA班：${countA} 人 ＋ B班：${count} 人 ＝ 合計 ${total} 人`,
     }], token);
-    await forwardReportToSchool(attendanceId, token);
+    await forwardReportToSchool(attendanceId);
     return;
   }
 
@@ -424,7 +437,7 @@ async function handleCountSubmit(
   }) as unknown as { course: { department: string } } | null;
   const dept = attInfo?.course?.department ?? "幼兒園";
   await replyMessage(replyToken, [{ type: "text", text: `✅ ${dept} 出席 ${count} 人，已記錄！` }], token);
-  await forwardReportToSchool(attendanceId, token);
+  await forwardReportToSchool(attendanceId);
 }
 
 async function saveDetailedReport(userId: string, attendanceId: number, text: string, replyToken: string, token: string, region: LineRegion) {
@@ -455,10 +468,10 @@ async function saveDetailedReport(userId: string, attendanceId: number, text: st
       buildStudentCountBoard(attendanceId, "", dept, 1, max),
     ], token);
   }
-  await forwardReportToSchool(attendanceId, token);
+  await forwardReportToSchool(attendanceId);
 }
 
-async function forwardReportToSchool(attendanceId: number, _teacherToken: string) {
+async function forwardReportToSchool(attendanceId: number) {
   const att = await prisma.attendance.findUnique({
     where: { id: attendanceId },
     include: { course: { include: { schoolRel: true } }, actualTeacher: true },
