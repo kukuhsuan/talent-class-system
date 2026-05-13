@@ -14,10 +14,15 @@ export default function NotifyPage() {
   const [tab, setTab] = useState<"teachers" | "schools" | "attendance">("teachers");
   const [sending, setSending] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
+  const [publicBase, setPublicBase] = useState("");
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+
+  useEffect(() => {
+    queueMicrotask(() => setPublicBase(window.location.origin));
+  }, []);
 
   useEffect(() => {
     fetch("/api/teachers").then(r => r.json()).then(setTeachers);
@@ -100,6 +105,9 @@ export default function NotifyPage() {
       {/* Webhook URLs */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
         <p className="text-sm font-semibold text-blue-800 mb-2">LINE Webhook 設定網址（貼到 LINE Developers Console）</p>
+        <p className="text-xs text-blue-700 mb-3">
+          以下網址依目前瀏覽器網域產生（本機測試請用 <code className="bg-white/80 px-1 rounded">http://localhost:…</code> 公開網址需 HTTPS）。
+        </p>
         <div className="space-y-1">
           {[
             { label: "北部 OA", path: "/api/line/north" },
@@ -108,12 +116,17 @@ export default function NotifyPage() {
           ].map(({ label, path }) => (
             <div key={path} className="flex items-center gap-2">
               <span className="text-xs font-medium text-blue-700 w-16">{label}</span>
-              <code className="text-xs bg-white border border-blue-200 px-2 py-1 rounded flex-1 select-all">
-                {`https://talent-class-system.vercel.app${path}`}
+              <code className="text-xs bg-white border border-blue-200 px-2 py-1 rounded flex-1 select-all break-all">
+                {publicBase ? `${publicBase}${path}` : `（載入中）${path}`}
               </code>
             </div>
           ))}
         </div>
+        <p className="text-xs text-slate-600 mt-4 border-t border-blue-200/80 pt-3">
+          <span className="font-semibold text-slate-700">園所 OA 測試：</span>
+          Token 與 Secret 請設定環境變數 <code className="bg-white px-1 rounded">LINE_SCHOOL_TOKEN</code>、
+          <code className="bg-white px-1 rounded">LINE_SCHOOL_SECRET</code>（勿寫死在程式碼）。換測試用 Channel 時只改部署環境即可。
+        </p>
       </div>
 
       {/* Stats */}
