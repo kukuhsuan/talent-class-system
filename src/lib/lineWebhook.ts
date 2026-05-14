@@ -5,6 +5,7 @@ import {
   replyMessage, pushMessage,
   buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
+import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
 
 type LineEvent = {
   type: string;
@@ -141,7 +142,8 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     }
     const courses = await prisma.course.findMany({
       where: { teacherId: teacher.id, isActive: true },
-    }) as unknown as Array<{ school: string; courseType: string; dayOfWeek: string; time: string; department: string }>;
+      include: { schoolRel: true },
+    }) as unknown as Array<{ id: number; school: string; courseType: string; dayOfWeek: string; time: string; department: string; address?: string; schoolRel?: { address?: string } | null }>;
 
     if (courses.length === 0) {
       await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有排定的課程。` }], token);
@@ -160,6 +162,21 @@ async function handleText(userId: string, text: string, replyToken: string, regi
 
     const julFirst = new Date(targetYear, 6, 1);   // 7/1
     const augLast  = new Date(targetYear, 7, 31);  // 8/31
+    const augLastEnd = new Date(augLast);
+    augLastEnd.setHours(23, 59, 59, 999);
+
+    const actualRows = await prisma.attendance.findMany({
+      where: {
+        actualTeacherId: teacher.id,
+        cancelled: false,
+        date: { gte: julFirst, lte: augLastEnd },
+      },
+      include: { course: { include: { schoolRel: true } } },
+      orderBy: { date: "asc" },
+    }) as unknown as Array<{
+      date: Date;
+      course: { school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
+    }>;
 
     // 找到7/1當週的週一
     const julDay = julFirst.getDay();
@@ -177,7 +194,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const weeks: Array<{
       label: string;
       month: string;
-      entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string }>;
+      entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string }>;
     }> = [];
     const cursor = new Date(firstMonday);
     while (cursor <= augLast) {
@@ -193,11 +210,30 @@ async function handleText(userId: string, text: string, replyToken: string, regi
           school: string;
           courseType: string;
           time: string;
+          address?: string;
           sortKey: number;
         };
-        const entries = displayCourses
+        const entries = actualRows.length > 0
+          ? actualRows
+            .filter((a) => a.date >= mon && a.date <= weekEnd)
+            .map((a): WeekEntryRow => {
+              const iso = a.date.toISOString().slice(0, 10);
+              const weekday = weekdayOfIso(iso);
+              return {
+                date: formatMonthDay(iso),
+                dayShort: weekday.replace("星期", ""),
+                school: a.course.school,
+                courseType: a.course.courseType,
+                time: a.course.time,
+                address: a.course.address || a.course.schoolRel?.address || "",
+                sortKey: a.date.getTime(),
+              };
+            })
+            .sort((a, b) => a.sortKey - b.sortKey)
+            .map(({ date, dayShort, school, courseType, time, address }) => ({ date, dayShort, school, courseType, time, address }))
+          : displayCourses
           .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
-          .map((c: { dayOfWeek: string; school: string; courseType: string; time: string }): WeekEntryRow | null => {
+          .map((c: { dayOfWeek: string; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null }): WeekEntryRow | null => {
             const d = new Date(mon);
             const targetDay = DAY_JS[c.dayOfWeek];
             const diff = targetDay === 0 ? 6 : targetDay - 1;
@@ -210,12 +246,13 @@ async function handleText(userId: string, text: string, replyToken: string, regi
               school: c.school,
               courseType: c.courseType,
               time: c.time,
+              address: c.address || c.schoolRel?.address || "",
               sortKey: diff,
             };
           })
           .filter((e): e is WeekEntryRow => e !== null)
           .sort((a, b) => a.sortKey - b.sortKey)
-          .map(({ date, dayShort, school, courseType, time }) => ({ date, dayShort, school, courseType, time }));
+          .map(({ date, dayShort, school, courseType, time, address }) => ({ date, dayShort, school, courseType, time, address }));
 
         weeks.push({
           label: `${fmt(mon)} ~ ${fmt(sat)}`,

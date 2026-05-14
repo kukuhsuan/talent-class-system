@@ -1,35 +1,81 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { pushMessage } from "@/lib/line";
+import { courseLabel, pushMessage } from "@/lib/line";
 
 type DetailRow = {
   date: string; school: string; courseType: string; category: string;
   hours: number; rate: number; travelFee: number; amount: number; isSub: boolean;
 };
 
-function buildSalaryText(teacherName: string, year: number, month: number, details: DetailRow[], total: number): string {
+function buildTeachingFeeMessage(teacherName: string, year: number, month: number, details: DetailRow[], total: number): object {
   const fmt = (n: number) => n.toLocaleString("zh-TW");
   const fmtDate = (d: string) => {
     const dt = new Date(d);
     return `${dt.getMonth() + 1}/${dt.getDate()}`;
   };
 
-  const lines = [
-    `【${teacherName}】${year}年${month}月薪資明細`,
-    `─────────────────`,
-  ];
+  const rows = details.slice(0, 20).map((r) => ({
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    paddingTop: "8px",
+    paddingBottom: "8px",
+    contents: [
+      {
+        type: "text",
+        text: `${fmtDate(r.date)} ${r.school}｜${courseLabel(r.courseType)}${r.isSub ? "（代課）" : ""}`,
+        size: "sm",
+        color: "#2E2B27",
+        weight: "bold",
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: `${r.category} ${r.hours}h × $${fmt(r.rate)}${r.travelFee > 0 ? ` + 車馬 $${fmt(r.travelFee)}` : ""} = $${fmt(r.amount)}`,
+        size: "xs",
+        color: "#7C7167",
+        wrap: true,
+      },
+    ],
+  }));
 
-  for (const r of details) {
-    const sub = r.isSub ? "（代）" : "";
-    const travel = r.travelFee > 0 ? `+車${r.travelFee}` : "";
-    lines.push(`${fmtDate(r.date)} ${r.school} ${r.courseType}${sub}`);
-    lines.push(`  ${r.category} ${r.hours}h × $${r.rate}${travel} = $${fmt(r.amount)}`);
-  }
-
-  lines.push(`─────────────────`);
-  lines.push(`本月合計：$${fmt(total)}`);
-
-  return lines.join("\n");
+  return {
+    type: "flex",
+    altText: `【${teacherName}】${year}年${month}月教學費用明細`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#7B9E87",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "教學費用明細", color: "#F6F3EE", weight: "bold", size: "lg" },
+          { type: "text", text: `【${teacherName}】${year}年${month}月`, color: "#DDD8D0", size: "sm", margin: "xs" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#F6F3EE",
+        paddingAll: "14px",
+        spacing: "none",
+        contents: rows.length > 0
+          ? rows
+          : [{ type: "text", text: "本月沒有可計算的上課紀錄", size: "sm", color: "#7C7167", align: "center" as const }],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#EFE6DA",
+        paddingAll: "14px",
+        contents: [
+          { type: "text", text: `本月合計：$${fmt(total)}`, size: "lg", weight: "bold", color: "#5C4636", align: "end" as const },
+          ...(details.length > 20 ? [{ type: "text", text: `另有 ${details.length - 20} 筆，請至系統查看完整明細`, size: "xxs", color: "#9A9088", align: "end" as const, margin: "xs" }] : []),
+        ],
+      },
+    },
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -74,12 +120,12 @@ export async function POST(req: NextRequest) {
   });
 
   const total = details.reduce((s, r) => s + r.amount, 0);
-  const text = buildSalaryText(teacher.name, Number(year), Number(month), details, total);
+  const message = buildTeachingFeeMessage(teacher.name, Number(year), Number(month), details, total);
 
   const region = teacher.lineRegion || "north";
   const token = region === "south" ? process.env.LINE_SOUTH_TOKEN! : process.env.LINE_NORTH_TOKEN!;
 
-  await pushMessage(teacher.lineUserId, [{ type: "text", text }], token);
+  await pushMessage(teacher.lineUserId, [message], token);
 
   return NextResponse.json({ ok: true, sent: teacher.name });
 }
