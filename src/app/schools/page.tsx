@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { DEPARTMENT_OPTIONS, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string };
 
@@ -15,6 +16,7 @@ export default function SchoolsPage() {
   const [showForm, setShowForm] = useState(false);
   const formRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, nameInputRef);
 
   useEffect(() => { fetchSchools(); }, []);
 
@@ -46,10 +48,7 @@ export default function SchoolsPage() {
     setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
     setEditing(s.id);
     setShowForm(true);
-    setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      nameInputRef.current?.focus();
-    }, 50);
+    scrollToFormOnEdit();
   }
 
   const filtered = schools.filter((s) =>

@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
 import { courseLabel } from "@/lib/courseMeta";
+import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string };
@@ -29,6 +30,9 @@ export default function AttendancePage() {
   const [showForm, setShowForm] = useState(false);
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
@@ -84,6 +88,7 @@ export default function AttendancePage() {
   const edit = (r: Attendance) => {
     setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: r.category, hours: r.hours, notes: r.notes, extraDates: [] });
     setEditing(r.id); setShowForm(true);
+    scrollToFormOnEdit();
   };
 
   const fmt = (d: string) => d.slice(0, 10);
@@ -108,12 +113,12 @@ export default function AttendancePage() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
-          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "編輯紀錄" : "新增上課紀錄"}</h2>
+        <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-5 mb-6 ${editing ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
+          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "正在編輯上課紀錄" : "新增上課紀錄"}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label>上課日期 *</label>
-              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              <input ref={firstInputRef} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
             {editing === null && (
               <div className="col-span-2 md:col-span-3">

@@ -8,6 +8,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const data = await req.json();
-  const teacher = await prisma.teacher.create({ data });
+  const teacher = await prisma.teacher.create({
+    data: {
+      ...data,
+      lineUserId: data.lineUserId?.trim() || null,
+      lineRegion: data.lineRegion || "",
+    },
+  });
   return NextResponse.json(teacher, { status: 201 });
 }

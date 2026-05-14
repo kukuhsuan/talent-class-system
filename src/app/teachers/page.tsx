@@ -1,14 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = {
   id: number; name: string; email: string; phone: string; rateAfterSchool: number; rateInSchool: number;
-  rateDemo: number; travelFee: number; notes: string;
+  rateDemo: number; travelFee: number; notes: string; lineUserId: string | null; lineRegion: string;
 };
 
 const EMPTY: Omit<Teacher, "id"> = {
-  name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "",
+  name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "", lineUserId: "", lineRegion: "north",
 };
+
+const LINE_REGIONS = [
+  { value: "north", label: "北部" },
+  { value: "south", label: "南部" },
+];
 
 export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -16,6 +22,9 @@ export default function TeachersPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   const load = () => fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
   useEffect(() => { load(); }, []);
@@ -37,8 +46,9 @@ export default function TeachersPage() {
   };
 
   const edit = (t: Teacher) => {
-    setForm({ name: t.name, email: t.email ?? "", phone: t.phone ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes });
+    setForm({ name: t.name, email: t.email ?? "", phone: t.phone ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes, lineUserId: t.lineUserId ?? "", lineRegion: t.lineRegion || "north" });
     setEditing(t.id); setShowForm(true);
+    scrollToFormOnEdit();
   };
 
   const filtered = teachers.filter((t) => t.name.includes(search));
@@ -57,13 +67,13 @@ export default function TeachersPage() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 md:p-6 mb-6">
-          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "編輯老師" : "新增老師"}</h2>
+        <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-5 md:p-6 mb-6 ${editing ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
+          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "正在編輯老師" : "新增老師"}</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">基本資料</div>
             <div>
               <label>老師姓名 *</label>
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名" />
+              <input ref={firstInputRef} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名" />
             </div>
             <div className="md:col-span-2">
               <label>Email</label>
@@ -72,6 +82,17 @@ export default function TeachersPage() {
             <div>
               <label>電話</label>
               <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0912-345-678" />
+            </div>
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">LINE 綁定</div>
+            <div className="md:col-span-3">
+              <label>LINE User ID</label>
+              <input value={form.lineUserId ?? ""} onChange={(e) => setForm({ ...form, lineUserId: e.target.value })} placeholder="Uxxxxxxxxxxxxxxxx" />
+            </div>
+            <div>
+              <label>LINE 區域</label>
+              <select value={form.lineRegion || "north"} onChange={(e) => setForm({ ...form, lineRegion: e.target.value })}>
+                {LINE_REGIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">薪資資訊</div>
             <div>
@@ -115,6 +136,11 @@ export default function TeachersPage() {
                   <div className="font-semibold text-slate-800">{t.name}</div>
                   <div title={t.email || ""} className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</div>
                   <div title={t.phone || ""} className="mt-1 text-xs text-slate-500">{t.phone || "—"}</div>
+                  <div className="mt-2">
+                    {t.lineUserId
+                      ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] text-green-700">LINE 已綁定</span>
+                      : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">未綁定</span>}
+                  </div>
                 </div>
                 <div className="flex shrink-0 gap-3">
                   <button onClick={() => edit(t)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
@@ -139,6 +165,7 @@ export default function TeachersPage() {
                 <th className="w-36 px-5 py-3 text-left font-semibold">姓名</th>
                 <th className="w-64 px-5 py-3 text-left font-semibold">Email</th>
                 <th className="w-40 px-5 py-3 text-left font-semibold">電話</th>
+                <th className="w-40 px-5 py-3 text-left font-semibold">LINE</th>
                 <th className="px-4 py-3 text-center font-semibold">課後時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">課內時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">Demo</th>
@@ -153,6 +180,14 @@ export default function TeachersPage() {
                   <td className="px-5 py-4 font-medium text-slate-800 whitespace-nowrap">{t.name}</td>
                   <td title={t.email || ""} className="px-5 py-4 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</td>
                   <td title={t.phone || ""} className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{t.phone || "—"}</td>
+                  <td className="px-5 py-4">
+                    <div className="flex flex-col gap-1">
+                      {t.lineUserId
+                        ? <span className="inline-flex w-fit rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已綁定</span>
+                        : <span className="inline-flex w-fit rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
+                      {t.lineRegion && <span className="text-[11px] text-slate-400">{LINE_REGIONS.find((r) => r.value === t.lineRegion)?.label ?? t.lineRegion}</span>}
+                    </div>
+                  </td>
                   <td className="px-4 py-4 text-center text-slate-700">${t.rateAfterSchool}</td>
                   <td className="px-4 py-4 text-center text-slate-700">${t.rateInSchool}</td>
                   <td className="px-4 py-4 text-center text-slate-700">${t.rateDemo}</td>
@@ -167,7 +202,7 @@ export default function TeachersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="text-center text-slate-400 py-8">尚無資料</td></tr>
+                <tr><td colSpan={10} className="text-center text-slate-400 py-8">尚無資料</td></tr>
               )}
             </tbody>
           </table>

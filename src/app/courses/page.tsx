@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { COURSE_OPTIONS, courseLabel, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
 type School = { id: number; name: string; type: string; region: string; address: string };
@@ -68,6 +69,9 @@ export default function CoursesPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   const load = useCallback(
     () =>
@@ -130,6 +134,7 @@ export default function CoursesPage() {
       dateMode: "multiple", scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [],
       rangeStart: "", rangeEnd: "", recurringStart: "", recurringEnd: "", recurringDays: [c.dayOfWeek || "星期一"] });
     setEditing(c.id); setShowForm(true);
+    scrollToFormOnEdit();
   };
 
   const regions = [...new Set(courses.map((c) => normalizeRegion(c.region)).filter(Boolean))].sort();
@@ -156,13 +161,13 @@ export default function CoursesPage() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 md:p-6 mb-6">
-          <h2 className="font-semibold text-slate-700 mb-4">{editing != null ? "編輯課程" : "新增課程"}</h2>
+        <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-5 md:p-6 mb-6 ${editing != null ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
+          <h2 className="font-semibold text-slate-700 mb-4">{editing != null ? "正在編輯課程" : "新增課程"}</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">基本資料</div>
             <div>
               <label>課程編號 *</label>
-              <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="C050" />
+              <input ref={firstInputRef} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="C050" />
             </div>
             <div className="md:col-span-2">
               <label>園所名稱 *</label>

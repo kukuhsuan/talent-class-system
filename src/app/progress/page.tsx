@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
+import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
 type CourseInfo = { id: number; school: string; courseType: string; department: string };
@@ -24,6 +25,9 @@ export default function ProgressPage() {
   const [manageCourse, setManageCourse] = useState("足球");
   const [progressRows, setProgressRows] = useState<CourseProgress[]>([]);
   const [progressForm, setProgressForm] = useState({ id: 0, lesson: "", title: "" });
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   useEffect(() => {
     fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
@@ -93,10 +97,10 @@ export default function ProgressPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
+      <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-4 mb-6 ${progressForm.id ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <div>
-            <h2 className="font-semibold text-slate-800">課程進度管理</h2>
+            <h2 className="font-semibold text-slate-800">{progressForm.id ? "正在編輯課程進度" : "課程進度管理"}</h2>
             <p className="text-xs text-slate-500">管理老師 LINE 回報時可選擇的第幾堂課程內容</p>
           </div>
           <select value={manageCourse} onChange={(e) => setManageCourse(e.target.value)}
@@ -106,7 +110,7 @@ export default function ProgressPage() {
         </div>
 
         <div className="grid md:grid-cols-[120px_1fr_auto] gap-3 mb-4">
-          <input value={progressForm.lesson} onChange={(e) => setProgressForm({ ...progressForm, lesson: e.target.value })}
+          <input ref={firstInputRef} value={progressForm.lesson} onChange={(e) => setProgressForm({ ...progressForm, lesson: e.target.value })}
             type="number" min="1" placeholder="第幾堂" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
           <input value={progressForm.title} onChange={(e) => setProgressForm({ ...progressForm, title: e.target.value })}
             placeholder="課程內容名稱" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
@@ -130,7 +134,7 @@ export default function ProgressPage() {
                   <td className="px-3 py-2">第 {row.lesson} 堂</td>
                   <td className="px-3 py-2">{row.title}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => setProgressForm({ id: row.id, lesson: String(row.lesson), title: row.title })} className="text-blue-600 text-sm mr-3">編輯</button>
+                    <button onClick={() => { setProgressForm({ id: row.id, lesson: String(row.lesson), title: row.title }); scrollToFormOnEdit(); }} className="text-blue-600 text-sm mr-3">編輯</button>
                     <button onClick={() => deleteProgress(row.id)} className="text-red-500 text-sm">刪除</button>
                   </td>
                 </tr>

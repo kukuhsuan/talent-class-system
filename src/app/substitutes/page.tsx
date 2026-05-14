@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
+import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
 type Substitute = {
@@ -21,6 +22,9 @@ export default function SubstitutesPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   const load = () =>
     Promise.all([
@@ -57,6 +61,7 @@ export default function SubstitutesPage() {
     if (r.source === "attendance") return alert("這筆是由出勤紀錄帶入，請到出勤紀錄調整代課老師。");
     setForm({ date: r.date.slice(0, 10), school: r.school, courseType: r.courseType, originalTeacherId: r.originalTeacher.id, substituteTeacherId: r.substituteTeacher?.id ?? 0, confirmed: r.confirmed, fee: r.fee?.toString() ?? "", notes: r.notes });
     setEditing(Number(r.id)); setShowForm(true);
+    scrollToFormOnEdit();
   };
 
   const toggle = async (r: Substitute) => {
@@ -96,12 +101,12 @@ export default function SubstitutesPage() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
-          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "編輯代課紀錄" : "新增代課紀錄"}</h2>
+        <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-5 mb-6 ${editing ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
+          <h2 className="font-semibold text-slate-700 mb-4">{editing ? "正在編輯代課紀錄" : "新增代課紀錄"}</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label>日期 *</label>
-              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              <input ref={firstInputRef} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
             <div>
               <label>學校 *</label>
