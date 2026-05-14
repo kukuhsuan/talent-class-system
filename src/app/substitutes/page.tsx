@@ -4,9 +4,9 @@ import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type Substitute = {
-  id: number; date: string; school: string; courseType: string;
+  id: number | string; attendanceId?: number; source?: "manual" | "attendance"; date: string; school: string; courseType: string;
   originalTeacher: Teacher; substituteTeacher: Teacher | null;
-  confirmed: boolean; fee: number | null; notes: string;
+  confirmed: boolean; fee: number | null; notes: string; time?: string; address?: string;
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -46,19 +46,35 @@ export default function SubstitutesPage() {
     setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
   };
 
-  const del = async (id: number) => {
+  const del = async (id: number | string) => {
+    if (typeof id === "string") return alert("這筆是由出勤紀錄帶入，請到出勤紀錄調整。");
     if (!confirm("確定刪除此筆代課紀錄？")) return;
     await fetch(`/api/substitutes/${id}`, { method: "DELETE" });
     load();
   };
 
   const edit = (r: Substitute) => {
+    if (r.source === "attendance") return alert("這筆是由出勤紀錄帶入，請到出勤紀錄調整代課老師。");
     setForm({ date: r.date.slice(0, 10), school: r.school, courseType: r.courseType, originalTeacherId: r.originalTeacher.id, substituteTeacherId: r.substituteTeacher?.id ?? 0, confirmed: r.confirmed, fee: r.fee?.toString() ?? "", notes: r.notes });
-    setEditing(r.id); setShowForm(true);
+    setEditing(Number(r.id)); setShowForm(true);
   };
 
   const toggle = async (r: Substitute) => {
-    await fetch(`/api/substitutes/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...r, originalTeacherId: r.originalTeacher.id, substituteTeacherId: r.substituteTeacher?.id ?? null, confirmed: !r.confirmed }) });
+    if (r.source === "attendance") return alert("這筆是由出勤紀錄帶入，通知狀態請在出勤/LINE流程確認。");
+    await fetch(`/api/substitutes/${r.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: r.date.slice(0, 10),
+        school: r.school,
+        courseType: r.courseType,
+        originalTeacherId: r.originalTeacher.id,
+        substituteTeacherId: r.substituteTeacher?.id ?? null,
+        confirmed: !r.confirmed,
+        fee: r.fee,
+        notes: r.notes,
+      }),
+    });
     load();
   };
 
@@ -76,7 +92,7 @@ export default function SubstitutesPage() {
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-800">
-        <strong>提醒：</strong>新增代課紀錄後，請同時至「上課紀錄」將該堂的「上課老師」改為代課老師，薪資計算才會正確。
+        <strong>提醒：</strong>出勤紀錄若已指定代課老師，這裡會自動顯示同一筆代課資料；薪資仍以出勤紀錄的實際上課老師為準。
       </div>
 
       {showForm && (
@@ -145,7 +161,7 @@ export default function SubstitutesPage() {
                 <th>項目</th>
                 <th>請假老師</th>
                 <th>代課老師</th>
-                <th>代課費</th>
+                <th>來源</th>
                 <th>通知園所</th>
                 <th>備註</th>
                 <th>操作</th>
@@ -156,16 +172,19 @@ export default function SubstitutesPage() {
                 <tr key={r.id}>
                   <td className="text-sm">{r.date.slice(0, 10)}</td>
                   <td className="font-medium">{r.school}</td>
-                  <td>{r.courseType ? courseLabel(r.courseType) : "-"}</td>
+                  <td>
+                    <div>{r.courseType ? courseLabel(r.courseType) : "-"}</div>
+                    {r.time && <div className="text-xs text-slate-400">{r.time}</div>}
+                  </td>
                   <td className="text-orange-600">{r.originalTeacher.name}</td>
                   <td>{r.substituteTeacher ? <span className="text-blue-600 font-medium">{r.substituteTeacher.name}</span> : <span className="text-slate-400 text-sm">暫停</span>}</td>
-                  <td>{r.fee ? `$${r.fee}` : "-"}</td>
+                  <td>{r.source === "attendance" ? <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full">出勤連動</span> : <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">手動</span>}</td>
                   <td>
                     <button onClick={() => toggle(r)} className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${r.confirmed ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
                       {r.confirmed ? "✓ 已通知" : "未通知"}
                     </button>
                   </td>
-                  <td className="text-xs text-slate-500">{r.notes || "-"}</td>
+                  <td className="text-xs text-slate-500">{r.notes || r.address || "-"}</td>
                   <td>
                     <div className="flex gap-2">
                       <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>

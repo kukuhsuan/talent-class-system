@@ -108,7 +108,7 @@ export default function TeachersPage() {
             <div key={t.id} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-semibold text-slate-900">{t.name}</div>
+                  <div className="font-semibold text-slate-800">{t.name}</div>
                   <div title={t.email || ""} className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</div>
                 </div>
                 <div className="flex shrink-0 gap-3">
@@ -117,10 +117,10 @@ export default function TeachersPage() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課後時薪</div><div className="font-medium">${t.rateAfterSchool}</div></div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課內時薪</div><div className="font-medium">${t.rateInSchool}</div></div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">Demo</div><div className="font-medium">${t.rateDemo}</div></div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">車費</div><div className="font-medium">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課後時薪</div><div className="font-medium text-slate-700">${t.rateAfterSchool}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課內時薪</div><div className="font-medium text-slate-700">${t.rateInSchool}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">Demo</div><div className="font-medium text-slate-700">${t.rateDemo}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">車費</div><div className="font-medium text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
               </div>
               {t.notes && <div className="mt-3 text-xs text-slate-500">{t.notes}</div>}
             </div>
@@ -128,30 +128,30 @@ export default function TeachersPage() {
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無資料</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[980px]">
-            <thead>
+          <table className="w-full min-w-[980px] text-sm">
+            <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th>姓名</th>
-                <th>Email</th>
-                <th>課後時薪</th>
-                <th>課內時薪</th>
-                <th>Demo</th>
-                <th>車費</th>
-                <th>備註</th>
-                <th>操作</th>
+                <th className="px-4 py-3 text-left font-semibold">姓名</th>
+                <th className="px-4 py-3 text-left font-semibold">Email</th>
+                <th className="px-4 py-3 text-center font-semibold">課後時薪</th>
+                <th className="px-4 py-3 text-center font-semibold">課內時薪</th>
+                <th className="px-4 py-3 text-center font-semibold">Demo</th>
+                <th className="px-4 py-3 text-center font-semibold">車費</th>
+                <th className="px-4 py-3 text-left font-semibold">備註</th>
+                <th className="px-4 py-3 text-left font-semibold">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {filtered.map((t) => (
-                <tr key={t.id}>
-                  <td className="font-medium whitespace-nowrap">{t.name}</td>
-                  <td title={t.email || ""} className="max-w-[220px] truncate text-xs text-slate-500">{t.email || "—"}</td>
-                  <td className="text-center">${t.rateAfterSchool}</td>
-                  <td className="text-center">${t.rateInSchool}</td>
-                  <td className="text-center">${t.rateDemo}</td>
-                  <td className="text-center">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</td>
-                  <td className="max-w-[260px] truncate text-slate-500 text-xs" title={t.notes || ""}>{t.notes || "-"}</td>
-                  <td>
+                <tr key={t.id} className="hover:bg-slate-50/70">
+                  <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{t.name}</td>
+                  <td title={t.email || ""} className="px-4 py-4 max-w-[220px] truncate text-xs text-slate-500">{t.email || "—"}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">${t.rateAfterSchool}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">${t.rateInSchool}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">${t.rateDemo}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</td>
+                  <td className="px-4 py-4 max-w-[260px] truncate text-slate-500 text-xs" title={t.notes || ""}>{t.notes || "-"}</td>
+                  <td className="px-4 py-4">
                     <div className="flex gap-4 whitespace-nowrap">
                       <button onClick={() => edit(t)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                       <button onClick={() => del(t.id, t.name)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>

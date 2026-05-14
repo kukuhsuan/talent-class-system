@@ -33,7 +33,13 @@ export async function GET(req: NextRequest) {
       },
       select: {
         id: true, date: true, cancelled: true, studentCount: true,
-        course: { select: { id: true, school: true, courseType: true } },
+        course: {
+          select: {
+            id: true, school: true, courseType: true, teacherId: true,
+            time: true, address: true,
+            teacher: { select: { id: true, name: true } },
+          },
+        },
         actualTeacher: { select: { id: true, name: true } },
       },
       orderBy: { date: "desc" },

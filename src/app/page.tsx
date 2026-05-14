@@ -5,7 +5,7 @@ import { useDepartment } from "@/lib/departmentContext";
 import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
-type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string; dayOfWeek: string; time: string; region: string };
+type Course = { id: number; code?: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category?: string; dayOfWeek?: string; time: string; region?: string; address?: string };
 type Attendance = { id: number; date: string; course: Course; actualTeacher: Teacher; studentCount: number | null; cancelled: boolean; category: string; hours: number; notes: string };
 
 const DAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -57,6 +57,8 @@ export default function Home() {
     return todayAttendance.find((a) => a.course.id === courseId);
   }
 
+  const todaySubstitutes = todayAttendance.filter((a) => !a.cancelled && a.actualTeacher.id !== a.course.teacherId);
+
   const handleSeed = async () => {
     setSeeding(true);
     await fetch("/api/seed", { method: "POST" });
@@ -101,6 +103,39 @@ export default function Home() {
       </div>
 
       {/* Today courses */}
+      {!loading && todaySubstitutes.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 mb-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="font-semibold text-orange-900">今日代課提醒</h2>
+              <p className="text-sm text-orange-700 mt-1">今天有 {todaySubstitutes.length} 筆代課，請客服確認老師與園所通知狀態。</p>
+            </div>
+            <div className="flex gap-2">
+              <Link href="/substitutes" className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700">前往代課紀錄</Link>
+              <Link href="/attendance" className="rounded-lg bg-white border border-orange-200 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100">前往出勤紀錄</Link>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {todaySubstitutes.map((a) => (
+              <div key={a.id} className="rounded-lg bg-white border border-orange-100 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-slate-900">{a.course.school}</div>
+                    <div className="mt-1 text-sm text-slate-600">{courseLabel(a.course.courseType)}{a.course.time ? ` · ${a.course.time}` : ""}</div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">代課</span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-slate-400">原老師：</span><span className="font-medium text-slate-700">{a.course.teacher.name}</span></div>
+                  <div><span className="text-slate-400">代課：</span><span className="font-medium text-orange-700">{a.actualTeacher.name}</span></div>
+                </div>
+                {a.course.address && <div className="mt-2 text-xs text-slate-500">{a.course.address}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <h2 className="font-semibold text-slate-700">今日課程 — {todayDayName}</h2>
