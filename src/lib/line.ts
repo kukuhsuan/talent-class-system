@@ -547,18 +547,25 @@ export function buildStudentCountBoard(
 export function buildScheduleMessage(opts: {
   teacherName: string;
   weekLabel: string; // e.g. "5/13 ~ 5/17"
-  courses: Array<{ school: string; courseType: string; dayOfWeek: string; time: string }>;
+  courses: Array<{ school: string; courseType: string; dayOfWeek: string; time: string; dateLabel?: string; address?: string }>;
 }) {
   const rows = opts.courses.map((c) => ({
     type: "box",
-    layout: "horizontal",
-    paddingTop: "6px",
-    paddingBottom: "6px",
+    layout: "vertical",
+    paddingTop: "8px",
+    paddingBottom: "8px",
+    spacing: "xs",
     contents: [
-      { type: "text", text: c.dayOfWeek.replace("星期", ""), size: "sm", color: "#6B6358", flex: 1, align: "center" as const },
-      { type: "text", text: courseLabel(c.courseType), size: "sm", color: "#2E2B27", flex: 2 },
-      { type: "text", text: c.school, size: "sm", color: "#2E2B27", flex: 3, wrap: true },
-      { type: "text", text: c.time || "—", size: "xs", color: "#6B6358", flex: 2, align: "end" as const },
+      {
+        type: "box",
+        layout: "horizontal",
+        contents: [
+          { type: "text", text: `${c.dateLabel ? `${c.dateLabel} ` : ""}${c.dayOfWeek.replace("星期", "週")}`, size: "xs", color: "#6B6358", flex: 3, weight: "bold" },
+          { type: "text", text: c.time || "時間未填", size: "xs", color: "#8B8176", flex: 3, align: "end" as const, wrap: true },
+        ],
+      },
+      { type: "text", text: `${courseLabel(c.courseType)}｜${c.school}`, size: "sm", color: "#2E2B27", weight: "bold", wrap: true },
+      ...(c.address ? [{ type: "text", text: c.address, size: "xs", color: "#8B8176", wrap: true }] : []),
     ],
   }));
 
@@ -584,17 +591,6 @@ export function buildScheduleMessage(opts: {
         paddingAll: "14px",
         spacing: "none",
         contents: [
-          {
-            type: "box",
-            layout: "horizontal",
-            contents: [
-              { type: "text", text: "星期", size: "xs", color: "#8BA4B2", flex: 1, align: "center" as const, weight: "bold" },
-              { type: "text", text: "課程", size: "xs", color: "#8BA4B2", flex: 2, weight: "bold" },
-              { type: "text", text: "地點", size: "xs", color: "#8BA4B2", flex: 3, weight: "bold" },
-              { type: "text", text: "時間", size: "xs", color: "#8BA4B2", flex: 2, align: "end" as const, weight: "bold" },
-            ],
-          },
-          { type: "separator", margin: "sm", color: "#DDD8D0" },
           ...rows,
         ],
       },
@@ -620,7 +616,7 @@ export function buildTwoMonthScheduleMessage(opts: {
   weeks: Array<{
     label: string;       // e.g. "5/12（一）~ 5/16（五）"
     month: string;       // e.g. "5月"
-    entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string }>;
+    entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string }>;
   }>;
 }): object {
   const bubbles = opts.weeks.map((week) => ({
@@ -637,12 +633,17 @@ export function buildTwoMonthScheduleMessage(opts: {
       type: "box", layout: "vertical", backgroundColor: "#F6F3EE", paddingAll: "10px", spacing: "xs",
       contents: week.entries.length > 0
         ? week.entries.map((e) => ({
-          type: "box", layout: "horizontal", paddingTop: "4px", paddingBottom: "4px",
+          type: "box", layout: "vertical", paddingTop: "7px", paddingBottom: "7px", spacing: "xs",
           contents: [
-            { type: "text", text: `${e.date}`, size: "xs", color: "#6B6358", flex: 2 },
-            { type: "text", text: courseLabel(e.courseType), size: "xs", color: "#2E2B27", flex: 2 },
-            { type: "text", text: e.school, size: "xs", color: "#2E2B27", flex: 4, wrap: true },
-            { type: "text", text: e.time || "—", size: "xs", color: "#9A9088", flex: 2, align: "end" as const },
+            {
+              type: "box", layout: "horizontal",
+              contents: [
+                { type: "text", text: `${e.date}（${e.dayShort}）`, size: "xs", color: "#6B6358", weight: "bold", flex: 3 },
+                { type: "text", text: e.time || "時間未填", size: "xs", color: "#9A9088", flex: 3, align: "end" as const, wrap: true },
+              ],
+            },
+            { type: "text", text: `${courseLabel(e.courseType)}｜${e.school}`, size: "xs", color: "#2E2B27", weight: "bold", wrap: true },
+            ...(e.address ? [{ type: "text", text: e.address, size: "xxs", color: "#9A9088", wrap: true }] : []),
           ],
         }))
         : [{ type: "text", text: "本週無課", size: "sm", color: "#9A9088", align: "center" as const }],

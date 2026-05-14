@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
+import { formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 
 type Teacher = { id: number; name: string };
-type School = { id: number; name: string; region: string };
+type School = { id: number; name: string; region: string; address: string };
 type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number;
-  school: string; schoolId: number | null; courseType: string; dayOfWeek: string; time: string;
+  school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string;
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
 };
 
@@ -21,7 +22,9 @@ const CATS = ["課後", "課內", "Demo", "試上"];
 
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, school: "", schoolId: null as number | null,
-  courseType: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "",
+  courseType: "", address: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "",
+  scheduledDateText: "",
+  scheduledDateYear: new Date().getFullYear(),
   scheduledDates: [] as string[],
 };
 
@@ -49,14 +52,20 @@ export default function CoursesPage() {
 
   function selectSchool(schoolId: number) {
     const s = schools.find((s) => s.id === schoolId);
-    if (s) setForm((f) => ({ ...f, schoolId: s.id, school: s.name, region: s.region }));
+    if (s) setForm((f) => ({ ...f, schoolId: s.id, school: s.name, region: s.region, address: f.address || s.address || "" }));
     else setForm((f) => ({ ...f, schoolId: null }));
   }
 
   const save = async () => {
     if (!form.code.trim() || !form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
-    const scheduledDates = [...new Set(form.scheduledDates.map((d) => d.trim().slice(0, 10)).filter(Boolean))];
-    const body = JSON.stringify({ ...form, scheduledDates: editing === null ? scheduledDates : [] });
+    const parsed = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
+    if (parsed.errors.length > 0) return alert(`日期格式無法解析：${parsed.errors.join("、")}`);
+    const scheduledDates = [...new Set([
+      ...form.scheduledDates.map((d) => d.trim().slice(0, 10)).filter(Boolean),
+      ...parsed.dates,
+    ])].sort();
+    const autoDay = scheduledDates[0] ? weekdayOfIso(scheduledDates[0]) : form.dayOfWeek;
+    const body = JSON.stringify({ ...form, dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
     if (editing !== null) {
       await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
@@ -74,13 +83,16 @@ export default function CoursesPage() {
 
   const edit = (c: Course) => {
     setForm({ code: c.code, region: c.region, teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
-      courseType: c.courseType, dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
-      department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes, scheduledDates: [] });
+      courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
+      department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
+      scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [] });
     setEditing(c.id); setShowForm(true);
   };
 
   const regions = [...new Set(courses.map((c) => c.region).filter(Boolean))].sort();
   const filtered = courses.filter((c) => !filterRegion || c.region === filterRegion);
+  const parsedDates = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
+  const previewDates = [...new Set([...form.scheduledDates.filter(Boolean), ...parsedDates.dates])].sort();
 
   const catColor: Record<string, string> = {
     課後: "bg-blue-100 text-blue-700", 課內: "bg-green-100 text-green-700",
@@ -123,6 +135,10 @@ export default function CoursesPage() {
               <label>地區</label>
               <input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="台北市" />
             </div>
+            <div className="col-span-2">
+              <label>上課地址</label>
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="可貼完整地址，之後可連 Google Maps" />
+            </div>
             <div>
               <label>負責老師 *</label>
               <select value={form.teacherId} onChange={(e) => setForm({ ...form, teacherId: Number(e.target.value) })}>
@@ -164,33 +180,45 @@ export default function CoursesPage() {
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
-            {editing === null && (
-              <div className="col-span-2 md:col-span-4 border-t border-slate-100 pt-4 mt-1">
-                <label className="block text-sm font-medium text-slate-700 mb-2">預排上課日（選填，可多日、可不連續）</label>
-                <p className="text-xs text-slate-500 mb-2">儲存後會自動建立對應的上課紀錄；若留空則僅建立課程排班，之後請到「上課紀錄」手動新增。</p>
-                <div className="flex flex-col gap-2">
-                  {form.scheduledDates.length === 0 && (
-                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [""] }))}
-                      className="self-start text-sm text-blue-600 hover:underline">+ 加入日期</button>
-                  )}
-                  {form.scheduledDates.map((d, i) => (
-                    <div key={i} className="flex flex-wrap items-center gap-2">
-                      <input type="date" value={d} onChange={(e) => {
-                        const next = [...form.scheduledDates];
-                        next[i] = e.target.value;
-                        setForm({ ...form, scheduledDates: next });
-                      }} className="text-sm" />
-                      <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: f.scheduledDates.filter((_, j) => j !== i) }))}
-                        className="text-xs text-red-500 hover:underline">移除</button>
-                    </div>
-                  ))}
-                  {form.scheduledDates.length > 0 && (
-                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [...f.scheduledDates, ""] }))}
-                      className="self-start text-sm text-blue-600 hover:underline">+ 再加一個日期</button>
-                  )}
+            <div className="col-span-2 md:col-span-4 border-t border-slate-100 pt-4 mt-1">
+              <label className="block text-sm font-medium text-slate-700 mb-2">實際上課日期（選填，可多日、區間、不連續）</label>
+              <p className="text-xs text-slate-500 mb-2">範例：7/1、7/1-7/3、7/6、8、9、10、7/8、15、22、29。儲存後會建立對應日期的上課紀錄。</p>
+              <div className="grid md:grid-cols-[120px_1fr] gap-3">
+                <div>
+                  <label className="text-xs">年份</label>
+                  <input type="number" value={form.scheduledDateYear} onChange={(e) => setForm({ ...form, scheduledDateYear: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="text-xs">日期字串</label>
+                  <input value={form.scheduledDateText} onChange={(e) => setForm({ ...form, scheduledDateText: e.target.value })} placeholder="7/1-7/3、7/8、15、22、29" />
                 </div>
               </div>
-            )}
+              <div className="flex flex-col gap-2 mt-3">
+                {form.scheduledDates.map((d, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <input type="date" value={d} onChange={(e) => {
+                      const next = [...form.scheduledDates];
+                      next[i] = e.target.value;
+                      setForm({ ...form, scheduledDates: next });
+                    }} className="text-sm" />
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: f.scheduledDates.filter((_, j) => j !== i) }))}
+                      className="text-xs text-red-500 hover:underline">移除</button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [...f.scheduledDates, ""] }))}
+                  className="self-start text-sm text-blue-600 hover:underline">+ 加入單日選擇</button>
+              </div>
+              {previewDates.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {previewDates.map((d) => (
+                    <span key={d} className="rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-1 text-xs">
+                      {formatMonthDay(d)} {weekdayOfIso(d).replace("星期", "週")}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {parsedDates.errors.length > 0 && <p className="mt-2 text-xs text-red-500">無法解析：{parsedDates.errors.join("、")}</p>}
+            </div>
             <div className="flex items-end pb-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="w-4 h-4" />
@@ -222,6 +250,7 @@ export default function CoursesPage() {
                 <th>項目</th>
                 <th>星期</th>
                 <th>時間</th>
+                <th>地址</th>
                 <th>類別</th>
                 <th>報名人數</th>
                 <th>狀態</th>
@@ -238,6 +267,7 @@ export default function CoursesPage() {
                   <td>{c.courseType}</td>
                   <td className="text-xs">{c.dayOfWeek}</td>
                   <td className="text-xs text-slate-500">{c.time}</td>
+                  <td className="text-xs text-slate-500 max-w-48 truncate">{c.address}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${catColor[c.category] ?? "bg-slate-100 text-slate-600"}`}>{c.category}</span></td>
                   <td className="text-sm">{c.enrollCount}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
@@ -250,7 +280,7 @@ export default function CoursesPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={11} className="text-center text-slate-400 py-8">尚無課程資料</td></tr>
+                <tr><td colSpan={12} className="text-center text-slate-400 py-8">尚無課程資料</td></tr>
               )}
             </tbody>
           </table>

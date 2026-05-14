@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
+import { parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -21,6 +22,11 @@ export async function POST(req: NextRequest) {
   const scheduled: string[] = Array.isArray(scheduledDates)
     ? [...new Set((scheduledDates as string[]).map((d) => String(d).trim().slice(0, 10)).filter(Boolean))]
     : [];
+  const parsed = typeof data.scheduledDateText === "string"
+    ? parseCourseDateInput(data.scheduledDateText, Number(data.scheduledDateYear) || new Date().getFullYear()).dates
+    : [];
+  const allScheduled = [...new Set([...scheduled, ...parsed])].sort();
+  const dayOfWeek = allScheduled[0] ? weekdayOfIso(allScheduled[0]) : (data.dayOfWeek ?? "");
 
   const course = await prisma.$transaction(async (tx) => {
     const c = await tx.course.create({
@@ -31,7 +37,8 @@ export async function POST(req: NextRequest) {
         school: data.school,
         schoolId: data.schoolId ? Number(data.schoolId) : null,
         courseType: data.courseType ?? "",
-        dayOfWeek: data.dayOfWeek ?? "",
+        address: data.address ?? "",
+        dayOfWeek,
         time: data.time ?? "",
         category: data.category ?? "課後",
         department: data.department ?? "幼兒園",
@@ -42,9 +49,9 @@ export async function POST(req: NextRequest) {
       include: { teacher: true },
     });
 
-    if (scheduled.length > 0) {
+    if (allScheduled.length > 0) {
       await createAttendancesForUniqueDays(
-        scheduled,
+        allScheduled,
         {
           courseId: c.id,
           actualTeacherId: c.teacherId,

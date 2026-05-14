@@ -49,6 +49,7 @@ model Course {
   schoolId    Int?
   schoolRel   School?      @relation(fields: [schoolId], references: [id])
   courseType  String
+  address     String       @default("")
   dayOfWeek   String       @default("")
   time        String       @default("")
   category    String       @default("課後")

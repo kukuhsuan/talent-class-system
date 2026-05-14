@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
 
 type Teacher = { id: number; name: string };
-type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string; dayOfWeek: string; time: string; region: string; enrollCount: string };
+type Course = {
+  id: number; courseId?: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number;
+  category: string; dayOfWeek: string; date: string; dateLabel: string; time: string; region: string; enrollCount: string; address: string;
+};
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 const TODAY_IDX = new Date().getDay() - 1; // 0=Mon, -1=Sun
@@ -44,13 +47,16 @@ export default function SchedulePage() {
   // Summary counts
   const dayCounts = DAYS.map((d) => courses.filter((c) => c.dayOfWeek === d).length);
   const totalCourses = courses.length;
+  const hasActualDates = courses.some((c) => c.date);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">週課表</h1>
-          <p className="text-sm text-slate-500">共 {totalCourses} 門課程</p>
+          <p className="text-sm text-slate-500">
+            共 {totalCourses} 筆{hasActualDates ? "實際上課日期" : "固定週排班"}
+          </p>
         </div>
       </div>
 
@@ -101,8 +107,10 @@ export default function SchedulePage() {
                             {cells.map((c) => (
                               <div key={c.id} className={`rounded-lg border px-2 py-1.5 text-xs ${catColor[c.category] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
                                 <div className="font-semibold">{c.courseType}</div>
+                                {c.dateLabel && <div className="text-[11px] opacity-75">{c.dateLabel} {c.dayOfWeek.replace("星期", "週")}</div>}
                                 <div className="text-[11px] opacity-75">{c.teacher.name}</div>
                                 {c.time && <div className="text-[11px] opacity-60">{c.time}</div>}
+                                {c.address && <div className="text-[11px] opacity-60 break-words">{c.address}</div>}
                                 {c.enrollCount && <div className="text-[11px] opacity-60">{c.enrollCount}</div>}
                               </div>
                             ))}

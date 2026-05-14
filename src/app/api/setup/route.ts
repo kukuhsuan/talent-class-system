@@ -11,6 +11,7 @@ export async function GET() {
 
   const migrations = [
     'ALTER TABLE Teacher ADD COLUMN email TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Course ADD COLUMN address TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN studentCountA INTEGER',
     'ALTER TABLE Attendance ADD COLUMN studentCountB INTEGER',
   ];
