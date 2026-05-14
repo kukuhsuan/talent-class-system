@@ -55,6 +55,10 @@ function collectScheduledDates(form: CourseForm) {
   ])].sort();
 }
 
+function describeCourse(c: Course) {
+  return `${c.code}｜${c.school}｜${courseLabel(c.courseType)}｜${c.teacher.name}｜${c.dayOfWeek} ${c.time || ""}`;
+}
+
 export default function CoursesPage() {
   const { dept } = useDepartment();
   const [courses, setCourses] = useState<Course[]>([]);
@@ -97,6 +101,12 @@ export default function CoursesPage() {
     const scheduledDates = collectScheduledDates(form);
     if ((form.dateMode === "range" || form.dateMode === "weekly") && scheduledDates.length === 0) return alert("請確認日期區間與星期設定");
     const autoDay = scheduledDates[0] ? weekdayOfIso(scheduledDates[0]) : form.dayOfWeek;
+    const targetDays = new Set((scheduledDates.length > 0 ? scheduledDates.map(weekdayOfIso) : [form.dayOfWeek]).filter(Boolean));
+    const conflicts = courses
+      .filter((c) => c.id !== editing && c.time && form.time && c.time.trim() === form.time.trim() && targetDays.has(c.dayOfWeek))
+      .filter((c) => c.teacherId === form.teacherId || (form.schoolId ? c.schoolId === form.schoolId : c.school === form.school))
+      .map((c) => `${c.teacherId === form.teacherId ? "老師撞課" : "園所撞課"}：${describeCourse(c)}`);
+    if (conflicts.length > 0 && !confirm(`偵測到可能排課衝突：\n\n${conflicts.slice(0, 6).join("\n")}\n\n仍要儲存嗎？`)) return;
     const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
     if (editing !== null) {

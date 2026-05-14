@@ -7,14 +7,15 @@ type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string };
 type Attendance = {
   id: number; date: string; course: Course; actualTeacher: Teacher;
-  studentCount: number | null; cancelled: boolean; category: string; hours: number; notes: string;
+  studentCount: number | null; cancelled: boolean; cancelReason: string; makeupDate: string | null; makeupDone: boolean;
+  category: string; hours: number; notes: string;
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const CATS = ["課後", "課內", "Demo", "試上"];
 const EMPTY_FORM = {
   date: today(), courseId: 0, actualTeacherId: 0,
-  studentCount: "", cancelled: false, category: "課後", hours: 1, notes: "",
+  studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 1, notes: "",
   extraDates: [] as string[],
 };
 
@@ -81,7 +82,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, category: r.category, hours: r.hours, notes: r.notes, extraDates: [] });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: r.category, hours: r.hours, notes: r.notes, extraDates: [] });
     setEditing(r.id); setShowForm(true);
   };
 
@@ -177,6 +178,24 @@ export default function AttendancePage() {
                 <span className="text-sm font-medium text-slate-700">停課</span>
               </label>
             </div>
+            {form.cancelled && (
+              <>
+                <div>
+                  <label>停課原因</label>
+                  <input value={form.cancelReason} onChange={(e) => setForm({ ...form, cancelReason: e.target.value })} placeholder="颱風假、園所活動..." />
+                </div>
+                <div>
+                  <label>補課日期</label>
+                  <input type="date" value={form.makeupDate} onChange={(e) => setForm({ ...form, makeupDate: e.target.value })} />
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 mt-6 cursor-pointer">
+                    <input type="checkbox" checked={form.makeupDone} onChange={(e) => setForm({ ...form, makeupDone: e.target.checked })} className="w-4 h-4" />
+                    <span className="text-sm font-medium text-slate-700">已補課</span>
+                  </label>
+                </div>
+              </>
+            )}
             <div className="col-span-2">
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註" />
@@ -209,7 +228,10 @@ export default function AttendancePage() {
                     <div className="text-sm font-semibold text-slate-900">{fmt(r.date)}</div>
                     <div className="mt-1 text-xs text-slate-500">{r.course.code}｜{courseLabel(r.course.courseType)}</div>
                   </div>
-                  <div>{r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">出課</span>}</div>
+                  <div className="flex flex-col items-end gap-1">
+                    {r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">出課</span>}
+                    {r.cancelled && r.makeupDate && <span className={`text-[11px] px-2 py-0.5 rounded-full ${r.makeupDone ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{r.makeupDone ? "已補課" : `補 ${r.makeupDate.slice(5, 10)}`}</span>}
+                  </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">學校</div><div className="font-medium text-slate-800">{r.course.school}</div></div>
@@ -221,7 +243,7 @@ export default function AttendancePage() {
                   <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">出席人數</div><div className="font-medium">{r.studentCount ?? "-"}</div></div>
                   <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{r.category}｜{r.hours}h</div></div>
                 </div>
-                {r.notes && <div className="mt-3 text-xs text-slate-500">{r.notes}</div>}
+                {(r.cancelReason || r.notes) && <div className="mt-3 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
                 <div className="mt-4 flex gap-4">
                   <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                   <button onClick={() => del(r.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
@@ -265,8 +287,13 @@ export default function AttendancePage() {
                   <td className="px-4 py-4 text-center">{r.studentCount ?? "-"}</td>
                   <td className="px-4 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{r.category}</span></td>
                   <td className="px-4 py-4 text-center">{r.hours}h</td>
-                  <td className="px-4 py-4">{r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2.5 py-1 rounded-full">出課</span>}</td>
-                  <td className="px-4 py-4 max-w-[220px] truncate text-xs text-slate-500" title={r.notes || ""}>{r.notes || "-"}</td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-col items-start gap-1">
+                      {r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2.5 py-1 rounded-full">出課</span>}
+                      {r.cancelled && r.makeupDate && <span className={`text-[11px] px-2 py-0.5 rounded-full ${r.makeupDone ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{r.makeupDone ? "已補課" : `補課 ${r.makeupDate.slice(0, 10)}`}</span>}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 max-w-[220px] truncate text-xs text-slate-500" title={r.cancelReason || r.notes || ""}>{r.cancelReason || r.notes || "-"}</td>
                   <td className="px-4 py-4">
                     <div className="flex gap-4 whitespace-nowrap">
                       <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>

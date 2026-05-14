@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
         ...(courseType ? { courseType } : {}),
       },
     },
-    include: { course: { include: { schoolRel: true } } },
+    include: { course: { include: { schoolRel: true } }, actualTeacher: true },
     orderBy: { date: "asc" },
   }) as unknown as Array<{
     id: number;
@@ -37,6 +37,8 @@ export async function GET(req: NextRequest) {
     studentCount: number | null;
     studentCountA: number | null;
     studentCountB: number | null;
+    reportContent: string;
+    actualTeacher: { name: string };
     course: {
       school: string;
       courseType: string;
@@ -56,11 +58,14 @@ export async function GET(req: NextRequest) {
         courseName: courseLabel(r.course.courseType),
         date: r.date.toISOString().slice(0, 10),
         studentCount: countOf(r),
+        reportContent: r.reportContent,
+        teacherName: r.actualTeacher.name,
       };
     })
     .filter((r) => !type || r.schoolType === type);
 
   const total = rows.reduce((sum, r) => sum + r.studentCount, 0);
+  const totalLessons = rows.length;
 
   if (format === "xlsx") {
     const wb = new ExcelJS.Workbook();
@@ -71,10 +76,13 @@ export async function GET(req: NextRequest) {
       { header: "課程名稱", key: "courseName", width: 14 },
       { header: "上課日期", key: "date", width: 14 },
       { header: "出席人數", key: "studentCount", width: 10 },
+      { header: "課程進度", key: "reportContent", width: 34 },
+      { header: "老師", key: "teacherName", width: 12 },
     ];
     ws.addRows(rows);
     ws.addRow({});
-    ws.addRow({ school: "本月園所上課總人數", studentCount: total });
+    ws.addRow({ school: "本月總堂數", studentCount: totalLessons });
+    ws.addRow({ school: "本月總人數", studentCount: total });
     const buf = await wb.xlsx.writeBuffer();
     return new NextResponse(buf, {
       headers: {
@@ -84,5 +92,5 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ year, month, total, rows });
+  return NextResponse.json({ year, month, total, totalLessons, rows });
 }

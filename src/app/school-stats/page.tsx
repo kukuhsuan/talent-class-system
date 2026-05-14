@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { COURSE_OPTIONS, courseLabel, DEPARTMENT_OPTIONS } from "@/lib/courseMeta";
 
 type School = { id: number; name: string; type: string };
-type Row = { id: number; school: string; schoolType: string; courseType: string; courseName: string; date: string; studentCount: number };
+type Row = { id: number; school: string; schoolType: string; courseType: string; courseName: string; date: string; studentCount: number; reportContent: string; teacherName: string };
 
 export default function SchoolStatsPage() {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -12,7 +12,7 @@ export default function SchoolStatsPage() {
   const [school, setSchool] = useState("");
   const [courseType, setCourseType] = useState("");
   const [schools, setSchools] = useState<School[]>([]);
-  const [data, setData] = useState<{ total: number; rows: Row[] }>({ total: 0, rows: [] });
+  const [data, setData] = useState<{ total: number; totalLessons: number; rows: Row[] }>({ total: 0, totalLessons: 0, rows: [] });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -94,13 +94,13 @@ export default function SchoolStatsPage() {
       </div>
 
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6">
-        <p className="text-sm text-emerald-700">本月園所上課總人數</p>
-        <p className="text-3xl font-bold text-emerald-900">{data.total.toLocaleString("zh-TW")} 人</p>
+        <p className="text-sm text-emerald-700">本月總堂數 / 總人數</p>
+        <p className="text-3xl font-bold text-emerald-900">{data.totalLessons.toLocaleString("zh-TW")} 堂 · {data.total.toLocaleString("zh-TW")} 人</p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-4 py-3 text-left">園所名稱</th>
@@ -108,6 +108,8 @@ export default function SchoolStatsPage() {
                 <th className="px-4 py-3 text-left">課程名稱</th>
                 <th className="px-4 py-3 text-left">上課日期</th>
                 <th className="px-4 py-3 text-right">出席人數</th>
+                <th className="px-4 py-3 text-left">課程進度</th>
+                <th className="px-4 py-3 text-left">老師</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -118,9 +120,11 @@ export default function SchoolStatsPage() {
                   <td className="px-4 py-3">{r.courseName || courseLabel(r.courseType)}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{r.date}</td>
                   <td className="px-4 py-3 text-right font-semibold">{r.studentCount}</td>
+                  <td className="px-4 py-3 text-slate-500">{r.reportContent || "—"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{r.teacherName}</td>
                 </tr>
               ))}
-              {data.rows.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-slate-400">尚無資料</td></tr>}
+              {data.rows.length === 0 && <tr><td colSpan={7} className="text-center py-10 text-slate-400">尚無資料</td></tr>}
             </tbody>
           </table>
         </div>

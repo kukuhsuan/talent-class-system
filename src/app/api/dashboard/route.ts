@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const deptFilter = dept ? { department: { in: departmentQueryValues(dept) } } : {};
 
   // Run all three queries in parallel — one cold start, one DB connection
-  const [courses, attendance, teacherCount] = await Promise.all([
+  const [courses, attendance, teacherCount, unboundTeachers] = await Promise.all([
     prisma.course.findMany({
       where: { isActive: true, ...deptFilter },
       select: {
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         ...(dept ? { course: { department: { in: departmentQueryValues(dept) } } } : {}),
       },
       select: {
-        id: true, date: true, cancelled: true, studentCount: true,
+        id: true, date: true, cancelled: true, studentCount: true, reportContent: true, reportSentAt: true,
         course: {
           select: {
             id: true, school: true, courseType: true, teacherId: true,
@@ -45,7 +45,13 @@ export async function GET(req: NextRequest) {
       orderBy: { date: "desc" },
     }),
     prisma.teacher.count(),
+    prisma.teacher.findMany({
+      where: { lineUserId: null },
+      select: { id: true, name: true, phone: true },
+      orderBy: { name: "asc" },
+      take: 12,
+    }),
   ]);
 
-  return NextResponse.json({ courses, attendance, teacherCount });
+  return NextResponse.json({ courses, attendance, teacherCount, unboundTeachers });
 }

@@ -15,6 +15,9 @@ export type AttendanceCreateFields = {
   actualTeacherId: number;
   studentCount?: number | null;
   cancelled?: boolean;
+  cancelReason?: string;
+  makeupDate?: Date | null;
+  makeupDone?: boolean;
   category?: string;
   hours?: number;
   notes?: string;
@@ -59,6 +62,9 @@ export async function createAttendancesForUniqueDays(
         actualTeacherId: fields.actualTeacherId,
         studentCount: fields.studentCount ?? null,
         cancelled: fields.cancelled ?? false,
+        cancelReason: fields.cancelReason ?? "",
+        makeupDate: fields.makeupDate ?? null,
+        makeupDone: fields.makeupDone ?? false,
         category: fields.category ?? "課後",
         hours: fields.hours ?? 1,
         notes: fields.notes ?? "",

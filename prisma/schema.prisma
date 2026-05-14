@@ -84,6 +84,9 @@ model Attendance {
   studentCountA   Int?
   studentCountB   Int?
   cancelled       Boolean   @default(false)
+  cancelReason    String    @default("")
+  makeupDate      DateTime?
+  makeupDone      Boolean   @default(false)
   category        String    @default("課後")
   hours           Float     @default(1)
   notes           String    @default("")

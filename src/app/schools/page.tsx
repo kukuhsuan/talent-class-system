@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEPARTMENT_OPTIONS, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string };
@@ -13,6 +13,8 @@ export default function SchoolsPage() {
   const [filterRegion, setFilterRegion] = useState("");
   const [filterType, setFilterType] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { fetchSchools(); }, []);
 
@@ -44,6 +46,10 @@ export default function SchoolsPage() {
     setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
     setEditing(s.id);
     setShowForm(true);
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      nameInputRef.current?.focus();
+    }, 50);
   }
 
   const filtered = schools.filter((s) =>
@@ -60,12 +66,12 @@ export default function SchoolsPage() {
       </div>
 
       {showForm && (
-        <div className="bg-white border rounded-xl p-6 mb-6 shadow-sm">
-          <h2 className="font-semibold text-gray-700 mb-4">{editing != null ? "編輯園所" : "新增園所"}</h2>
+        <div ref={formRef} className={`bg-white border rounded-xl p-6 mb-6 shadow-sm ${editing != null ? "border-blue-200 ring-2 ring-blue-50" : ""}`}>
+          <h2 className="font-semibold text-gray-700 mb-4">{editing != null ? "正在編輯園所" : "新增園所"}</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">園所名稱 *</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <input ref={nameInputRef} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">地區</label>

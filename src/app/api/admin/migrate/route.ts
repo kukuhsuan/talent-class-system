@@ -21,6 +21,9 @@ export async function POST(req: NextRequest) {
     'ALTER TABLE Course ADD COLUMN address TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN studentCountA INTEGER',
     'ALTER TABLE Attendance ADD COLUMN studentCountB INTEGER',
+    'ALTER TABLE Attendance ADD COLUMN cancelReason TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Attendance ADD COLUMN makeupDate DATETIME',
+    'ALTER TABLE Attendance ADD COLUMN makeupDone BOOLEAN NOT NULL DEFAULT false',
     'CREATE TABLE IF NOT EXISTS CourseProgress (id INTEGER PRIMARY KEY AUTOINCREMENT, courseType TEXT NOT NULL, lesson INTEGER NOT NULL, title TEXT NOT NULL, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
     'CREATE UNIQUE INDEX IF NOT EXISTS CourseProgress_courseType_lesson_key ON CourseProgress(courseType, lesson)',
   ];
