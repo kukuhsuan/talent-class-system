@@ -2,12 +2,12 @@
 import { useEffect, useState } from "react";
 
 type Teacher = {
-  id: number; name: string; email: string; rateAfterSchool: number; rateInSchool: number;
+  id: number; name: string; email: string; phone: string; rateAfterSchool: number; rateInSchool: number;
   rateDemo: number; travelFee: number; notes: string;
 };
 
 const EMPTY: Omit<Teacher, "id"> = {
-  name: "", email: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "",
+  name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "",
 };
 
 export default function TeachersPage() {
@@ -37,7 +37,7 @@ export default function TeachersPage() {
   };
 
   const edit = (t: Teacher) => {
-    setForm({ name: t.name, email: t.email ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes });
+    setForm({ name: t.name, email: t.email ?? "", phone: t.phone ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes });
     setEditing(t.id); setShowForm(true);
   };
 
@@ -65,9 +65,13 @@ export default function TeachersPage() {
               <label>老師姓名 *</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名" />
             </div>
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <label>Email</label>
               <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="teacher@gmail.com" />
+            </div>
+            <div>
+              <label>電話</label>
+              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0912-345-678" />
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">薪資資訊</div>
             <div>
@@ -110,6 +114,7 @@ export default function TeachersPage() {
                 <div className="min-w-0">
                   <div className="font-semibold text-slate-800">{t.name}</div>
                   <div title={t.email || ""} className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</div>
+                  <div title={t.phone || ""} className="mt-1 text-xs text-slate-500">{t.phone || "—"}</div>
                 </div>
                 <div className="flex shrink-0 gap-3">
                   <button onClick={() => edit(t)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
@@ -128,11 +133,12 @@ export default function TeachersPage() {
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無資料</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-4 py-3 text-left font-semibold">姓名</th>
-                <th className="px-4 py-3 text-left font-semibold">Email</th>
+                <th className="w-36 px-5 py-3 text-left font-semibold">姓名</th>
+                <th className="w-64 px-5 py-3 text-left font-semibold">Email</th>
+                <th className="w-40 px-5 py-3 text-left font-semibold">電話</th>
                 <th className="px-4 py-3 text-center font-semibold">課後時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">課內時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">Demo</th>
@@ -144,8 +150,9 @@ export default function TeachersPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50/70">
-                  <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{t.name}</td>
-                  <td title={t.email || ""} className="px-4 py-4 max-w-[220px] truncate text-xs text-slate-500">{t.email || "—"}</td>
+                  <td className="px-5 py-4 font-medium text-slate-800 whitespace-nowrap">{t.name}</td>
+                  <td title={t.email || ""} className="px-5 py-4 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</td>
+                  <td title={t.phone || ""} className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{t.phone || "—"}</td>
                   <td className="px-4 py-4 text-center text-slate-700">${t.rateAfterSchool}</td>
                   <td className="px-4 py-4 text-center text-slate-700">${t.rateInSchool}</td>
                   <td className="px-4 py-4 text-center text-slate-700">${t.rateDemo}</td>
@@ -160,7 +167,7 @@ export default function TeachersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="text-center text-slate-400 py-8">尚無資料</td></tr>
+                <tr><td colSpan={9} className="text-center text-slate-400 py-8">尚無資料</td></tr>
               )}
             </tbody>
           </table>

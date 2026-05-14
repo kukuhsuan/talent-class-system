@@ -40,6 +40,7 @@ model Teacher {
   travelFee       Int          @default(0)
   notes           String       @default("")
   email           String       @default("")
+  phone           String       @default("")
   lineUserId      String?      @unique
   lineBindCode    String?      @unique
   lineRegion      String       @default("")
