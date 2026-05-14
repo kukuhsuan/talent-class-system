@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
-import { formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
+import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { COURSE_OPTIONS, courseLabel, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
@@ -20,14 +20,40 @@ function coerceDept(s: string): DeptOption {
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 const CATS = ["課後", "課內", "Demo", "試上"];
+const DATE_MODES = [
+  { value: "single", label: "單日" },
+  { value: "multiple", label: "多日指定" },
+  { value: "range", label: "日期區間" },
+  { value: "weekly", label: "每週循環" },
+] as const;
 
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, school: "", schoolId: null as number | null,
   courseType: "", address: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "",
+  dateMode: "multiple",
   scheduledDateText: "",
   scheduledDateYear: new Date().getFullYear(),
   scheduledDates: [] as string[],
+  rangeStart: "",
+  rangeEnd: "",
+  recurringStart: "",
+  recurringEnd: "",
+  recurringDays: ["星期一"] as string[],
 };
+
+type CourseForm = typeof EMPTY_FORM;
+
+function collectScheduledDates(form: CourseForm) {
+  if (form.dateMode === "single") return form.scheduledDates[0] ? [form.scheduledDates[0]] : [];
+  if (form.dateMode === "range") return expandIsoDateRange(form.rangeStart, form.rangeEnd);
+  if (form.dateMode === "weekly") return expandWeeklyDates(form.recurringStart, form.recurringEnd, form.recurringDays);
+
+  const parsed = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
+  return [...new Set([
+    ...form.scheduledDates.map((d) => d.trim().slice(0, 10)).filter(Boolean),
+    ...parsed.dates,
+  ])].sort();
+}
 
 export default function CoursesPage() {
   const { dept } = useDepartment();
@@ -59,19 +85,17 @@ export default function CoursesPage() {
       school: s.name,
       region: normalizeRegion(s.region),
       department: s.type ? coerceDept(s.type) : f.department,
-      address: f.address || s.address || "",
+      address: s.address || f.address || "",
     }));
     else setForm((f) => ({ ...f, schoolId: null }));
   }
 
   const save = async () => {
     if (!form.code.trim() || !form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
-    const parsed = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
+    const parsed = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { errors: [] };
     if (parsed.errors.length > 0) return alert(`日期格式無法解析：${parsed.errors.join("、")}`);
-    const scheduledDates = [...new Set([
-      ...form.scheduledDates.map((d) => d.trim().slice(0, 10)).filter(Boolean),
-      ...parsed.dates,
-    ])].sort();
+    const scheduledDates = collectScheduledDates(form);
+    if ((form.dateMode === "range" || form.dateMode === "weekly") && scheduledDates.length === 0) return alert("請確認日期區間與星期設定");
     const autoDay = scheduledDates[0] ? weekdayOfIso(scheduledDates[0]) : form.dayOfWeek;
     const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
@@ -93,14 +117,15 @@ export default function CoursesPage() {
     setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
       department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
-      scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [] });
+      dateMode: "multiple", scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [],
+      rangeStart: "", rangeEnd: "", recurringStart: "", recurringEnd: "", recurringDays: [c.dayOfWeek || "星期一"] });
     setEditing(c.id); setShowForm(true);
   };
 
   const regions = [...new Set(courses.map((c) => normalizeRegion(c.region)).filter(Boolean))].sort();
   const filtered = courses.filter((c) => !filterRegion || normalizeRegion(c.region) === filterRegion);
-  const parsedDates = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
-  const previewDates = [...new Set([...form.scheduledDates.filter(Boolean), ...parsedDates.dates])].sort();
+  const parsedDates = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { dates: [], errors: [] };
+  const previewDates = collectScheduledDates(form);
 
   const catColor: Record<string, string> = {
     課後: "bg-blue-100 text-blue-700", 課內: "bg-green-100 text-green-700",
@@ -129,17 +154,27 @@ export default function CoursesPage() {
               <label>課程編號 *</label>
               <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="C050" />
             </div>
-            <div>
-              <label>園所（從資料庫選）</label>
+            <div className="md:col-span-2">
+              <label>園所名稱 *</label>
               <select value={form.schoolId ?? ""} onChange={(e) => selectSchool(Number(e.target.value))}>
-                <option value="">-- 選擇園所 --</option>
+                <option value="">-- 從園所管理選擇，或下方手動輸入 --</option>
                 {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${normalizeRegion(s.region)}] ` : ""}{s.type ? `${normalizeDepartment(s.type)}｜` : ""}{s.name}</option>)}
               </select>
+              {form.schoolId && (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <div className="font-medium text-slate-900">{form.school}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                    {form.region && <span>{normalizeRegion(form.region)}</span>}
+                    {form.department && <span>{normalizeDepartment(form.department)}</span>}
+                    {form.address && <span className="break-all">{form.address}</span>}
+                  </div>
+                </div>
+              )}
             </div>
-            <div>
-              <label>學校名稱 * <span className="text-xs text-gray-400">（可手填）</span></label>
+            {!form.schoolId && <div>
+              <label>手動輸入園所名稱 *</label>
               <input value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value })} placeholder="學校簡稱" />
-            </div>
+            </div>}
             <div>
               <label>地區</label>
               <select value={normalizeRegion(form.region)} onChange={(e) => setForm({ ...form, region: e.target.value })}>
@@ -199,33 +234,95 @@ export default function CoursesPage() {
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">實際日期</div>
             <div className="md:col-span-4 border border-amber-100 bg-amber-50/30 rounded-lg p-4">
-              <label className="block text-sm font-medium text-slate-700 mb-2">實際上課日期（選填，可多日、區間、不連續）</label>
-              <p className="text-xs text-slate-500 mb-2">範例：7/1、7/1-7/3、7/6、8、9、10、7/8、15、22、29。儲存後會建立對應日期的上課紀錄。</p>
-              <div className="grid md:grid-cols-[120px_1fr] gap-3">
-                <div>
-                  <label className="text-xs">年份</label>
-                  <input type="number" value={form.scheduledDateYear} onChange={(e) => setForm({ ...form, scheduledDateYear: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label className="text-xs">日期字串</label>
-                  <input value={form.scheduledDateText} onChange={(e) => setForm({ ...form, scheduledDateText: e.target.value })} placeholder="7/1-7/3、7/8、15、22、29" />
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 mt-3">
-                {form.scheduledDates.map((d, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2">
-                    <input type="date" value={d} onChange={(e) => {
-                      const next = [...form.scheduledDates];
-                      next[i] = e.target.value;
-                      setForm({ ...form, scheduledDates: next });
-                    }} className="text-sm" />
-                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: f.scheduledDates.filter((_, j) => j !== i) }))}
-                      className="text-xs text-red-500 hover:underline">移除</button>
-                  </div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">實際上課日期（選填）</label>
+              <p className="text-xs text-slate-500 mb-3">儲存後會建立對應日期的上課紀錄，週課表會依實際日期顯示。</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {DATE_MODES.map((m) => (
+                  <button key={m.value} type="button" onClick={() => setForm({ ...form, dateMode: m.value })}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium ${form.dateMode === m.value ? "bg-amber-700 text-white border-amber-700" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
+                    {m.label}
+                  </button>
                 ))}
-                <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [...f.scheduledDates, ""] }))}
-                  className="self-start text-sm text-blue-600 hover:underline">+ 加入單日選擇</button>
               </div>
+
+              {form.dateMode === "single" && (
+                <div className="max-w-xs">
+                  <label className="text-xs">上課日期</label>
+                  <input type="date" value={form.scheduledDates[0] ?? ""} onChange={(e) => setForm({ ...form, scheduledDates: [e.target.value] })} />
+                </div>
+              )}
+
+              {form.dateMode === "multiple" && (
+                <>
+                  <div className="grid md:grid-cols-[120px_1fr] gap-3">
+                    <div>
+                      <label className="text-xs">年份</label>
+                      <input type="number" value={form.scheduledDateYear} onChange={(e) => setForm({ ...form, scheduledDateYear: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="text-xs">日期字串</label>
+                      <input value={form.scheduledDateText} onChange={(e) => setForm({ ...form, scheduledDateText: e.target.value })} placeholder="7/1、7/6、8、9、10、7/8、15、22、29" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 mt-3">
+                    {form.scheduledDates.map((d, i) => (
+                      <div key={i} className="flex flex-wrap items-center gap-2">
+                        <input type="date" value={d} onChange={(e) => {
+                          const next = [...form.scheduledDates];
+                          next[i] = e.target.value;
+                          setForm({ ...form, scheduledDates: next });
+                        }} className="text-sm" />
+                        <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: f.scheduledDates.filter((_, j) => j !== i) }))}
+                          className="text-xs text-red-500 hover:underline">移除</button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, scheduledDates: [...f.scheduledDates, ""] }))}
+                      className="self-start text-sm text-blue-600 hover:underline">+ 加入單日選擇</button>
+                  </div>
+                </>
+              )}
+
+              {form.dateMode === "range" && (
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs">開始日期</label>
+                    <input type="date" value={form.rangeStart} onChange={(e) => setForm({ ...form, rangeStart: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-xs">結束日期</label>
+                    <input type="date" value={form.rangeEnd} onChange={(e) => setForm({ ...form, rangeEnd: e.target.value })} />
+                  </div>
+                </div>
+              )}
+
+              {form.dateMode === "weekly" && (
+                <div className="space-y-3">
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs">開始日期</label>
+                      <input type="date" value={form.recurringStart} onChange={(e) => setForm({ ...form, recurringStart: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="text-xs">結束日期</label>
+                      <input type="date" value={form.recurringEnd} onChange={(e) => setForm({ ...form, recurringEnd: e.target.value })} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs">每週星期</label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {DAYS.map((d) => (
+                        <label key={d} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs ${form.recurringDays.includes(d) ? "border-amber-700 bg-amber-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>
+                          <input type="checkbox" className="sr-only" checked={form.recurringDays.includes(d)} onChange={(e) => {
+                            const next = e.target.checked ? [...form.recurringDays, d] : form.recurringDays.filter((x) => x !== d);
+                            setForm({ ...form, recurringDays: next });
+                          }} />
+                          {d.replace("星期", "週")}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
               {previewDates.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {previewDates.map((d) => (

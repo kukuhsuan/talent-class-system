@@ -57,17 +57,19 @@ export default function TeachersPage() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 md:p-6 mb-6">
           <h2 className="font-semibold text-slate-700 mb-4">{editing ? "編輯老師" : "新增老師"}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="col-span-2 md:col-span-1">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">基本資料</div>
+            <div>
               <label>老師姓名 *</label>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="姓名" />
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-3">
               <label>Email</label>
               <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="teacher@gmail.com" />
             </div>
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">薪資資訊</div>
             <div>
               <label>課後時薪（元）</label>
               <input type="number" value={form.rateAfterSchool} onChange={(e) => setForm({ ...form, rateAfterSchool: Number(e.target.value) })} />
@@ -84,12 +86,13 @@ export default function TeachersPage() {
               <label>每節車費（元）</label>
               <input type="number" value={form.travelFee} onChange={(e) => setForm({ ...form, travelFee: Number(e.target.value) })} />
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">備註</div>
+            <div className="md:col-span-4">
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註說明" />
             </div>
           </div>
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-3 mt-5">
             <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">儲存</button>
             <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm">取消</button>
           </div>
@@ -100,16 +103,40 @@ export default function TeachersPage() {
         <div className="p-4 border-b border-slate-100">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜尋老師姓名..." className="max-w-xs" />
         </div>
-        <div className="overflow-x-auto">
-          <table>
+        <div className="md:hidden divide-y divide-slate-100">
+          {filtered.map((t) => (
+            <div key={t.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-900">{t.name}</div>
+                  <div title={t.email || ""} className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</div>
+                </div>
+                <div className="flex shrink-0 gap-3">
+                  <button onClick={() => edit(t)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
+                  <button onClick={() => del(t.id, t.name)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課後時薪</div><div className="font-medium">${t.rateAfterSchool}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課內時薪</div><div className="font-medium">${t.rateInSchool}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">Demo</div><div className="font-medium">${t.rateDemo}</div></div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">車費</div><div className="font-medium">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
+              </div>
+              {t.notes && <div className="mt-3 text-xs text-slate-500">{t.notes}</div>}
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無資料</div>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[980px]">
             <thead>
               <tr>
                 <th>姓名</th>
                 <th>Email</th>
                 <th>課後時薪</th>
                 <th>課內時薪</th>
-                <th>Demo 時薪</th>
-                <th>車費/節</th>
+                <th>Demo</th>
+                <th>車費</th>
                 <th>備註</th>
                 <th>操作</th>
               </tr>
@@ -117,15 +144,15 @@ export default function TeachersPage() {
             <tbody>
               {filtered.map((t) => (
                 <tr key={t.id}>
-                  <td className="font-medium">{t.name}</td>
-                  <td className="text-xs text-slate-500">{t.email || "—"}</td>
+                  <td className="font-medium whitespace-nowrap">{t.name}</td>
+                  <td title={t.email || ""} className="max-w-[220px] truncate text-xs text-slate-500">{t.email || "—"}</td>
                   <td className="text-center">${t.rateAfterSchool}</td>
                   <td className="text-center">${t.rateInSchool}</td>
                   <td className="text-center">${t.rateDemo}</td>
                   <td className="text-center">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</td>
-                  <td className="text-slate-500 text-xs">{t.notes || "-"}</td>
+                  <td className="max-w-[260px] truncate text-slate-500 text-xs" title={t.notes || ""}>{t.notes || "-"}</td>
                   <td>
-                    <div className="flex gap-2">
+                    <div className="flex gap-4 whitespace-nowrap">
                       <button onClick={() => edit(t)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                       <button onClick={() => del(t.id, t.name)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
                     </div>

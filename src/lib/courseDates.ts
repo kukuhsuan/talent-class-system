@@ -32,7 +32,7 @@ function toIso(part: DatePart, fallbackYear: number): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-function expandRange(startIso: string, endIso: string): string[] {
+export function expandIsoDateRange(startIso: string, endIso: string): string[] {
   const start = new Date(`${startIso}T00:00:00.000Z`);
   const end = new Date(`${endIso}T00:00:00.000Z`);
   if (start > end) return [];
@@ -44,6 +44,13 @@ function expandRange(startIso: string, endIso: string): string[] {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return out;
+}
+
+export function expandWeeklyDates(startIso: string, endIso: string, weekdays: string[]): string[] {
+  const wanted = new Set(weekdays);
+  if (!startIso || !endIso || wanted.size === 0) return [];
+
+  return expandIsoDateRange(startIso, endIso).filter((iso) => wanted.has(weekdayOfIso(iso)));
 }
 
 export function weekdayOfIso(iso: string): string {
@@ -78,7 +85,7 @@ export function parseCourseDateInput(input: string, fallbackYear = new Date().ge
         errors.push(token);
         continue;
       }
-      dates.push(...expandRange(startIso, endIso));
+      dates.push(...expandIsoDateRange(startIso, endIso));
       continue;
     }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
-import { parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
+import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { departmentQueryValues, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
   const parsed = typeof data.scheduledDateText === "string"
     ? parseCourseDateInput(data.scheduledDateText, Number(data.scheduledDateYear) || new Date().getFullYear()).dates
     : [];
-  const allScheduled = [...new Set([...scheduled, ...parsed])].sort();
+  const range = data.dateMode === "range" ? expandIsoDateRange(data.rangeStart ?? "", data.rangeEnd ?? "") : [];
+  const weekly = data.dateMode === "weekly" ? expandWeeklyDates(data.recurringStart ?? "", data.recurringEnd ?? "", Array.isArray(data.recurringDays) ? data.recurringDays : []) : [];
+  const allScheduled = [...new Set([...scheduled, ...parsed, ...range, ...weekly])].sort();
   const dayOfWeek = allScheduled[0] ? weekdayOfIso(allScheduled[0]) : (data.dayOfWeek ?? "");
 
   const course = await prisma.$transaction(async (tx) => {
