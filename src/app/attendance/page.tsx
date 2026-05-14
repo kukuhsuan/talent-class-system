@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
-import { courseLabel } from "@/lib/courseMeta";
+import { CATEGORY_OPTIONS, courseLabel, normalizeCategory } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
@@ -13,7 +13,6 @@ type Attendance = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const CATS = ["課後", "課內", "Demo", "試上"];
 const EMPTY_FORM = {
   date: today(), courseId: 0, actualTeacherId: 0,
   studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 1, notes: "",
@@ -48,7 +47,7 @@ export default function AttendancePage() {
 
   const onCourseChange = (courseId: number) => {
     const c = courses.find((x) => x.id === courseId);
-    setForm((f) => ({ ...f, courseId, actualTeacherId: c?.teacherId ?? 0, category: c?.category ?? "課後" }));
+    setForm((f) => ({ ...f, courseId, actualTeacherId: c?.teacherId ?? 0, category: normalizeCategory(c?.category) }));
   };
 
   const save = async () => {
@@ -86,7 +85,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: r.category, hours: r.hours, notes: r.notes, extraDates: [] });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, extraDates: [] });
     setEditing(r.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -170,7 +169,7 @@ export default function AttendancePage() {
             <div>
               <label>類別</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATS.map((c) => <option key={c}>{c}</option>)}
+                {CATEGORY_OPTIONS.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -246,7 +245,7 @@ export default function AttendancePage() {
                     {isSubstitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[11px] text-orange-700">代課</div>}
                   </div>
                   <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">出席人數</div><div className="font-medium">{r.studentCount ?? "-"}</div></div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{r.category}｜{r.hours}h</div></div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{normalizeCategory(r.category)}｜{r.hours}h</div></div>
                 </div>
                 {(r.cancelReason || r.notes) && <div className="mt-3 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
                 <div className="mt-4 flex gap-4">
@@ -290,7 +289,7 @@ export default function AttendancePage() {
                     {isSubstitute && <div className="mt-1 inline-flex text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">代課</div>}
                   </td>
                   <td className="px-4 py-4 text-center">{r.studentCount ?? "-"}</td>
-                  <td className="px-4 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{r.category}</span></td>
+                  <td className="px-4 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{normalizeCategory(r.category)}</span></td>
                   <td className="px-4 py-4 text-center">{r.hours}h</td>
                   <td className="px-4 py-4">
                     <div className="flex flex-col items-start gap-1">

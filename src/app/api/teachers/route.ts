@@ -13,6 +13,8 @@ export async function POST(req: NextRequest) {
       ...data,
       lineUserId: data.lineUserId?.trim() || null,
       lineRegion: data.lineRegion || "",
+      isAssistant: Boolean(data.isAssistant),
+      assistantFee: Number(data.assistantFee) || 0,
     },
   });
   return NextResponse.json(teacher, { status: 201 });

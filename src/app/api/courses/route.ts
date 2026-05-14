@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
 import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
-import { departmentQueryValues, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
+import { departmentQueryValues, normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         address: data.address ?? "",
         dayOfWeek,
         time: data.time ?? "",
-        category: data.category ?? "課後",
+        category: normalizeCategory(data.category),
         department: normalizeDepartment(data.department),
         enrollCount: data.enrollCount ?? "",
         isActive: data.isActive ?? true,
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         {
           courseId: c.id,
           actualTeacherId: c.teacherId,
-          category: c.category,
+          category: normalizeCategory(c.category),
           hours: 1,
           notes: "",
           cancelled: false,

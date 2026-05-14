@@ -17,6 +17,8 @@ export async function POST(req: NextRequest) {
   const migrations = [
     'ALTER TABLE Teacher ADD COLUMN email TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Teacher ADD COLUMN phone TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Teacher ADD COLUMN isAssistant BOOLEAN NOT NULL DEFAULT false',
+    'ALTER TABLE Teacher ADD COLUMN assistantFee INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE School ADD COLUMN type TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Course ADD COLUMN address TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN studentCountA INTEGER',

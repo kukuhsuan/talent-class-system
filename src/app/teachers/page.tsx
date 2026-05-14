@@ -4,11 +4,11 @@ import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = {
   id: number; name: string; email: string; phone: string; rateAfterSchool: number; rateInSchool: number;
-  rateDemo: number; travelFee: number; notes: string; lineUserId: string | null; lineRegion: string;
+  rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number; notes: string; lineUserId: string | null; lineRegion: string;
 };
 
 const EMPTY: Omit<Teacher, "id"> = {
-  name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, notes: "", lineUserId: "", lineRegion: "north",
+  name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, isAssistant: false, assistantFee: 0, notes: "", lineUserId: "", lineRegion: "north",
 };
 
 const LINE_REGIONS = [
@@ -46,7 +46,7 @@ export default function TeachersPage() {
   };
 
   const edit = (t: Teacher) => {
-    setForm({ name: t.name, email: t.email ?? "", phone: t.phone ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, notes: t.notes, lineUserId: t.lineUserId ?? "", lineRegion: t.lineRegion || "north" });
+    setForm({ name: t.name, email: t.email ?? "", phone: t.phone ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, isAssistant: Boolean(t.isAssistant), assistantFee: t.assistantFee ?? 0, notes: t.notes, lineUserId: t.lineUserId ?? "", lineRegion: t.lineRegion || "north" });
     setEditing(t.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -95,21 +95,32 @@ export default function TeachersPage() {
               </select>
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">薪資資訊</div>
+            <div className="md:col-span-4 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input type="checkbox" checked={form.isAssistant} onChange={(e) => setForm({ ...form, isAssistant: e.target.checked })} className="h-4 w-4" />
+                是否為助教
+              </label>
+              <p className="mt-1 text-xs text-slate-500">未勾選為主教，薪資使用課內 / 課後 / Demo / 車費。勾選後薪資使用助教費用。</p>
+            </div>
             <div>
               <label>課後時薪（元）</label>
-              <input type="number" value={form.rateAfterSchool} onChange={(e) => setForm({ ...form, rateAfterSchool: Number(e.target.value) })} />
+              <input type="number" value={form.rateAfterSchool} onChange={(e) => setForm({ ...form, rateAfterSchool: Number(e.target.value) })} disabled={form.isAssistant} />
             </div>
             <div>
               <label>課內時薪（元）</label>
-              <input type="number" value={form.rateInSchool} onChange={(e) => setForm({ ...form, rateInSchool: Number(e.target.value) })} />
+              <input type="number" value={form.rateInSchool} onChange={(e) => setForm({ ...form, rateInSchool: Number(e.target.value) })} disabled={form.isAssistant} />
             </div>
             <div>
               <label>Demo 時薪（元）</label>
-              <input type="number" value={form.rateDemo} onChange={(e) => setForm({ ...form, rateDemo: Number(e.target.value) })} />
+              <input type="number" value={form.rateDemo} onChange={(e) => setForm({ ...form, rateDemo: Number(e.target.value) })} disabled={form.isAssistant} />
             </div>
             <div>
               <label>每節車費（元）</label>
-              <input type="number" value={form.travelFee} onChange={(e) => setForm({ ...form, travelFee: Number(e.target.value) })} />
+              <input type="number" value={form.travelFee} onChange={(e) => setForm({ ...form, travelFee: Number(e.target.value) })} disabled={form.isAssistant} />
+            </div>
+            <div>
+              <label>助教費用（元 / 小時）</label>
+              <input type="number" value={form.assistantFee} onChange={(e) => setForm({ ...form, assistantFee: Number(e.target.value) })} disabled={!form.isAssistant} />
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">備註</div>
             <div className="md:col-span-4">
@@ -134,6 +145,9 @@ export default function TeachersPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold text-slate-800">{t.name}</div>
+                  <div className="mt-1">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${t.isAssistant ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{t.isAssistant ? "助教" : "主教"}</span>
+                  </div>
                   <div title={t.email || ""} className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</div>
                   <div title={t.phone || ""} className="mt-1 text-xs text-slate-500">{t.phone || "—"}</div>
                   <div className="mt-2">
@@ -148,10 +162,16 @@ export default function TeachersPage() {
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課後時薪</div><div className="font-medium text-slate-700">${t.rateAfterSchool}</div></div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課內時薪</div><div className="font-medium text-slate-700">${t.rateInSchool}</div></div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">Demo</div><div className="font-medium text-slate-700">${t.rateDemo}</div></div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">車費</div><div className="font-medium text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
+                {t.isAssistant ? (
+                  <div className="rounded-lg bg-purple-50 px-3 py-2"><div className="text-xs text-purple-400">助教費用</div><div className="font-medium text-purple-700">${t.assistantFee}</div></div>
+                ) : (
+                  <>
+                    <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課後時薪</div><div className="font-medium text-slate-700">${t.rateAfterSchool}</div></div>
+                    <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課內時薪</div><div className="font-medium text-slate-700">${t.rateInSchool}</div></div>
+                    <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">Demo</div><div className="font-medium text-slate-700">${t.rateDemo}</div></div>
+                    <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">車費</div><div className="font-medium text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
+                  </>
+                )}
               </div>
               {t.notes && <div className="mt-3 text-xs text-slate-500">{t.notes}</div>}
             </div>
@@ -166,10 +186,12 @@ export default function TeachersPage() {
                 <th className="w-64 px-5 py-3 text-left font-semibold">Email</th>
                 <th className="w-40 px-5 py-3 text-left font-semibold">電話</th>
                 <th className="w-40 px-5 py-3 text-left font-semibold">LINE</th>
+                <th className="w-24 px-4 py-3 text-center font-semibold">身份</th>
                 <th className="px-4 py-3 text-center font-semibold">課後時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">課內時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">Demo</th>
                 <th className="px-4 py-3 text-center font-semibold">車費</th>
+                <th className="px-4 py-3 text-center font-semibold">助教費</th>
                 <th className="px-4 py-3 text-left font-semibold">備註</th>
                 <th className="px-4 py-3 text-left font-semibold">操作</th>
               </tr>
@@ -188,10 +210,12 @@ export default function TeachersPage() {
                       {t.lineRegion && <span className="text-[11px] text-slate-400">{LINE_REGIONS.find((r) => r.value === t.lineRegion)?.label ?? t.lineRegion}</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-center text-slate-700">${t.rateAfterSchool}</td>
-                  <td className="px-4 py-4 text-center text-slate-700">${t.rateInSchool}</td>
-                  <td className="px-4 py-4 text-center text-slate-700">${t.rateDemo}</td>
-                  <td className="px-4 py-4 text-center text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</td>
+                  <td className="px-4 py-4 text-center"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${t.isAssistant ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{t.isAssistant ? "助教" : "主教"}</span></td>
+                  <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateAfterSchool}`}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateInSchool}`}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateDemo}`}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">{!t.isAssistant && t.travelFee > 0 ? `$${t.travelFee}` : "-"}</td>
+                  <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? `$${t.assistantFee}` : "-"}</td>
                   <td className="px-4 py-4 max-w-[260px] truncate text-slate-500 text-xs" title={t.notes || ""}>{t.notes || "-"}</td>
                   <td className="px-4 py-4">
                     <div className="flex gap-4 whitespace-nowrap">
@@ -202,7 +226,7 @@ export default function TeachersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="text-center text-slate-400 py-8">尚無資料</td></tr>
+                <tr><td colSpan={12} className="text-center text-slate-400 py-8">尚無資料</td></tr>
               )}
             </tbody>
           </table>

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
+import { normalizeCategory } from "@/lib/courseMeta";
 
-type TeacherRow = { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number };
+type TeacherRow = { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number };
 type AttendanceRow = { id: number; actualTeacherId: number; cancelled: boolean; category: string; hours: number; course: { teacherId: number } };
 
 export async function GET(req: NextRequest) {
@@ -53,8 +54,8 @@ export async function GET(req: NextRequest) {
 
   (teachers as unknown as TeacherRow[]).forEach((teacher) => {
     const myRecords = attendances.filter((a) => a.actualTeacherId === teacher.id && !a.cancelled);
-    const regularRecords = myRecords.filter((a) => a.category !== "Demo" && a.category !== "試上");
-    const demoRecords = myRecords.filter((a) => a.category === "Demo" || a.category === "試上");
+    const regularRecords = myRecords.filter((a) => normalizeCategory(a.category) !== "Demo");
+    const demoRecords = myRecords.filter((a) => normalizeCategory(a.category) === "Demo");
     const subRecords = regularRecords.filter((a) => a.course.teacherId !== teacher.id);
 
     if (myRecords.length === 0) return;
@@ -62,9 +63,11 @@ export async function GET(req: NextRequest) {
     const regularHours = regularRecords.reduce((s, a) => s + a.hours, 0);
     const demoHours = demoRecords.reduce((s, a) => s + a.hours, 0);
     const subHours = subRecords.reduce((s, a) => s + a.hours, 0);
-    const regularPay = regularHours * teacher.rateAfterSchool;
-    const demoPay = demoHours * teacher.rateDemo;
-    const travelPay = (regularHours + demoHours) * teacher.travelFee;
+    const regularPay = teacher.isAssistant
+      ? myRecords.reduce((s, a) => s + a.hours * teacher.assistantFee, 0)
+      : regularRecords.reduce((s, a) => s + a.hours * (normalizeCategory(a.category) === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool), 0);
+    const demoPay = teacher.isAssistant ? 0 : demoHours * teacher.rateDemo;
+    const travelPay = teacher.isAssistant ? 0 : regularHours * teacher.travelFee;
     const total = regularPay + demoPay + travelPay;
 
     grandTotal += total;

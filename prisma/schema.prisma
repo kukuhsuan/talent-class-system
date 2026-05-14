@@ -38,6 +38,8 @@ model Teacher {
   rateInSchool    Int          @default(500)
   rateDemo        Int          @default(200)
   travelFee       Int          @default(0)
+  isAssistant     Boolean      @default(false)
+  assistantFee    Int          @default(0)
   notes           String       @default("")
   email           String       @default("")
   phone           String       @default("")

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { courseLabel } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string; rateAfterSchool: number; travelFee: number };
 type Detail = {
@@ -15,7 +15,7 @@ type SalaryRow = {
 };
 
 const catColor: Record<string, string> = {
-  課後: "text-blue-600", 課內: "text-green-600", Demo: "text-orange-500", 試上: "text-purple-500", 安親: "text-pink-500", 社團: "text-teal-500",
+  課後: "text-blue-600", 課內: "text-green-600", Demo: "text-orange-500", 營隊: "text-purple-600",
 };
 
 export default function SalaryPage() {
@@ -254,7 +254,7 @@ export default function SalaryPage() {
                               </td>
                               <td className="py-1.5 text-slate-600">{courseLabel(d.courseType)}</td>
                               <td className="py-1.5 text-center">
-                                <span className={`text-xs font-medium ${catColor[d.category] ?? "text-slate-500"}`}>{d.category}</span>
+                                <span className={`text-xs font-medium ${catColor[normalizeCategory(d.category)] ?? "text-slate-500"}`}>{normalizeCategory(d.category)}</span>
                               </td>
                               <td className="py-1.5 text-center">{d.hours}</td>
                               <td className="py-1.5 text-right text-slate-500">${d.rate}</td>

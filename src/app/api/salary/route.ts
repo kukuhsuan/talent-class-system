@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeCategory } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   const results = teachers.map((teacher: Record<string, unknown>) => {
-    const t = teacher as { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number };
+    const t = teacher as { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number };
     const myRecords = (attendancesRaw as unknown as Array<{
       id: number; date: Date; actualTeacherId: number; category: string; hours: number; notes: string;
       course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string };
@@ -27,18 +28,20 @@ export async function GET(req: NextRequest) {
     }>).filter((a) => a.actualTeacherId === t.id);
 
     const details = myRecords.map((a) => {
-      const isDemo = a.category === "Demo" || a.category === "試上";
-      const rate = isDemo ? t.rateDemo : t.rateAfterSchool;
-      const amount = a.hours * rate + (isDemo ? 0 : t.travelFee);
+      const category = normalizeCategory(a.category);
+      const isDemo = category === "Demo";
+      const rate = t.isAssistant ? t.assistantFee : isDemo ? t.rateDemo : category === "課內" ? t.rateInSchool : t.rateAfterSchool;
+      const travelFee = t.isAssistant || isDemo ? 0 : t.travelFee;
+      const amount = a.hours * rate + travelFee;
       return {
         id: a.id,
         date: a.date,
         school: a.course.school,
         courseType: a.course.courseType,
-        category: a.category,
+        category,
         hours: a.hours,
         rate,
-        travelFee: isDemo ? 0 : t.travelFee,
+        travelFee,
         amount,
         isSub: a.course.teacherId !== t.id,
         department: a.course.department ?? "",
@@ -46,15 +49,19 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const regularHours = myRecords.filter((a) => a.category !== "Demo" && a.category !== "試上").reduce((s, a) => s + a.hours, 0);
-    const demoHours = myRecords.filter((a) => a.category === "Demo" || a.category === "試上").reduce((s, a) => s + a.hours, 0);
-    const subHours = myRecords.filter((a) => a.course.teacherId !== t.id && a.category !== "Demo" && a.category !== "試上").reduce((s, a) => s + a.hours, 0);
-    const regularPay = regularHours * t.rateAfterSchool;
-    const demoPay = demoHours * t.rateDemo;
-    const travelPay = (regularHours + demoHours) * t.travelFee;
+    const regularHours = myRecords.filter((a) => normalizeCategory(a.category) !== "Demo").reduce((s, a) => s + a.hours, 0);
+    const demoHours = myRecords.filter((a) => normalizeCategory(a.category) === "Demo").reduce((s, a) => s + a.hours, 0);
+    const subHours = myRecords.filter((a) => a.course.teacherId !== t.id && normalizeCategory(a.category) !== "Demo").reduce((s, a) => s + a.hours, 0);
+    const assistantPay = t.isAssistant ? myRecords.reduce((s, a) => s + a.hours * t.assistantFee, 0) : 0;
+    const regularPay = t.isAssistant ? assistantPay : myRecords.filter((a) => normalizeCategory(a.category) !== "Demo").reduce((s, a) => {
+      const category = normalizeCategory(a.category);
+      return s + a.hours * (category === "課內" ? t.rateInSchool : t.rateAfterSchool);
+    }, 0);
+    const demoPay = t.isAssistant ? 0 : demoHours * t.rateDemo;
+    const travelPay = t.isAssistant ? 0 : regularHours * t.travelFee;
     const total = regularPay + demoPay + travelPay;
 
-    return { teacher: t, regularHours, subHours, demoHours, regularPay, demoPay, travelPay, total, hasActivity: myRecords.length > 0, details };
+    return { teacher: t, regularHours, subHours, demoHours, regularPay, demoPay, assistantPay, travelPay, total, hasActivity: myRecords.length > 0, details };
   });
 
   return NextResponse.json({ year, month, results });

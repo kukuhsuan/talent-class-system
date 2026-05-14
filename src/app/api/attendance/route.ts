@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays, parseAttendanceDay } from "@/lib/attendanceBatch";
+import { normalizeCategory } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -34,7 +35,7 @@ function buildFields(data: Record<string, unknown>) {
     cancelReason: (data.cancelReason as string) ?? "",
     makeupDate: data.makeupDate ? parseAttendanceDay(String(data.makeupDate).slice(0, 10)) : null,
     makeupDone: Boolean(data.makeupDone),
-    category: (data.category as string) ?? "課後",
+    category: normalizeCategory(data.category as string),
     hours: Number(data.hours) || 1,
     notes: (data.notes as string) ?? "",
   };

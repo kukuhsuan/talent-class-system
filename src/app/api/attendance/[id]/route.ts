@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseAttendanceDay } from "@/lib/attendanceBatch";
+import { normalizeCategory } from "@/lib/courseMeta";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,6 +12,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     data: {
       ...rest,
       date: data.date ? parseAttendanceDay(String(data.date).slice(0, 10)) : undefined,
+      category: rest.category ? normalizeCategory(rest.category) : undefined,
       makeupDate: makeupDate ? parseAttendanceDay(String(makeupDate).slice(0, 10)) : null,
     },
     include: { course: true, actualTeacher: true },

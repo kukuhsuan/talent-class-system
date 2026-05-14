@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
-import { courseLabel, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, courseLabel, normalizeCategory, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type Course = {
@@ -39,13 +39,6 @@ function formatShort(iso: string) {
   const d = new Date(`${iso}T00:00:00.000Z`);
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
-
-const catColor: Record<string, string> = {
-  課後: "bg-blue-100 text-blue-800 border-blue-200",
-  課內: "bg-green-100 text-green-800 border-green-200",
-  Demo: "bg-orange-100 text-orange-800 border-orange-200",
-  試上: "bg-purple-100 text-purple-800 border-purple-200",
-};
 
 export default function SchedulePage() {
   const { dept } = useDepartment();
@@ -156,7 +149,7 @@ export default function SchedulePage() {
                         <td key={d} className={`px-2 py-2 border-r border-slate-200 align-top ${weekDates[i] === todayIso ? "bg-blue-50/40" : ""}`}>
                           <div className="space-y-2">
                             {cells.map((c) => (
-                              <div key={c.id} className={`rounded-lg border px-3 py-2 text-xs leading-5 ${catColor[c.category] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
+                              <div key={c.id} className={`rounded-lg px-3 py-2 text-xs leading-5 ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>
                                 <div className="text-[11px] font-semibold opacity-75">{c.dateLabel || formatShort(weekDates[i])} {d.replace("星期", "週")}</div>
                                 <div className="font-semibold">{courseLabel(c.courseType)}</div>
                                 {courseLabel(c.courseType) !== c.courseType && <div className="text-[10px] opacity-60">{c.courseType}</div>}
@@ -186,8 +179,8 @@ export default function SchedulePage() {
 
       {/* Legend */}
       <div className="flex gap-3 mt-4 flex-wrap">
-        {Object.entries(catColor).map(([cat, cls]) => (
-          <span key={cat} className={`text-xs px-2 py-1 rounded-full border ${cls}`}>{cat}</span>
+        {CATEGORY_OPTIONS.map((cat) => (
+          <span key={cat} className={`text-xs px-2 py-1 rounded-full ${CATEGORY_BADGE_CLASS[cat]}`}>{cat}</span>
         ))}
         <span className="text-xs text-slate-400">藍色欄位為今天</span>
       </div>

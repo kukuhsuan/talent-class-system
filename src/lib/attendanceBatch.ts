@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { normalizeCategory } from "@/lib/courseMeta";
 
 /** Parse YYYY-MM-DD to UTC midnight for consistent DB storage. */
 export function parseAttendanceDay(dateStr: string): Date {
@@ -65,7 +66,7 @@ export async function createAttendancesForUniqueDays(
         cancelReason: fields.cancelReason ?? "",
         makeupDate: fields.makeupDate ?? null,
         makeupDone: fields.makeupDone ?? false,
-        category: fields.category ?? "課後",
+        category: normalizeCategory(fields.category),
         hours: fields.hours ?? 1,
         notes: fields.notes ?? "",
       },

@@ -6,7 +6,7 @@ import {
   buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
-import { courseLabel } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 
 type LineEvent = {
   type: string;
@@ -110,7 +110,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       }) as { id: number } | null;
       if (!att) {
         att = await prisma.attendance.create({
-          data: { date: today, courseId: course.id, actualTeacherId: teacher.id, category: course.category, hours: 1 },
+          data: { date: today, courseId: course.id, actualTeacherId: teacher.id, category: normalizeCategory(course.category), hours: 1 },
         }) as { id: number };
       }
       atts.push({ id: att.id, school: course.school, courseType: course.courseType, department: course.department });

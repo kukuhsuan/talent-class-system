@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
-import { COURSE_OPTIONS, courseLabel, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, normalizeCategory, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
@@ -20,7 +20,6 @@ function coerceDept(s: string): DeptOption {
 }
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
-const CATS = ["課後", "課內", "Demo", "試上"];
 const DATE_MODES = [
   { value: "single", label: "單日" },
   { value: "multiple", label: "多日指定" },
@@ -93,7 +92,7 @@ export default function CoursesPage() {
       school: s.name,
       region: normalizeRegion(s.region),
       department: s.type ? coerceDept(s.type) : f.department,
-      address: s.address || f.address || "",
+      address: editing === null ? (s.address || f.address || "") : f.address,
     }));
     else setForm((f) => ({ ...f, schoolId: null }));
   }
@@ -111,7 +110,7 @@ export default function CoursesPage() {
       .filter((c) => c.teacherId === form.teacherId || (form.schoolId ? c.schoolId === form.schoolId : c.school === form.school))
       .map((c) => `${c.teacherId === form.teacherId ? "老師撞課" : "園所撞課"}：${describeCourse(c)}`);
     if (conflicts.length > 0 && !confirm(`偵測到可能排課衝突：\n\n${conflicts.slice(0, 6).join("\n")}\n\n仍要儲存嗎？`)) return;
-    const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), dayOfWeek: autoDay, scheduledDates });
+    const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), category: normalizeCategory(form.category), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
     if (editing !== null) {
       await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
@@ -129,7 +128,7 @@ export default function CoursesPage() {
 
   const edit = (c: Course) => {
     setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
-      courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
+      courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: normalizeCategory(c.category),
       department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
       dateMode: "multiple", scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [],
       rangeStart: "", rangeEnd: "", recurringStart: "", recurringEnd: "", recurringDays: [c.dayOfWeek || "星期一"] });
@@ -141,11 +140,6 @@ export default function CoursesPage() {
   const filtered = courses.filter((c) => !filterRegion || normalizeRegion(c.region) === filterRegion);
   const parsedDates = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { dates: [], errors: [] };
   const previewDates = collectScheduledDates(form);
-
-  const catColor: Record<string, string> = {
-    課後: "bg-blue-100 text-blue-700", 課內: "bg-green-100 text-green-700",
-    Demo: "bg-orange-100 text-orange-700", 試上: "bg-purple-100 text-purple-700",
-  };
 
   return (
     <div>
@@ -230,7 +224,7 @@ export default function CoursesPage() {
             <div>
               <label>類別</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATS.map((c) => <option key={c}>{c}</option>)}
+                {CATEGORY_OPTIONS.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -403,7 +397,7 @@ export default function CoursesPage() {
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.dayOfWeek}</td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.time || "—"}</td>
                   <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-normal break-words">{c.address || "—"}</td>
-                  <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${catColor[c.category] ?? "bg-slate-100 text-slate-600"}`}>{c.category}</span></td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span></td>
                   <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{c.enrollCount || "—"}</td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
                   <td className="px-4 py-3">

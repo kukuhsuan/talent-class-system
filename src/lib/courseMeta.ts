@@ -32,6 +32,36 @@ export function courseLabel(code: string | null | undefined): string {
   return COURSE_LABEL[trimmed] ?? COURSE_LABEL[trimmed.toUpperCase()] ?? trimmed;
 }
 
+export const CATEGORY_OPTIONS = ["課內", "課後", "Demo", "營隊"] as const;
+export type CategoryOption = (typeof CATEGORY_OPTIONS)[number];
+
+const CATEGORY_ALIASES: Record<string, CategoryOption> = {
+  課內: "課內",
+  課後: "課後",
+  Demo: "Demo",
+  demo: "Demo",
+  DEMO: "Demo",
+  課後班: "課後",
+  體驗課: "Demo",
+  試上: "Demo",
+  夏令營: "營隊",
+  冬令營: "營隊",
+  營隊: "營隊",
+};
+
+export function normalizeCategory(category: string | null | undefined): CategoryOption {
+  const trimmed = (category ?? "").trim();
+  if (!trimmed) return "課後";
+  return CATEGORY_ALIASES[trimmed] ?? "課後";
+}
+
+export const CATEGORY_BADGE_CLASS: Record<CategoryOption, string> = {
+  課內: "bg-green-100 text-green-700 border border-green-200",
+  課後: "bg-blue-100 text-blue-700 border border-blue-200",
+  Demo: "bg-orange-100 text-orange-700 border border-orange-200",
+  營隊: "bg-purple-100 text-purple-700 border border-purple-200",
+};
+
 export const REGION_OPTIONS = ["台北區", "桃園區", "新竹區", "台中區", "彰化區", "台南區", "高雄區"] as const;
 
 const REGION_ALIASES: Record<string, string> = {

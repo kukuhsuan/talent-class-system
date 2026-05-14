@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
 import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
-import { normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
+import { normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         address: data.address ?? "",
         dayOfWeek,
         time: data.time ?? "",
-        category: data.category ?? "課後",
+        category: normalizeCategory(data.category),
         department: normalizeDepartment(data.department),
         enrollCount: data.enrollCount ?? "",
         isActive: data.isActive ?? true,
@@ -47,7 +47,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         {
           courseId: c.id,
           actualTeacherId: c.teacherId,
-          category: c.category,
+          category: normalizeCategory(c.category),
           hours: 1,
           notes: "",
           cancelled: false,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
-import { courseLabel, normalizeRegion } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory, normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       mainTeacher: r.course.teacher.name,
       actualTeacher: r.actualTeacher.name,
       isSub: isSub ? "是" : "",
-      category: r.category,
+      category: normalizeCategory(r.category),
       hours: r.hours,
       studentCount: r.studentCount ?? "",
       cancelled: r.cancelled ? "是" : "",

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, pushMessage } from "@/lib/line";
+import { normalizeCategory } from "@/lib/courseMeta";
 
 type DetailRow = {
   date: string; school: string; courseType: string; category: string;
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
 
   const teacher = await prisma.teacher.findUnique({ where: { id: Number(teacherId) } }) as unknown as {
     id: number; name: string; lineUserId: string | null; lineRegion: string;
-    rateAfterSchool: number; rateDemo: number; travelFee: number;
+    rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number;
   } | null;
 
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
@@ -102,15 +103,16 @@ export async function POST(req: NextRequest) {
   }>;
 
   const details: DetailRow[] = attendances.map((a) => {
-    const isDemo = a.category === "Demo" || a.category === "試上";
-    const rate = isDemo ? teacher.rateDemo : teacher.rateAfterSchool;
-    const travelFee = isDemo ? 0 : teacher.travelFee;
+    const category = normalizeCategory(a.category);
+    const isDemo = category === "Demo";
+    const rate = teacher.isAssistant ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
+    const travelFee = teacher.isAssistant || isDemo ? 0 : teacher.travelFee;
     const amount = a.hours * rate + travelFee;
     return {
       date: a.date.toISOString(),
       school: a.course.school,
       courseType: a.course.courseType,
-      category: a.category,
+      category,
       hours: a.hours,
       rate,
       travelFee,
