@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-
-const REGIONS = ["台北市", "新北市", "桃園市", "新竹市", "新竹縣", "苗栗縣", "台中市", "彰化縣", "南投縣", "雲林縣", "嘉義市", "嘉義縣", "台南市", "高雄市", "屏東縣", "宜蘭縣", "花蓮縣", "台東縣", "其他"];
+import { normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type School = { id: number; name: string; region: string; address: string; phone: string; contact: string; notes: string };
 
@@ -41,13 +40,13 @@ export default function SchoolsPage() {
   }
 
   function edit(s: School) {
-    setForm({ name: s.name, region: s.region, address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
+    setForm({ name: s.name, region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
     setEditing(s.id);
     setShowForm(true);
   }
 
-  const filtered = filterRegion ? schools.filter((s) => s.region === filterRegion) : schools;
-  const regionGroups = [...new Set(schools.map((s) => s.region).filter(Boolean))].sort();
+  const filtered = filterRegion ? schools.filter((s) => normalizeRegion(s.region) === filterRegion) : schools;
+  const regionGroups = [...new Set(schools.map((s) => normalizeRegion(s.region)).filter(Boolean))].sort();
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -68,7 +67,7 @@ export default function SchoolsPage() {
               <label className="text-xs text-gray-500 mb-1 block">地區</label>
               <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })}>
                 <option value="">選擇地區</option>
-                {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div className="col-span-2">
@@ -118,7 +117,7 @@ export default function SchoolsPage() {
             {filtered.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{s.name}</td>
-                <td className="px-4 py-3"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{s.region || "—"}</span></td>
+                <td className="px-4 py-3"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{normalizeRegion(s.region) || "—"}</span></td>
                 <td className="px-4 py-3 text-gray-500">{s.address || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.phone || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.contact || "—"}</td>

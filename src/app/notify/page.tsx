@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string; lineUserId: string | null; lineBindCode: string | null; lineRegion: string };
 type School = { id: number; name: string; region: string; lineUserId: string | null; lineBindCode: string | null };
@@ -265,7 +266,7 @@ export default function NotifyPage() {
                     <td className="px-4 py-3 text-xs text-slate-500">{a.date.slice(0, 10)}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{a.course.school}</div>
-                      <div className="text-xs text-slate-400">{a.course.courseType}</div>
+                      <div className="text-xs text-slate-400">{courseLabel(a.course.courseType)}</div>
                     </td>
                     <td className="px-4 py-3">
                       {a.actualTeacher.name}

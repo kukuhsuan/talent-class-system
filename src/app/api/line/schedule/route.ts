@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage, buildScheduleMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
+import { regionQueryValues } from "@/lib/courseMeta";
 
 const DAY_ORDER = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 
@@ -25,12 +26,13 @@ export async function POST(req: NextRequest) {
   const weekLabel = `${fmt(nextMon)} ~ ${fmt(nextSun)}`;
 
   const whereTeacher = body.teacherId ? { id: Number(body.teacherId) } : { lineUserId: { not: null } };
+  const regionValues = regionQueryValues(body.region);
 
   const teachers = await prisma.teacher.findMany({
     where: whereTeacher as never,
     include: {
       courses: {
-        where: { isActive: true },
+        where: { isActive: true, ...(regionValues.length > 0 ? { region: { in: regionValues } } : {}) },
         include: { schoolRel: true },
         orderBy: { dayOfWeek: "asc" },
       },
@@ -55,6 +57,7 @@ export async function POST(req: NextRequest) {
         actualTeacherId: teacher.id,
         cancelled: false,
         date: { gte: nextMon, lte: nextSun },
+        ...(regionValues.length > 0 ? { course: { region: { in: regionValues } } } : {}),
       },
       include: { course: { include: { schoolRel: true } } },
       orderBy: { date: "asc" },

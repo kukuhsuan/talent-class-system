@@ -1,19 +1,7 @@
 import crypto from "crypto";
+import { COURSE_LABEL, courseLabel } from "@/lib/courseMeta";
 
-// Course type full name mapping
-export const COURSE_LABEL: Record<string, string> = {
-  FT: "足球", ft: "足球",
-  P: "體能", p: "體能",
-  G: "高爾夫", g: "高爾夫",
-  D: "舞蹈", d: "舞蹈",
-  B: "棒球", b: "棒球",
-  BK: "棒球", bk: "棒球",
-  冰壺: "冰壺",
-};
-
-export function courseLabel(code: string): string {
-  return COURSE_LABEL[code] ?? COURSE_LABEL[code.toUpperCase()] ?? code;
-}
+export { COURSE_LABEL, courseLabel };
 
 // Course curriculum data (lesson number → title)
 export const COURSE_CURRICULUM: Record<string, Array<{ lesson: number; title: string }>> = {
@@ -287,9 +275,10 @@ export function buildReminderMessage(opts: {
   date: string;
   dayOfWeek: string;
 }) {
+  const label = courseLabel(opts.courseType);
   return {
     type: "flex",
-    altText: `明日課程提醒：${opts.school} ${opts.courseType}`,
+    altText: `明日課程提醒：${opts.school} ${label}`,
     contents: {
       type: "bubble",
       header: {
@@ -307,7 +296,7 @@ export function buildReminderMessage(opts: {
           { type: "text", text: `日期：${opts.date}（${opts.dayOfWeek}）`, size: "sm", color: "#555555" },
           { type: "text", text: `時間：${opts.time || "待確認"}`, size: "sm", color: "#555555" },
           { type: "text", text: `地點：${opts.school}`, size: "sm", color: "#555555" },
-          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#555555" },
+          { type: "text", text: `課程：${label}`, size: "sm", color: "#555555" },
         ],
       },
       footer: {
@@ -433,9 +422,10 @@ export function buildSchoolReportMessage(opts: {
   content: string;
   cancelled: boolean;
 }) {
+  const label = courseLabel(opts.courseType);
   return {
     type: "flex",
-    altText: `本週課程完成報告：${opts.school} ${opts.courseType}`,
+    altText: `本週課程完成報告：${opts.school} ${label}`,
     contents: {
       type: "bubble",
       header: {
@@ -453,7 +443,7 @@ export function buildSchoolReportMessage(opts: {
         paddingAll: "16px",
         contents: [
           { type: "text", text: opts.school, weight: "bold", color: "#2E2B27", size: "xl" },
-          { type: "text", text: `課程：${opts.courseType}`, size: "sm", color: "#6B6358" },
+          { type: "text", text: `課程：${label}`, size: "sm", color: "#6B6358" },
           { type: "separator", color: "#DDD8D0", margin: "sm" },
           { type: "text", text: `教練：${opts.teacherName}`, size: "sm", color: "#2E2B27", margin: "sm" },
           ...(opts.studentCount != null ? [{

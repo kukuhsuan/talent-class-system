@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeRegion } from "@/lib/courseMeta";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -8,7 +9,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     where: { id: Number(id) },
     data: {
       name: data.name,
-      region: data.region ?? "",
+      region: normalizeRegion(data.region),
       address: data.address ?? "",
       phone: data.phone ?? "",
       contact: data.contact ?? "",

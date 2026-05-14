@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
+import { departmentQueryValues, regionQueryValues } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const region = searchParams.get("region") ?? "";
   const dept = searchParams.get("dept") ?? "";
+  const regionValues = regionQueryValues(region);
   const fromParam = searchParams.get("from");
   const toParam = searchParams.get("to");
   const from = fromParam ? new Date(`${fromParam}T00:00:00.000Z`) : new Date();
@@ -18,8 +20,8 @@ export async function GET(req: NextRequest) {
       date: { gte: from, lte: to },
       course: {
         isActive: true,
-        ...(region ? { region } : {}),
-        ...(dept ? { department: dept } : {}),
+        ...(regionValues.length > 0 ? { region: { in: regionValues } } : {}),
+        ...(dept ? { department: { in: departmentQueryValues(dept) } } : {}),
       },
     },
     include: { course: { include: { teacher: true, schoolRel: true } } },
@@ -61,8 +63,8 @@ export async function GET(req: NextRequest) {
   const courses = await prisma.course.findMany({
     where: {
       isActive: true,
-      ...(region ? { region } : {}),
-      ...(dept ? { department: dept } : {}),
+      ...(regionValues.length > 0 ? { region: { in: regionValues } } : {}),
+      ...(dept ? { department: { in: departmentQueryValues(dept) } } : {}),
     },
     include: { teacher: true, schoolRel: true },
     orderBy: [{ region: "asc" }, { school: "asc" }, { dayOfWeek: "asc" }],

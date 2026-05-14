@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useDepartment } from "@/lib/departmentContext";
+import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string; dayOfWeek: string; time: string; region: string };
@@ -131,7 +132,7 @@ export default function Home() {
                       <span className="text-xs text-slate-400 font-mono">{c.code}</span>
                       {c.region && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{c.region}</span>}
                     </div>
-                    <div className="text-sm text-slate-500 mt-0.5">{c.courseType} · {c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
+                    <div className="text-sm text-slate-500 mt-0.5">{courseLabel(c.courseType)} · {c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
                   </div>
                   <div className="text-right shrink-0">
                     {att ? (

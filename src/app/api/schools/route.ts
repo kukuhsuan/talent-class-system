@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET() {
   const schools = await prisma.school.findMany({ orderBy: [{ region: "asc" }, { name: "asc" }] });
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
   const school = await prisma.school.create({
     data: {
       name: data.name,
-      region: data.region ?? "",
+      region: normalizeRegion(data.region),
       address: data.address ?? "",
       phone: data.phone ?? "",
       contact: data.contact ?? "",

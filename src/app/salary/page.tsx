@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string; rateAfterSchool: number; travelFee: number };
 type Detail = {
@@ -251,7 +252,7 @@ export default function SalaryPage() {
                                 {d.school}
                                 {d.isSub && <span className="ml-1 text-xs text-orange-500">代</span>}
                               </td>
-                              <td className="py-1.5 text-slate-600">{d.courseType}</td>
+                              <td className="py-1.5 text-slate-600">{courseLabel(d.courseType)}</td>
                               <td className="py-1.5 text-center">
                                 <span className={`text-xs font-medium ${catColor[d.category] ?? "text-slate-500"}`}>{d.category}</span>
                               </td>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { departmentQueryValues } from "@/lib/courseMeta";
 
 // Single endpoint for the home page — replaces 3 separate fetches
 // Returns: { courses, attendance, teacherCount }
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   const monthStart = new Date(year, month - 1, 1);
   const monthEnd = new Date(year, month, 1);
 
-  const deptFilter = dept ? { department: dept } : {};
+  const deptFilter = dept ? { department: { in: departmentQueryValues(dept) } } : {};
 
   // Run all three queries in parallel — one cold start, one DB connection
   const [courses, attendance, teacherCount] = await Promise.all([
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     prisma.attendance.findMany({
       where: {
         date: { gte: monthStart, lt: monthEnd },
-        ...(dept ? { course: { department: dept } } : {}),
+        ...(dept ? { course: { department: { in: departmentQueryValues(dept) } } } : {}),
       },
       select: {
         id: true, date: true, cancelled: true, studentCount: true,

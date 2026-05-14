@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
+import { courseLabel } from "@/lib/courseMeta";
 
 type DetailRow = {
   date: Date; school: string; courseType: string; category: string;
@@ -15,7 +16,7 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
     <tr>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${fmtDate(r.date)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:500;">${r.school}${r.isSub ? ' <span style="color:#f97316;font-size:12px">代</span>' : ""}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${r.courseType}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${courseLabel(r.courseType)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.category}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.hours}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">$${r.rate}</td>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
+import { courseLabel, normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -54,8 +55,8 @@ export async function GET(req: NextRequest) {
       date: r.date.toISOString().slice(0, 10),
       code: r.course.code,
       school: r.course.school,
-      courseType: r.course.courseType,
-      region: r.course.region,
+      courseType: courseLabel(r.course.courseType),
+      region: normalizeRegion(r.course.region),
       mainTeacher: r.course.teacher.name,
       actualTeacher: r.actualTeacher.name,
       isSub: isSub ? "是" : "",

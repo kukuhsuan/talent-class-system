@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
 import { parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
+import { departmentQueryValues, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dept = searchParams.get("dept") ?? "";
   const courses = await prisma.course.findMany({
-    where: dept ? { department: dept } : {},
+    where: dept ? { department: { in: departmentQueryValues(dept) } } : {},
     include: { teacher: true, schoolRel: true },
     orderBy: [{ region: "asc" }, { dayOfWeek: "asc" }],
   });
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     const c = await tx.course.create({
       data: {
         code: data.code,
-        region: data.region ?? "",
+        region: normalizeRegion(data.region),
         teacherId: Number(data.teacherId),
         school: data.school,
         schoolId: data.schoolId ? Number(data.schoolId) : null,
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
         dayOfWeek,
         time: data.time ?? "",
         category: data.category ?? "課後",
-        department: data.department ?? "幼兒園",
+        department: normalizeDepartment(data.department),
         enrollCount: data.enrollCount ?? "",
         isActive: data.isActive ?? true,
         notes: data.notes ?? "",

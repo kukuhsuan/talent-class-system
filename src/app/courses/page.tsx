@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
+import { COURSE_OPTIONS, courseLabel, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type School = { id: number; name: string; region: string; address: string };
@@ -14,7 +15,7 @@ type Course = {
 type DeptOption = (typeof DEPARTMENTS)[number];
 
 function coerceDept(s: string): DeptOption {
-  return (DEPARTMENTS as readonly string[]).includes(s) ? (s as DeptOption) : "幼兒園";
+  return normalizeDepartment(s) as DeptOption;
 }
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -52,7 +53,7 @@ export default function CoursesPage() {
 
   function selectSchool(schoolId: number) {
     const s = schools.find((s) => s.id === schoolId);
-    if (s) setForm((f) => ({ ...f, schoolId: s.id, school: s.name, region: s.region, address: f.address || s.address || "" }));
+    if (s) setForm((f) => ({ ...f, schoolId: s.id, school: s.name, region: normalizeRegion(s.region), address: f.address || s.address || "" }));
     else setForm((f) => ({ ...f, schoolId: null }));
   }
 
@@ -65,7 +66,7 @@ export default function CoursesPage() {
       ...parsed.dates,
     ])].sort();
     const autoDay = scheduledDates[0] ? weekdayOfIso(scheduledDates[0]) : form.dayOfWeek;
-    const body = JSON.stringify({ ...form, dayOfWeek: autoDay, scheduledDates });
+    const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
     if (editing !== null) {
       await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
@@ -82,15 +83,15 @@ export default function CoursesPage() {
   };
 
   const edit = (c: Course) => {
-    setForm({ code: c.code, region: c.region, teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
+    setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: c.category,
       department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
       scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [] });
     setEditing(c.id); setShowForm(true);
   };
 
-  const regions = [...new Set(courses.map((c) => c.region).filter(Boolean))].sort();
-  const filtered = courses.filter((c) => !filterRegion || c.region === filterRegion);
+  const regions = [...new Set(courses.map((c) => normalizeRegion(c.region)).filter(Boolean))].sort();
+  const filtered = courses.filter((c) => !filterRegion || normalizeRegion(c.region) === filterRegion);
   const parsedDates = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
   const previewDates = [...new Set([...form.scheduledDates.filter(Boolean), ...parsedDates.dates])].sort();
 
@@ -113,9 +114,10 @@ export default function CoursesPage() {
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 md:p-6 mb-6">
           <h2 className="font-semibold text-slate-700 mb-4">{editing != null ? "編輯課程" : "新增課程"}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">基本資料</div>
             <div>
               <label>課程編號 *</label>
               <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="C050" />
@@ -124,7 +126,7 @@ export default function CoursesPage() {
               <label>園所（從資料庫選）</label>
               <select value={form.schoolId ?? ""} onChange={(e) => selectSchool(Number(e.target.value))}>
                 <option value="">-- 選擇園所 --</option>
-                {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${s.region}] ` : ""}{s.name}</option>)}
+                {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${normalizeRegion(s.region)}] ` : ""}{s.name}</option>)}
               </select>
             </div>
             <div>
@@ -133,9 +135,13 @@ export default function CoursesPage() {
             </div>
             <div>
               <label>地區</label>
-              <input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="台北市" />
+              <select value={normalizeRegion(form.region)} onChange={(e) => setForm({ ...form, region: e.target.value })}>
+                <option value="">-- 選擇地區 --</option>
+                {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">課程資訊</div>
+            <div className="md:col-span-2">
               <label>上課地址</label>
               <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="可貼完整地址，之後可連 Google Maps" />
             </div>
@@ -148,7 +154,11 @@ export default function CoursesPage() {
             </div>
             <div>
               <label>課程項目</label>
-              <input value={form.courseType} onChange={(e) => setForm({ ...form, courseType: e.target.value })} placeholder="FT / BK / G / D ..." />
+              <select value={form.courseType} onChange={(e) => setForm({ ...form, courseType: e.target.value })}>
+                <option value="">-- 選擇課程 --</option>
+                {COURSE_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.label}（{c.code}）</option>)}
+                {form.courseType && !COURSE_OPTIONS.some((c) => c.code === form.courseType) && <option value={form.courseType}>{courseLabel(form.courseType)}（既有資料）</option>}
+              </select>
             </div>
             <div>
               <label>星期幾</label>
@@ -168,7 +178,7 @@ export default function CoursesPage() {
             </div>
             <div>
               <label>部門</label>
-              <select value={form.department} onChange={(e) => setForm({ ...form, department: coerceDept(e.target.value) })}>
+              <select value={normalizeDepartment(form.department)} onChange={(e) => setForm({ ...form, department: coerceDept(e.target.value) })}>
                 {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
@@ -176,11 +186,12 @@ export default function CoursesPage() {
               <label>報名人數</label>
               <input value={form.enrollCount} onChange={(e) => setForm({ ...form, enrollCount: e.target.value })} placeholder="10人" />
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-2">
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
-            <div className="col-span-2 md:col-span-4 border-t border-slate-100 pt-4 mt-1">
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">實際日期</div>
+            <div className="md:col-span-4 border border-amber-100 bg-amber-50/30 rounded-lg p-4">
               <label className="block text-sm font-medium text-slate-700 mb-2">實際上課日期（選填，可多日、區間、不連續）</label>
               <p className="text-xs text-slate-500 mb-2">範例：7/1、7/1-7/3、7/6、8、9、10、7/8、15、22、29。儲存後會建立對應日期的上課紀錄。</p>
               <div className="grid md:grid-cols-[120px_1fr] gap-3">
@@ -219,7 +230,7 @@ export default function CoursesPage() {
               )}
               {parsedDates.errors.length > 0 && <p className="mt-2 text-xs text-red-500">無法解析：{parsedDates.errors.join("、")}</p>}
             </div>
-            <div className="flex items-end pb-2">
+            <div className="md:col-span-4 flex items-end pb-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="w-4 h-4" />
                 <span className="text-sm font-medium text-slate-700">開課中</span>
@@ -236,7 +247,7 @@ export default function CoursesPage() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex gap-3 flex-wrap">
           <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-xs border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
-          {regions.map((r) => <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
+          {[...new Set([...REGION_OPTIONS, ...regions])].map((r) => <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
           <span className="text-sm text-slate-500 self-center ml-2">共 {filtered.length} 門</span>
         </div>
         <div className="overflow-x-auto">
@@ -261,18 +272,21 @@ export default function CoursesPage() {
               {filtered.map((c) => (
                 <tr key={c.id}>
                   <td className="font-mono text-xs text-slate-500">{c.code}</td>
-                  <td>{c.region}</td>
+                  <td>{normalizeRegion(c.region)}</td>
                   <td className="font-medium">{c.school}</td>
                   <td>{c.teacher.name}</td>
-                  <td>{c.courseType}</td>
+                  <td>
+                    <div className="font-medium text-slate-800">{courseLabel(c.courseType)}</div>
+                    {courseLabel(c.courseType) !== c.courseType && <div className="text-[11px] text-slate-400">{c.courseType}</div>}
+                  </td>
                   <td className="text-xs">{c.dayOfWeek}</td>
-                  <td className="text-xs text-slate-500">{c.time}</td>
-                  <td className="text-xs text-slate-500 max-w-48 truncate">{c.address}</td>
+                  <td className="text-xs text-slate-600 whitespace-nowrap">{c.time}</td>
+                  <td className="text-xs text-slate-500 min-w-48 max-w-72 whitespace-normal break-words">{c.address}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${catColor[c.category] ?? "bg-slate-100 text-slate-600"}`}>{c.category}</span></td>
                   <td className="text-sm">{c.enrollCount}</td>
                   <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
                   <td>
-                    <div className="flex gap-2">
+                    <div className="flex gap-3 whitespace-nowrap">
                       <button onClick={() => edit(c)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                       <button onClick={() => del(c.id, c.code)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
                     </div>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
+import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type CourseInfo = { id: number; school: string; courseType: string; department: string };
@@ -135,7 +136,7 @@ export default function ProgressPage() {
                           <span className="text-sm font-medium text-slate-700">
                             {new Date(r.date).toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "short" })}
                           </span>
-                          <span className="text-xs text-slate-500">{r.course.courseType}</span>
+                          <span className="text-xs text-slate-500">{courseLabel(r.course.courseType)}</span>
                           <span className="text-xs text-slate-500">👨‍🏫 {r.actualTeacher.name}</span>
                           {r.studentCount !== null && (
                             <span className="text-xs text-slate-500">👦 {r.studentCount}人</span>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
+import { courseLabel, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type Course = {
@@ -34,7 +35,7 @@ export default function SchedulePage() {
       .then((data) => { setCourses(data); setLoading(false); });
   }, [filterRegion, dept]);
 
-  const allRegions = [...new Set(courses.map((c) => c.region).filter(Boolean))].sort();
+  const allRegions = [...new Set(courses.map((c) => normalizeRegion(c.region)).filter(Boolean))].sort();
 
   // Group by school
   const schools = [...new Set(courses.map((c) => c.school))].sort();
@@ -63,7 +64,7 @@ export default function SchedulePage() {
       {/* Region filter */}
       <div className="flex gap-2 mb-4 flex-wrap">
         <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-sm border transition-colors ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>全部地區</button>
-        {allRegions.map((r) => (
+        {[...new Set([...REGION_OPTIONS, ...allRegions])].map((r) => (
           <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-sm border transition-colors ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{r}</button>
         ))}
       </div>
@@ -91,7 +92,7 @@ export default function SchedulePage() {
                 if (!hasAny) return null;
 
                 const firstCourse = courses.find((c) => c.school === school);
-                const region = firstCourse?.region ?? "";
+                const region = normalizeRegion(firstCourse?.region ?? "");
 
                 return (
                   <tr key={school} className="hover:bg-slate-50/50">
@@ -106,10 +107,11 @@ export default function SchedulePage() {
                           <div className="space-y-1">
                             {cells.map((c) => (
                               <div key={c.id} className={`rounded-lg border px-2 py-1.5 text-xs ${catColor[c.category] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
-                                <div className="font-semibold">{c.courseType}</div>
+                                <div className="font-semibold">{courseLabel(c.courseType)}</div>
+                                {courseLabel(c.courseType) !== c.courseType && <div className="text-[10px] opacity-60">{c.courseType}</div>}
                                 {c.dateLabel && <div className="text-[11px] opacity-75">{c.dateLabel} {c.dayOfWeek.replace("星期", "週")}</div>}
                                 <div className="text-[11px] opacity-75">{c.teacher.name}</div>
-                                {c.time && <div className="text-[11px] opacity-60">{c.time}</div>}
+                                {c.time && <div className="text-[11px] opacity-70 whitespace-nowrap">{c.time}</div>}
                                 {c.address && <div className="text-[11px] opacity-60 break-words">{c.address}</div>}
                                 {c.enrollCount && <div className="text-[11px] opacity-60">{c.enrollCount}</div>}
                               </div>

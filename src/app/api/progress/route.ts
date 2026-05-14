@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { departmentQueryValues } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   const courseFilter: Record<string, unknown> = {};
-  if (dept) courseFilter.department = dept;
+  if (dept) courseFilter.department = { in: departmentQueryValues(dept) };
   if (school) courseFilter.school = school;
   if (Object.keys(courseFilter).length) where.course = courseFilter;
 

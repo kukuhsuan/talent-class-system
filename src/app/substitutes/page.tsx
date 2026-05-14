@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type Substitute = {
@@ -92,7 +93,11 @@ export default function SubstitutesPage() {
             </div>
             <div>
               <label>課程項目</label>
-              <input value={form.courseType} onChange={(e) => setForm({ ...form, courseType: e.target.value })} placeholder="FT / BK ..." />
+              <select value={form.courseType} onChange={(e) => setForm({ ...form, courseType: e.target.value })}>
+                <option value="">-- 選擇課程 --</option>
+                {COURSE_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.label}（{c.code}）</option>)}
+                {form.courseType && !COURSE_OPTIONS.some((c) => c.code === form.courseType) && <option value={form.courseType}>{courseLabel(form.courseType)}（既有資料）</option>}
+              </select>
             </div>
             <div>
               <label>請假老師 *</label>
@@ -151,7 +156,7 @@ export default function SubstitutesPage() {
                 <tr key={r.id}>
                   <td className="text-sm">{r.date.slice(0, 10)}</td>
                   <td className="font-medium">{r.school}</td>
-                  <td>{r.courseType || "-"}</td>
+                  <td>{r.courseType ? courseLabel(r.courseType) : "-"}</td>
                   <td className="text-orange-600">{r.originalTeacher.name}</td>
                   <td>{r.substituteTeacher ? <span className="text-blue-600 font-medium">{r.substituteTeacher.name}</span> : <span className="text-slate-400 text-sm">暫停</span>}</td>
                   <td>{r.fee ? `$${r.fee}` : "-"}</td>

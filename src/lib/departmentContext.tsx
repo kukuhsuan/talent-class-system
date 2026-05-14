@@ -1,7 +1,8 @@
 "use client";
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { DEPARTMENT_OPTIONS, normalizeDepartment } from "@/lib/courseMeta";
 
-export const DEPARTMENTS = ["幼兒園", "國小", "安親"] as const;
+export const DEPARTMENTS = DEPARTMENT_OPTIONS;
 export type Department = (typeof DEPARTMENTS)[number] | "";
 
 type Ctx = { dept: Department; setDept: (d: Department) => void };
@@ -13,13 +14,14 @@ export function DepartmentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     queueMicrotask(() => {
       const saved = localStorage.getItem("dept") as Department | null;
-      if (saved) setDeptState(saved);
+      if (saved) setDeptState(saved ? normalizeDepartment(saved) : "");
     });
   }, []);
 
   function setDept(d: Department) {
-    setDeptState(d);
-    localStorage.setItem("dept", d);
+    const next = d ? normalizeDepartment(d) : "";
+    setDeptState(next);
+    localStorage.setItem("dept", next);
   }
 
   return <DeptCtx.Provider value={{ dept, setDept }}>{children}</DeptCtx.Provider>;
