@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useDepartment } from "@/lib/departmentContext";
+import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string };
@@ -198,47 +199,82 @@ export default function AttendancePage() {
           </select>
           <span className="text-sm text-slate-500">共 {records.length} 筆</span>
         </div>
-        <div className="overflow-x-auto">
-          <table>
+        <div className="md:hidden divide-y divide-slate-100">
+          {records.map((r) => {
+            const isSubstitute = r.actualTeacher.id !== r.course.teacherId;
+            return (
+              <div key={r.id} className={`p-4 ${r.cancelled ? "opacity-60" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{fmt(r.date)}</div>
+                    <div className="mt-1 text-xs text-slate-500">{r.course.code}｜{courseLabel(r.course.courseType)}</div>
+                  </div>
+                  <div>{r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">出課</span>}</div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">學校</div><div className="font-medium text-slate-800">{r.course.school}</div></div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="text-xs text-slate-400">老師</div>
+                    <div className="font-medium text-slate-800">{r.actualTeacher.name}</div>
+                    {isSubstitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[11px] text-orange-700">代課</div>}
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">出席人數</div><div className="font-medium">{r.studentCount ?? "-"}</div></div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{r.category}｜{r.hours}h</div></div>
+                </div>
+                {r.notes && <div className="mt-3 text-xs text-slate-500">{r.notes}</div>}
+                <div className="mt-4 flex gap-4">
+                  <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
+                  <button onClick={() => del(r.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
+                </div>
+              </div>
+            );
+          })}
+          {records.length === 0 && <div className="py-8 text-center text-slate-400">本月尚無上課紀錄</div>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[1120px] text-sm">
             <thead>
-              <tr>
-                <th>日期</th>
-                <th>課程</th>
-                <th>學校</th>
-                <th>上課老師</th>
-                <th>出席人數</th>
-                <th>類別</th>
-                <th>時數</th>
-                <th>狀態</th>
-                <th>備註</th>
-                <th>操作</th>
+              <tr className="bg-slate-50 text-slate-600">
+                <th className="px-4 py-3 text-left font-semibold">日期</th>
+                <th className="px-4 py-3 text-left font-semibold">課程</th>
+                <th className="px-4 py-3 text-left font-semibold">學校</th>
+                <th className="px-4 py-3 text-left font-semibold">上課老師</th>
+                <th className="px-4 py-3 text-center font-semibold">出席人數</th>
+                <th className="px-4 py-3 text-left font-semibold">類別</th>
+                <th className="px-4 py-3 text-center font-semibold">時數</th>
+                <th className="px-4 py-3 text-left font-semibold">狀態</th>
+                <th className="px-4 py-3 text-left font-semibold">備註</th>
+                <th className="px-4 py-3 text-left font-semibold">操作</th>
               </tr>
             </thead>
-            <tbody>
-              {records.map((r) => (
-                <tr key={r.id} className={r.cancelled ? "opacity-50" : ""}>
-                  <td className="text-sm">{fmt(r.date)}</td>
-                  <td className="font-mono text-xs text-slate-500">{r.course.code}</td>
-                  <td className="font-medium">{r.course.school}</td>
-                  <td>
-                    <span className={r.actualTeacher.id !== r.course.teacherId ? "text-orange-600 font-medium" : ""}>
-                      {r.actualTeacher.name}
-                      {r.actualTeacher.id !== r.course.teacherId && <span className="ml-1 text-xs bg-orange-100 text-orange-600 px-1 rounded">代課</span>}
-                    </span>
+            <tbody className="divide-y divide-slate-100">
+              {records.map((r) => {
+                const isSubstitute = r.actualTeacher.id !== r.course.teacherId;
+                return (
+                <tr key={r.id} className={`${r.cancelled ? "opacity-50" : ""} hover:bg-slate-50/70`}>
+                  <td className="px-4 py-4 text-sm whitespace-nowrap">{fmt(r.date)}</td>
+                  <td className="px-4 py-4">
+                    <div className="font-medium text-slate-900">{courseLabel(r.course.courseType)}</div>
+                    <div className="font-mono text-xs text-slate-400">{r.course.code}</div>
                   </td>
-                  <td className="text-center">{r.studentCount ?? "-"}</td>
-                  <td><span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{r.category}</span></td>
-                  <td className="text-center">{r.hours}h</td>
-                  <td>{r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">出課</span>}</td>
-                  <td className="text-xs text-slate-500">{r.notes || "-"}</td>
-                  <td>
-                    <div className="flex gap-2">
+                  <td className="px-4 py-4 font-medium text-slate-800">{r.course.school}</td>
+                  <td className="px-4 py-4">
+                    <div className={isSubstitute ? "text-orange-700 font-medium" : "text-slate-700"}>{r.actualTeacher.name}</div>
+                    {isSubstitute && <div className="mt-1 inline-flex text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">代課</div>}
+                  </td>
+                  <td className="px-4 py-4 text-center">{r.studentCount ?? "-"}</td>
+                  <td className="px-4 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{r.category}</span></td>
+                  <td className="px-4 py-4 text-center">{r.hours}h</td>
+                  <td className="px-4 py-4">{r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2.5 py-1 rounded-full">出課</span>}</td>
+                  <td className="px-4 py-4 max-w-[220px] truncate text-xs text-slate-500" title={r.notes || ""}>{r.notes || "-"}</td>
+                  <td className="px-4 py-4">
+                    <div className="flex gap-4 whitespace-nowrap">
                       <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                       <button onClick={() => del(r.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              );})}
               {records.length === 0 && (
                 <tr><td colSpan={10} className="text-center text-slate-400 py-8">本月尚無上課紀錄</td></tr>
               )}
