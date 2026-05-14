@@ -15,6 +15,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       phone: data.phone ?? "",
       contact: data.contact ?? "",
       notes: data.notes ?? "",
+      lineUserId: data.lineUserId ?? undefined,
+      lineBindCode: data.lineBindCode ?? undefined,
     },
   });
   return NextResponse.json(school);
