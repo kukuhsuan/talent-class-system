@@ -1,16 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
-import { normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { DEPARTMENT_OPTIONS, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
-type School = { id: number; name: string; region: string; address: string; phone: string; contact: string; notes: string };
+type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string };
 
-const empty: Omit<School, "id"> = { name: "", region: "", address: "", phone: "", contact: "", notes: "" };
+const empty: Omit<School, "id"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "" };
 
 export default function SchoolsPage() {
   const [schools, setSchools] = useState<School[]>([]);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState<number | null>(null);
   const [filterRegion, setFilterRegion] = useState("");
+  const [filterType, setFilterType] = useState("");
   const [showForm, setShowForm] = useState(false);
 
   useEffect(() => { fetchSchools(); }, []);
@@ -40,12 +41,15 @@ export default function SchoolsPage() {
   }
 
   function edit(s: School) {
-    setForm({ name: s.name, region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
+    setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
     setEditing(s.id);
     setShowForm(true);
   }
 
-  const filtered = filterRegion ? schools.filter((s) => normalizeRegion(s.region) === filterRegion) : schools;
+  const filtered = schools.filter((s) =>
+    (!filterRegion || normalizeRegion(s.region) === filterRegion) &&
+    (!filterType || (s.type ? normalizeDepartment(s.type) : "未分類") === filterType)
+  );
   const regionGroups = [...new Set(schools.map((s) => normalizeRegion(s.region)).filter(Boolean))].sort();
 
   return (
@@ -70,7 +74,14 @@ export default function SchoolsPage() {
                 {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
-            <div className="col-span-2">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">園所類型</label>
+              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <option value="">未分類</option>
+                {DEPARTMENT_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="text-xs text-gray-500 mb-1 block">地址</label>
               <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </div>
@@ -95,7 +106,13 @@ export default function SchoolsPage() {
       )}
 
       <div className="flex gap-3 mb-4 flex-wrap">
-        <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-sm border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
+        <button onClick={() => setFilterType("")} className={`px-3 py-1 rounded-full text-sm border ${!filterType ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部類型</button>
+        {[...DEPARTMENT_OPTIONS, "未分類"].map((t) => (
+          <button key={t} onClick={() => setFilterType(t)} className={`px-3 py-1 rounded-full text-sm border ${filterType === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{t}</button>
+        ))}
+      </div>
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-sm border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部地區</button>
         {regionGroups.map((r) => (
           <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-sm border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>
         ))}
@@ -106,6 +123,7 @@ export default function SchoolsPage() {
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="text-left px-4 py-3 font-medium">園所名稱</th>
+              <th className="text-left px-4 py-3 font-medium">類型</th>
               <th className="text-left px-4 py-3 font-medium">地區</th>
               <th className="text-left px-4 py-3 font-medium">地址</th>
               <th className="text-left px-4 py-3 font-medium">電話</th>
@@ -117,6 +135,7 @@ export default function SchoolsPage() {
             {filtered.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{s.name}</td>
+                <td className="px-4 py-3"><span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs">{s.type ? normalizeDepartment(s.type) : "未分類"}</span></td>
                 <td className="px-4 py-3"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{normalizeRegion(s.region) || "—"}</span></td>
                 <td className="px-4 py-3 text-gray-500">{s.address || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.phone || "—"}</td>
@@ -128,7 +147,7 @@ export default function SchoolsPage() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-8 text-gray-400">尚無園所資料</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-gray-400">尚無園所資料</td></tr>
             )}
           </tbody>
         </table>

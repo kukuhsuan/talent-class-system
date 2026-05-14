@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
-import { courseLabel } from "@/lib/courseMeta";
+import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
 type CourseInfo = { id: number; school: string; courseType: string; department: string };
@@ -9,6 +9,7 @@ type ProgressRecord = {
   id: number; date: string; course: CourseInfo; actualTeacher: Teacher;
   studentCount: number | null; cancelled: boolean; reportContent: string; reportSentAt: string | null;
 };
+type CourseProgress = { id: number; courseType: string; lesson: number; title: string };
 
 export default function ProgressPage() {
   const { dept, setDept } = useDepartment();
@@ -20,10 +21,36 @@ export default function ProgressPage() {
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterSchool, setFilterSchool] = useState("");
   const [loading, setLoading] = useState(true);
+  const [manageCourse, setManageCourse] = useState("足球");
+  const [progressRows, setProgressRows] = useState<CourseProgress[]>([]);
+  const [progressForm, setProgressForm] = useState({ id: 0, lesson: "", title: "" });
 
   useEffect(() => {
     fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
   }, []);
+
+  useEffect(() => {
+    fetch(`/api/course-progress?courseType=${encodeURIComponent(manageCourse)}`)
+      .then((r) => r.json())
+      .then(setProgressRows);
+    setProgressForm({ id: 0, lesson: "", title: "" });
+  }, [manageCourse]);
+
+  async function saveProgress() {
+    const payload = { courseType: manageCourse, lesson: Number(progressForm.lesson), title: progressForm.title };
+    if (!payload.lesson || !payload.title.trim()) return alert("請填寫第幾堂與課程內容");
+    const url = progressForm.id ? `/api/course-progress/${progressForm.id}` : "/api/course-progress";
+    await fetch(url, { method: progressForm.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const rows = await fetch(`/api/course-progress?courseType=${encodeURIComponent(manageCourse)}`).then((r) => r.json());
+    setProgressRows(rows);
+    setProgressForm({ id: 0, lesson: "", title: "" });
+  }
+
+  async function deleteProgress(id: number) {
+    if (!confirm("確定刪除此課程進度？")) return;
+    await fetch(`/api/course-progress/${id}`, { method: "DELETE" });
+    setProgressRows((rows) => rows.filter((r) => r.id !== id));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +90,54 @@ export default function ProgressPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">課程進度記錄</h1>
           <p className="text-sm text-slate-500">老師 LINE 回傳的課程進度內容</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <div>
+            <h2 className="font-semibold text-slate-800">課程進度管理</h2>
+            <p className="text-xs text-slate-500">管理老師 LINE 回報時可選擇的第幾堂課程內容</p>
+          </div>
+          <select value={manageCourse} onChange={(e) => setManageCourse(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+            {COURSE_OPTIONS.map((c) => <option key={c.code} value={c.label}>{c.label}</option>)}
+          </select>
+        </div>
+
+        <div className="grid md:grid-cols-[120px_1fr_auto] gap-3 mb-4">
+          <input value={progressForm.lesson} onChange={(e) => setProgressForm({ ...progressForm, lesson: e.target.value })}
+            type="number" min="1" placeholder="第幾堂" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          <input value={progressForm.title} onChange={(e) => setProgressForm({ ...progressForm, title: e.target.value })}
+            placeholder="課程內容名稱" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          <button onClick={saveProgress} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">
+            {progressForm.id ? "更新" : "新增"}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                <th className="px-3 py-2 text-left w-24">堂數</th>
+                <th className="px-3 py-2 text-left">課程內容</th>
+                <th className="px-3 py-2 text-right w-32">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {progressRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="px-3 py-2">第 {row.lesson} 堂</td>
+                  <td className="px-3 py-2">{row.title}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button onClick={() => setProgressForm({ id: row.id, lesson: String(row.lesson), title: row.title })} className="text-blue-600 text-sm mr-3">編輯</button>
+                    <button onClick={() => deleteProgress(row.id)} className="text-red-500 text-sm">刪除</button>
+                  </td>
+                </tr>
+              ))}
+              {progressRows.length === 0 && <tr><td colSpan={3} className="text-center py-6 text-slate-400">尚無課程進度，可新增第一筆</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
 

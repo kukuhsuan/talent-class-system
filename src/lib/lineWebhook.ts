@@ -6,6 +6,7 @@ import {
   buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
+import { courseLabel } from "@/lib/courseMeta";
 
 type LineEvent = {
   type: string;
@@ -342,7 +343,11 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       include: { course: true },
     }) as unknown as { course: { courseType: string } } | null;
     const courseType = attForCurriculum?.course?.courseType ?? "";
-    await replyMessage(replyToken, [buildCurriculumSelectMessage(attendanceId, courseType)], token);
+    const curriculum = await prisma.courseProgress.findMany({
+      where: { courseType: courseLabel(courseType) },
+      orderBy: { lesson: "asc" },
+    }) as Array<{ lesson: number; title: string }>;
+    await replyMessage(replyToken, [buildCurriculumSelectMessage(attendanceId, courseType, curriculum)], token);
     return;
   }
 

@@ -5,7 +5,7 @@ import { formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/course
 import { COURSE_OPTIONS, courseLabel, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string };
-type School = { id: number; name: string; region: string; address: string };
+type School = { id: number; name: string; type: string; region: string; address: string };
 type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number;
   school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string;
@@ -53,7 +53,14 @@ export default function CoursesPage() {
 
   function selectSchool(schoolId: number) {
     const s = schools.find((s) => s.id === schoolId);
-    if (s) setForm((f) => ({ ...f, schoolId: s.id, school: s.name, region: normalizeRegion(s.region), address: f.address || s.address || "" }));
+    if (s) setForm((f) => ({
+      ...f,
+      schoolId: s.id,
+      school: s.name,
+      region: normalizeRegion(s.region),
+      department: s.type ? coerceDept(s.type) : f.department,
+      address: f.address || s.address || "",
+    }));
     else setForm((f) => ({ ...f, schoolId: null }));
   }
 
@@ -126,7 +133,7 @@ export default function CoursesPage() {
               <label>園所（從資料庫選）</label>
               <select value={form.schoolId ?? ""} onChange={(e) => selectSchool(Number(e.target.value))}>
                 <option value="">-- 選擇園所 --</option>
-                {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${normalizeRegion(s.region)}] ` : ""}{s.name}</option>)}
+                {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${normalizeRegion(s.region)}] ` : ""}{s.type ? `${normalizeDepartment(s.type)}｜` : ""}{s.name}</option>)}
               </select>
             </div>
             <div>

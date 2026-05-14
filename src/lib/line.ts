@@ -163,9 +163,13 @@ export const COURSE_CURRICULUM: Record<string, Array<{ lesson: number; title: st
 };
 
 // Build curriculum selection carousel for a course type
-export function buildCurriculumSelectMessage(attendanceId: number, courseType: string): object {
+export function buildCurriculumSelectMessage(
+  attendanceId: number,
+  courseType: string,
+  customCurriculum?: Array<{ lesson: number; title: string }>,
+): object {
   const label = courseLabel(courseType);
-  const curriculum = COURSE_CURRICULUM[label] ?? COURSE_CURRICULUM[courseType] ?? [];
+  const curriculum = customCurriculum?.length ? customCurriculum : (COURSE_CURRICULUM[label] ?? COURSE_CURRICULUM[courseType] ?? []);
 
   // Fallback to generic presets if no curriculum
   if (curriculum.length === 0) {

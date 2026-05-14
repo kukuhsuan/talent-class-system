@@ -1,27 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
+import { courseLabel } from "@/lib/courseMeta";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await req.json();
-  const school = await prisma.school.update({
+  const row = await prisma.courseProgress.update({
     where: { id: Number(id) },
     data: {
-      name: data.name,
-      type: data.type ? normalizeDepartment(data.type) : "",
-      region: normalizeRegion(data.region),
-      address: data.address ?? "",
-      phone: data.phone ?? "",
-      contact: data.contact ?? "",
-      notes: data.notes ?? "",
+      courseType: courseLabel(data.courseType),
+      lesson: Number(data.lesson),
+      title: data.title?.trim() ?? "",
     },
   });
-  return NextResponse.json(school);
+  return NextResponse.json(row);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await prisma.school.delete({ where: { id: Number(id) } });
+  await prisma.courseProgress.delete({ where: { id: Number(id) } });
   return NextResponse.json({ ok: true });
 }

@@ -10,6 +10,7 @@ const NAV = [
   { href: "/teachers", label: "老師管理" },
   { href: "/courses", label: "課程排班" },
   { href: "/schools", label: "園所管理" },
+  { href: "/school-stats", label: "園所人數" },
   { href: "/substitutes", label: "代課紀錄" },
   { href: "/salary", label: "薪資計算" },
   { href: "/progress", label: "課程進度" },

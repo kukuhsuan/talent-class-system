@@ -9,6 +9,7 @@ datasource db {
 model School {
   id           Int      @id @default(autoincrement())
   name         String   @unique
+  type         String   @default("")
   region       String   @default("")
   address      String   @default("")
   phone        String   @default("")
@@ -18,6 +19,16 @@ model School {
   lineBindCode String?  @unique
   createdAt    DateTime @default(now())
   courses      Course[]
+}
+
+model CourseProgress {
+  id         Int      @id @default(autoincrement())
+  courseType String
+  lesson     Int
+  title      String
+  createdAt  DateTime @default(now())
+
+  @@unique([courseType, lesson])
 }
 
 model Teacher {
