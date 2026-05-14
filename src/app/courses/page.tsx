@@ -251,41 +251,43 @@ export default function CoursesPage() {
           <span className="text-sm text-slate-500 self-center ml-2">共 {filtered.length} 門</span>
         </div>
         <div className="overflow-x-auto">
-          <table>
-            <thead>
+          <table className="w-full min-w-[1220px] text-sm">
+            <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th>編號</th>
-                <th>地區</th>
-                <th>學校</th>
-                <th>老師</th>
-                <th>項目</th>
-                <th>星期</th>
-                <th>時間</th>
-                <th>地址</th>
-                <th>類別</th>
-                <th>報名人數</th>
-                <th>狀態</th>
-                <th>操作</th>
+                <th className="w-24 px-4 py-3 text-left font-semibold">編號</th>
+                <th className="w-24 px-4 py-3 text-left font-semibold">地區</th>
+                <th className="w-40 px-4 py-3 text-left font-semibold">學校</th>
+                <th className="w-32 px-4 py-3 text-left font-semibold">老師</th>
+                <th className="w-36 px-4 py-3 text-left font-semibold">項目</th>
+                <th className="w-28 px-4 py-3 text-left font-semibold">星期</th>
+                <th className="w-32 px-4 py-3 text-left font-semibold">時間</th>
+                <th className="min-w-64 px-4 py-3 text-left font-semibold">地址</th>
+                <th className="w-24 px-4 py-3 text-left font-semibold">類別</th>
+                <th className="w-28 px-4 py-3 text-left font-semibold">報名人數</th>
+                <th className="w-20 px-4 py-3 text-left font-semibold">狀態</th>
+                <th className="w-28 px-4 py-3 text-left font-semibold">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {filtered.map((c) => (
-                <tr key={c.id}>
-                  <td className="font-mono text-xs text-slate-500">{c.code}</td>
-                  <td>{normalizeRegion(c.region)}</td>
-                  <td className="font-medium">{c.school}</td>
-                  <td>{c.teacher.name}</td>
-                  <td>
-                    <div className="font-medium text-slate-800">{courseLabel(c.courseType)}</div>
-                    {courseLabel(c.courseType) !== c.courseType && <div className="text-[11px] text-slate-400">{c.courseType}</div>}
+                <tr key={c.id} className="hover:bg-slate-50/70">
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{c.code}</td>
+                  <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{normalizeRegion(c.region)}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{c.school}</td>
+                  <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{c.teacher.name}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="font-medium text-slate-900">{courseLabel(c.courseType)}</span>
+                      {courseLabel(c.courseType) !== c.courseType && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{c.courseType}</span>}
+                    </div>
                   </td>
-                  <td className="text-xs">{c.dayOfWeek}</td>
-                  <td className="text-xs text-slate-600 whitespace-nowrap">{c.time}</td>
-                  <td className="text-xs text-slate-500 min-w-48 max-w-72 whitespace-normal break-words">{c.address}</td>
-                  <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${catColor[c.category] ?? "bg-slate-100 text-slate-600"}`}>{c.category}</span></td>
-                  <td className="text-sm">{c.enrollCount}</td>
-                  <td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
-                  <td>
+                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.dayOfWeek}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.time || "—"}</td>
+                  <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-normal break-words">{c.address || "—"}</td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${catColor[c.category] ?? "bg-slate-100 text-slate-600"}`}>{c.category}</span></td>
+                  <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{c.enrollCount || "—"}</td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
+                  <td className="px-4 py-3">
                     <div className="flex gap-3 whitespace-nowrap">
                       <button onClick={() => edit(c)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                       <button onClick={() => del(c.id, c.code)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
