@@ -7,22 +7,33 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    setLoading(false);
-    if (res.ok) {
-      router.push("/");
-      router.refresh();
-    } else {
+    setSuccess(false);
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+
+      if (res.ok) {
+        setSuccess(true);
+        router.refresh();
+        window.setTimeout(() => router.replace("/"), 350);
+        return;
+      }
+
       setError("密碼錯誤，請重試");
+    } catch {
+      setError("登入失敗，請稍後再試");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -38,15 +49,17 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            disabled={loading || success}
             required
           />
           {error && <p className="text-red-500 text-sm">{error}</p>}
+          {success && <p className="text-green-600 text-sm">登入成功，正在前往首頁...</p>}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || success}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-3 text-sm font-medium transition disabled:opacity-50"
           >
-            {loading ? "登入中..." : "登入"}
+            {success ? "登入成功" : loading ? "登入中..." : "登入"}
           </button>
         </form>
       </div>
