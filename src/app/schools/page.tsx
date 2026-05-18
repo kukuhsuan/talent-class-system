@@ -58,16 +58,16 @@ export default function SchoolsPage() {
   const regionGroups = [...new Set(schools.map((s) => normalizeRegion(s.region)).filter(Boolean))].sort();
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">園所管理</h1>
-        <button onClick={() => { setForm(empty); setEditing(null); setShowForm(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新增園所</button>
+    <div className="p-4 md:p-6 max-w-5xl mx-auto">
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-800">園所管理</h1>
+        <button onClick={() => { setForm(empty); setEditing(null); setShowForm(true); }} className="bg-blue-600 text-white px-4 py-3 md:py-2 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">+ 新增園所</button>
       </div>
 
       {showForm && (
-        <div ref={formRef} className={`bg-white border rounded-xl p-6 mb-6 shadow-sm ${editing != null ? "border-blue-200 ring-2 ring-blue-50" : ""}`}>
+        <div ref={formRef} className={`bg-white border rounded-xl p-4 md:p-6 mb-6 shadow-sm ${editing != null ? "border-blue-200 ring-2 ring-blue-50" : ""}`}>
           <h2 className="font-semibold text-gray-700 mb-4">{editing != null ? "正在編輯園所" : "新增園所"}</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">園所名稱 *</label>
               <input ref={nameInputRef} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -98,33 +98,59 @@ export default function SchoolsPage() {
               <label className="text-xs text-gray-500 mb-1 block">聯絡人</label>
               <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-2">
               <label className="text-xs text-gray-500 mb-1 block">備註</label>
               <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
           </div>
           <div className="flex gap-3 mt-4">
-            <button onClick={save} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-blue-700">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); setForm(empty); }} className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg text-sm hover:bg-gray-200">取消</button>
+            <button onClick={save} className="bg-blue-600 text-white px-6 py-3 md:py-2 rounded-lg text-sm hover:bg-blue-700">儲存</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); setForm(empty); }} className="bg-gray-100 text-gray-700 px-6 py-3 md:py-2 rounded-lg text-sm hover:bg-gray-200">取消</button>
           </div>
         </div>
       )}
 
-      <div className="flex gap-3 mb-4 flex-wrap">
-        <button onClick={() => setFilterType("")} className={`px-3 py-1 rounded-full text-sm border ${!filterType ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部類型</button>
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-1 md:flex-wrap">
+        <button onClick={() => setFilterType("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${!filterType ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部類型</button>
         {[...DEPARTMENT_OPTIONS, "未分類"].map((t) => (
-          <button key={t} onClick={() => setFilterType(t)} className={`px-3 py-1 rounded-full text-sm border ${filterType === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{t}</button>
+          <button key={t} onClick={() => setFilterType(t)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${filterType === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{t}</button>
         ))}
       </div>
-      <div className="flex gap-3 mb-4 flex-wrap">
-        <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-sm border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部地區</button>
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-1 md:flex-wrap">
+        <button onClick={() => setFilterRegion("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部地區</button>
         {regionGroups.map((r) => (
-          <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-sm border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>
+          <button key={r} onClick={() => setFilterRegion(r)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>
         ))}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="divide-y divide-slate-100 md:hidden">
+          {filtered.map((s) => (
+            <div key={s.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-900">{s.name}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">{s.type ? normalizeDepartment(s.type) : "未分類"}</span>
+                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{normalizeRegion(s.region) || "—"}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-3">
+                  <button onClick={() => edit(s)} className="text-sm font-medium text-blue-600">編輯</button>
+                  <button onClick={() => del(s.id)} className="text-sm font-medium text-red-500">刪除</button>
+                </div>
+              </div>
+              <div className="mt-3 space-y-1 text-sm text-slate-500">
+                {s.address && <div>{s.address}</div>}
+                {(s.phone || s.contact) && <div>{s.contact || "聯絡人未填"}{s.phone ? ` · ${s.phone}` : ""}</div>}
+                {s.notes && <div className="text-xs">{s.notes}</div>}
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="py-8 text-center text-gray-400">尚無園所資料</div>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="text-left px-4 py-3 font-medium">園所名稱</th>
@@ -156,6 +182,7 @@ export default function SchoolsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
       <p className="text-xs text-gray-400 mt-3">共 {filtered.length} 間園所</p>
     </div>

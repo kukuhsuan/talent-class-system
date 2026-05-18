@@ -103,7 +103,7 @@ export default function SubstitutesPage() {
       {showForm && (
         <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-5 mb-6 ${editing ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
           <h2 className="font-semibold text-slate-700 mb-4">{editing ? "正在編輯代課紀錄" : "新增代課紀錄"}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label>日期 *</label>
               <input ref={firstInputRef} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
@@ -138,7 +138,7 @@ export default function SubstitutesPage() {
               <label>代課費用（元）</label>
               <input type="number" value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} placeholder="200" />
             </div>
-            <div className="col-span-2">
+            <div className="md:col-span-2">
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="已通知園所 ..." />
             </div>
@@ -150,8 +150,8 @@ export default function SubstitutesPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm">取消</button>
+            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 md:py-2 rounded-lg text-sm">儲存</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-3 md:py-2 rounded-lg text-sm">取消</button>
           </div>
         </div>
       )}

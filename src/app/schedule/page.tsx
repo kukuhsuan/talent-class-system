@@ -77,10 +77,17 @@ export default function SchedulePage() {
   const dayCounts = DAYS.map((d, i) => courses.filter((c) => c.dayOfWeek === d && (!c.date || c.date === weekDates[i])).length);
   const totalCourses = courses.length;
   const hasActualDates = courses.some((c) => c.date);
+  const mobileDayGroups = DAYS.map((day, i) => ({
+    day,
+    date: weekDates[i],
+    courses: courses
+      .filter((c) => c.dayOfWeek === day && (!c.date || c.date === weekDates[i]))
+      .sort((a, b) => (a.time || "").localeCompare(b.time || "")),
+  }));
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-5 md:mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">週課表</h1>
           <p className="text-sm text-slate-500">
@@ -95,26 +102,65 @@ export default function SchedulePage() {
             <div className="text-sm font-semibold text-slate-800">查看週次</div>
             <div className="text-sm text-slate-500">{formatSlash(weekStart)} ~ {formatSlash(weekEnd)}</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">上一週</button>
-            <button onClick={() => setWeekStart(startOfWeek())} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">本週</button>
-            <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">下一週</button>
-            <input type="date" value={weekStart} onChange={(e) => e.target.value && setWeekStart(startOfWeek(new Date(`${e.target.value}T00:00:00`)))} className="w-auto min-w-[150px]" />
+          <div className="grid grid-cols-3 gap-2 md:flex md:flex-wrap">
+            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="rounded-lg border border-slate-200 bg-white px-3 py-3 md:py-2 text-sm text-slate-700 hover:bg-slate-50">上一週</button>
+            <button onClick={() => setWeekStart(startOfWeek())} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 md:py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">本週</button>
+            <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="rounded-lg border border-slate-200 bg-white px-3 py-3 md:py-2 text-sm text-slate-700 hover:bg-slate-50">下一週</button>
+            <input type="date" value={weekStart} onChange={(e) => e.target.value && setWeekStart(startOfWeek(new Date(`${e.target.value}T00:00:00`)))} className="col-span-3 w-full md:w-auto md:min-w-[150px]" />
           </div>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-sm border transition-colors ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>全部地區</button>
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-1 md:flex-wrap">
+        <button onClick={() => setFilterRegion("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border transition-colors ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>全部地區</button>
         {[...new Set([...REGION_OPTIONS, ...allRegions])].map((r) => (
-          <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-sm border transition-colors ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{r}</button>
+          <button key={r} onClick={() => setFilterRegion(r)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border transition-colors ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{r}</button>
         ))}
       </div>
 
       {loading ? (
         <div className="py-20 text-center text-slate-400">載入中...</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white">
+        <>
+        <div className="space-y-4 md:hidden">
+          {mobileDayGroups.map((group) => (
+            <section key={group.day} className={`rounded-xl border bg-white shadow-sm ${group.date === todayIso ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div>
+                  <h2 className="font-semibold text-slate-800">{group.day}</h2>
+                  <p className="text-xs text-slate-500">{formatShort(group.date)}</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{group.courses.length} 堂</span>
+              </div>
+              {group.courses.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-slate-400">沒有課程</div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {group.courses.map((c) => (
+                    <div key={`${c.id}-${c.date || group.date}`} className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-900">{courseLabel(c.courseType)}</div>
+                          <div className="mt-1 text-sm text-slate-600">{c.school}</div>
+                          <div className="mt-1 text-xs text-slate-500">{c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
+                      </div>
+                      {(c.address || c.enrollCount || c.region) && (
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                          {c.region && <span className="rounded-full bg-slate-50 px-2 py-1">{normalizeRegion(c.region)}</span>}
+                          {c.enrollCount && <span className="rounded-full bg-slate-50 px-2 py-1">{c.enrollCount}</span>}
+                          {c.address && <span className="w-full leading-5">{c.address}</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white md:block">
           <table className="w-full text-sm border-collapse" style={{ minWidth: "900px" }}>
             <thead>
               <tr className="bg-slate-50">
@@ -175,6 +221,7 @@ export default function SchedulePage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Legend */}

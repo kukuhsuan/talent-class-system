@@ -114,13 +114,13 @@ export default function AttendancePage() {
       {showForm && (
         <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-5 mb-6 ${editing ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
           <h2 className="font-semibold text-slate-700 mb-4">{editing ? "正在編輯上課紀錄" : "新增上課紀錄"}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label>上課日期 *</label>
               <input ref={firstInputRef} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
             {editing === null && (
-              <div className="col-span-2 md:col-span-3">
+              <div className="md:col-span-3">
                 <label className="block text-sm font-medium text-slate-700 mb-1">其他上課日（選填，可不連續）</label>
                 <p className="text-xs text-slate-500 mb-2">與上方日期合併建立多筆紀錄；同日同課程已存在則略過。</p>
                 {form.extraDates.length === 0 && (
@@ -146,7 +146,7 @@ export default function AttendancePage() {
                 </div>
               </div>
             )}
-            <div className="col-span-2">
+            <div className="md:col-span-2">
               <label>課程 *</label>
               <select value={form.courseId} onChange={(e) => onCourseChange(Number(e.target.value))}>
                 <option value={0}>-- 選擇課程 --</option>
@@ -200,14 +200,14 @@ export default function AttendancePage() {
                 </div>
               </>
             )}
-            <div className="col-span-2">
+            <div className="md:col-span-2">
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註" />
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm">取消</button>
+            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 md:py-2 rounded-lg text-sm">儲存</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-3 md:py-2 rounded-lg text-sm">取消</button>
           </div>
         </div>
       )}

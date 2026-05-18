@@ -10,3 +10,17 @@ body {
   color: var(--foreground);
   font-family: "Arial", "PingFang TC", "Microsoft JhengHei", sans-serif;
 }
+
+input,
+select,
+textarea {
+  min-height: 44px;
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

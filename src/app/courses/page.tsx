@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
-import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, normalizeCategory, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, normalizeCategory, normalizeDepartment, normalizeRegion, regionMatchesFilter, REGION_OPTIONS } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = { id: number; name: string };
@@ -358,12 +358,40 @@ export default function CoursesPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex gap-3 flex-wrap">
-          <button onClick={() => setFilterRegion("")} className={`px-3 py-1 rounded-full text-xs border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
-          {[...new Set([...REGION_OPTIONS, ...regions])].map((r) => <button key={r} onClick={() => setFilterRegion(r)} className={`px-3 py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
-          <span className="text-sm text-slate-500 self-center ml-2">共 {filtered.length} 門</span>
+        <div className="p-4 border-b border-slate-100 flex gap-2 overflow-x-auto md:flex-wrap">
+          <button onClick={() => setFilterRegion("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-xs border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
+          {[...new Set([...REGION_OPTIONS, ...regions])].map((r) => <button key={r} onClick={() => setFilterRegion(r)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
+          <span className="shrink-0 text-sm text-slate-500 self-center ml-2">共 {filtered.length} 門</span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="divide-y divide-slate-100 md:hidden">
+          {filtered.map((c) => (
+            <div key={c.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-900">{c.school}</span>
+                    <span className="font-mono text-xs text-slate-400">{c.code}</span>
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">{courseLabel(c.courseType)} · {c.teacher.name}</div>
+                  <div className="mt-1 text-xs text-slate-500">{c.dayOfWeek}{c.time ? ` · ${c.time}` : ""}</div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {normalizeRegion(c.region) && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-600">{normalizeRegion(c.region)}</span>}
+                <span className={`rounded-full px-2 py-1 font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
+                {c.enrollCount && <span className="rounded-full bg-slate-50 px-2 py-1 text-slate-500">{c.enrollCount}</span>}
+              </div>
+              {c.address && <div className="mt-3 text-xs leading-5 text-slate-500">{c.address}</div>}
+              <div className="mt-4 flex gap-4">
+                <button onClick={() => edit(c)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
+                <button onClick={() => del(c.id, c.code)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無課程資料</div>}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1220px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
