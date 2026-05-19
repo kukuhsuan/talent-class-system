@@ -13,7 +13,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const code = String(data.code ?? "").trim();
 
     const existing = code
-      ? await prisma.course.findUnique({
+      ? await prisma.course.findFirst({
           where: { code },
           include: { teacher: { select: { name: true } } },
         })

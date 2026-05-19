@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const code = requestedCode || nextCourseCode((await prisma.course.findMany({ select: { code: true } })).map((r) => r.code));
 
     const existing = code
-      ? await prisma.course.findUnique({
+      ? await prisma.course.findFirst({
           where: { code },
           include: { teacher: { select: { name: true } } },
         })

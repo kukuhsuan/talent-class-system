@@ -31,6 +31,7 @@ export async function GET() {
       id: true,
       date: true,
       courseId: true,
+      course: { select: { code: true, school: true, courseType: true, time: true } },
       studentCount: true,
       studentCountA: true,
       studentCountB: true,
@@ -43,7 +44,7 @@ export async function GET() {
 
   const groups = new Map<string, typeof rows>();
   for (const row of rows) {
-    const key = `${row.courseId}|${dayKey(row.date)}`;
+    const key = `${row.course.code || row.courseId}|${dayKey(row.date)}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
 
