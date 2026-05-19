@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   });
   return NextResponse.json(courses.map((course) => ({
     ...course,
-    scheduledDates: course.attendances.map((a) => a.date.toISOString().slice(0, 10)),
+    scheduledDates: [...new Set(course.attendances.map((a) => a.date.toISOString().slice(0, 10)))],
   })));
 }
 

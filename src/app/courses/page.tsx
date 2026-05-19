@@ -63,6 +63,30 @@ function describeCourse(c: Course) {
   return `${c.code}｜${c.school}｜${courseLabel(c.courseType)}｜${c.teacher.name}｜${c.dayOfWeek} ${c.time || ""}`;
 }
 
+function uniqueSortedDates(dates: string[]) {
+  return [...new Set(dates.map((d) => d.slice(0, 10)).filter(Boolean))].sort();
+}
+
+function inferWeeklyDates(dates: string[]) {
+  const unique = uniqueSortedDates(dates);
+  if (unique.length < 2) return null;
+
+  const weekdays = [...new Set(unique.map(weekdayOfIso))];
+  if (weekdays.length !== 1) return null;
+
+  for (let i = 1; i < unique.length; i++) {
+    const prev = new Date(`${unique[i - 1]}T00:00:00.000Z`).getTime();
+    const next = new Date(`${unique[i]}T00:00:00.000Z`).getTime();
+    if ((next - prev) / 86400000 !== 7) return null;
+  }
+
+  return {
+    start: unique[0],
+    end: unique[unique.length - 1],
+    days: weekdays,
+  };
+}
+
 async function readErrorMessage(res: Response, fallback: string) {
   if (res.status === 401 || res.status === 403 || res.redirected || res.url.includes("/login")) {
     return "登入狀態已失效，請重新登入後再試";
@@ -192,12 +216,13 @@ export default function CoursesPage() {
   };
 
   const edit = (c: Course) => {
-    const existingDates = (c.scheduledDates ?? []).map((d) => d.slice(0, 10));
+    const existingDates = uniqueSortedDates(c.scheduledDates ?? []);
+    const weekly = inferWeeklyDates(existingDates);
     setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: normalizeCategory(c.category),
       department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
-      dateMode: "multiple", scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: existingDates,
-      rangeStart: "", rangeEnd: "", recurringStart: "", recurringEnd: "", recurringDays: [c.dayOfWeek || "星期一"] });
+      dateMode: weekly ? "weekly" : "multiple", scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: weekly ? [] : existingDates,
+      rangeStart: "", rangeEnd: "", recurringStart: weekly?.start ?? "", recurringEnd: weekly?.end ?? "", recurringDays: weekly?.days ?? [c.dayOfWeek || "星期一"] });
     setEditing(c.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -324,7 +349,20 @@ export default function CoursesPage() {
               <p className="text-xs text-slate-500 mb-3">儲存後會建立對應日期的上課紀錄，週課表會依實際日期顯示。</p>
               <div className="flex flex-wrap gap-2 mb-4">
                 {DATE_MODES.map((m) => (
-                  <button key={m.value} type="button" onClick={() => setForm({ ...form, dateMode: m.value })}
+                  <button key={m.value} type="button" onClick={() => setForm((f) => {
+                    const existingDates = uniqueSortedDates(f.scheduledDates);
+                    if (m.value === "weekly") {
+                      const inferred = inferWeeklyDates(existingDates);
+                      return {
+                        ...f,
+                        dateMode: m.value,
+                        recurringStart: f.recurringStart || inferred?.start || existingDates[0] || "",
+                        recurringEnd: f.recurringEnd || inferred?.end || existingDates[existingDates.length - 1] || "",
+                        recurringDays: f.recurringDays.length > 0 ? f.recurringDays : (inferred?.days ?? [f.dayOfWeek || "星期一"]),
+                      };
+                    }
+                    return { ...f, dateMode: m.value };
+                  })}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium ${form.dateMode === m.value ? "bg-amber-700 text-white border-amber-700" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
                     {m.label}
                   </button>
