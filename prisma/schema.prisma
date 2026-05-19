@@ -106,6 +106,8 @@ model Attendance {
   reportContent   String    @default("")
   reportSentAt    DateTime?
   createdAt       DateTime  @default(now())
+
+  @@unique([courseId, date])
 }
 
 model Substitute {

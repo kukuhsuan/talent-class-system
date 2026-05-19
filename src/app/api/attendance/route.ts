@@ -56,14 +56,13 @@ export async function POST(req: NextRequest) {
 
   const fields = buildFields(data);
 
+  const { created, skipped, records } = await createAttendancesForUniqueDays(dates, fields);
   if (dates.length === 1) {
-    const record = await prisma.attendance.create({
-      data: { ...fields, date: parseAttendanceDay(dates[0]) },
-      include: { course: true, actualTeacher: true },
-    });
-    return NextResponse.json(record, { status: 201 });
+    return NextResponse.json(
+      records[0] ?? { created, skipped, records },
+      { status: created > 0 ? 201 : 200 },
+    );
   }
 
-  const { created, skipped, records } = await createAttendancesForUniqueDays(dates, fields);
   return NextResponse.json({ created, skipped, records }, { status: 201 });
 }
