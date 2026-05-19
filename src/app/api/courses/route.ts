@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
+import { nextCourseCode } from "@/lib/courseCode";
 import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { departmentQueryValues, normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dept = searchParams.get("dept") ?? "";
+  if (searchParams.get("nextCode") === "1") {
+    const rows = await prisma.course.findMany({ select: { code: true } });
+    return NextResponse.json({ code: nextCourseCode(rows.map((r) => r.code)) });
+  }
+
   const courses = await prisma.course.findMany({
     where: dept ? { department: { in: departmentQueryValues(dept) } } : {},
     include: {
@@ -27,7 +33,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { schoolRel, teacher, scheduledDates, ...data } = body;
     void schoolRel; void teacher;
-    const code = String(data.code ?? "").trim();
+    const requestedCode = String(data.code ?? "").trim();
+    const code = requestedCode || nextCourseCode((await prisma.course.findMany({ select: { code: true } })).map((r) => r.code));
 
     const existing = code
       ? await prisma.course.findUnique({

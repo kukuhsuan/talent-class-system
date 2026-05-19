@@ -89,6 +89,7 @@ export default function CoursesPage() {
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
   const [saving, setSaving] = useState(false);
+  const [generatingCode, setGeneratingCode] = useState(false);
   const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
@@ -119,8 +120,29 @@ export default function CoursesPage() {
     else setForm((f) => ({ ...f, schoolId: null }));
   }
 
+  async function fetchNextCode() {
+    setGeneratingCode(true);
+    try {
+      const res = await fetch("/api/courses?nextCode=1");
+      if (!res.ok) throw new Error("課程編號產生失敗");
+      const data = await res.json();
+      setForm((f) => ({ ...f, code: data.code ?? f.code }));
+    } catch (e) {
+      showToast("error", (e as Error).message || "課程編號產生失敗", 2500);
+    } finally {
+      setGeneratingCode(false);
+    }
+  }
+
+  function startCreate() {
+    setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") });
+    setEditing(null);
+    setShowForm(true);
+    void fetchNextCode();
+  }
+
   const save = async () => {
-    if (!form.code.trim() || !form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
+    if (!form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
     if (saving) return;
     const parsed = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { errors: [] };
     if (parsed.errors.length > 0) return alert(`日期格式無法解析：${parsed.errors.join("、")}`);
@@ -193,7 +215,7 @@ export default function CoursesPage() {
           <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
           <p className="text-sm text-slate-500">共 {courses.length} 門課程</p>
         </div>
-        <button onClick={() => { setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(true); }}
+        <button onClick={startCreate}
           className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
           + 新增課程
         </button>
@@ -205,8 +227,18 @@ export default function CoursesPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">基本資料</div>
             <div>
-              <label>課程編號 *</label>
-              <input ref={firstInputRef} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="C050" />
+              <label>課程編號（自動）</label>
+              <div className="flex gap-2">
+                <input ref={firstInputRef} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="系統自動產生" />
+                <button
+                  type="button"
+                  onClick={fetchNextCode}
+                  disabled={editing !== null || generatingCode}
+                  className="shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {generatingCode ? "產生中" : "自動"}
+                </button>
+              </div>
             </div>
             <div className="md:col-span-2">
               <label>園所名稱 *</label>
