@@ -38,46 +38,38 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const allScheduled = [...new Set([...scheduled, ...parsed, ...range, ...weekly])].sort();
     const dayOfWeek = allScheduled[0] ? weekdayOfIso(allScheduled[0]) : (data.dayOfWeek ?? "");
 
-    const course = await prisma.$transaction(async (tx) => {
-      const c = await tx.course.update({
-        where: { id: courseId },
-        data: {
-          code,
-          region: normalizeRegion(data.region),
-          teacherId: Number(data.teacherId),
-          school: data.school,
-          schoolId: data.schoolId ? Number(data.schoolId) : null,
-          courseType: data.courseType ?? "",
-          address: data.address ?? "",
-          dayOfWeek,
-          time: data.time ?? "",
-          category: normalizeCategory(data.category),
-          department: normalizeDepartment(data.department),
-          enrollCount: data.enrollCount ?? "",
-          isActive: data.isActive ?? true,
-          notes: data.notes ?? "",
-        },
-        include: { teacher: true },
-      });
-
-      if (allScheduled.length > 0) {
-        await createAttendancesForUniqueDays(
-          allScheduled,
-          {
-            courseId: c.id,
-            actualTeacherId: c.teacherId,
-            category: normalizeCategory(c.category),
-            hours: 1,
-            notes: "",
-            cancelled: false,
-            studentCount: null,
-          },
-          tx,
-        );
-      }
-
-      return c;
+    const course = await prisma.course.update({
+      where: { id: courseId },
+      data: {
+        code,
+        region: normalizeRegion(data.region),
+        teacherId: Number(data.teacherId),
+        school: data.school,
+        schoolId: data.schoolId ? Number(data.schoolId) : null,
+        courseType: data.courseType ?? "",
+        address: data.address ?? "",
+        dayOfWeek,
+        time: data.time ?? "",
+        category: normalizeCategory(data.category),
+        department: normalizeDepartment(data.department),
+        enrollCount: data.enrollCount ?? "",
+        isActive: data.isActive ?? true,
+        notes: data.notes ?? "",
+      },
+      include: { teacher: true },
     });
+
+    if (allScheduled.length > 0) {
+      await createAttendancesForUniqueDays(allScheduled, {
+        courseId: course.id,
+        actualTeacherId: course.teacherId,
+        category: normalizeCategory(course.category),
+        hours: 1,
+        notes: "",
+        cancelled: false,
+        studentCount: null,
+      });
+    }
     return NextResponse.json(course);
   } catch (e) {
     console.error("course update failed", e);
