@@ -9,6 +9,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const { schoolRel, teacher, scheduledDates, ...data } = await req.json();
     void schoolRel; void teacher;
+    const courseId = Number(id);
+    const code = String(data.code ?? "").trim();
+
+    const existing = code
+      ? await prisma.course.findUnique({
+          where: { code },
+          include: { teacher: { select: { name: true } } },
+        })
+      : null;
+    if (existing && existing.id !== courseId) {
+      return NextResponse.json(
+        {
+          error: `課程編號「${code}」已被其他課程使用（${existing.school}｜${existing.teacher.name}）。請改用新的課程編號。`,
+        },
+        { status: 409 },
+      );
+    }
+
     const scheduled: string[] = Array.isArray(scheduledDates)
       ? [...new Set((scheduledDates as string[]).map((d) => String(d).trim().slice(0, 10)).filter(Boolean))]
       : [];
@@ -22,9 +40,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const course = await prisma.$transaction(async (tx) => {
       const c = await tx.course.update({
-        where: { id: Number(id) },
+        where: { id: courseId },
         data: {
-          code: data.code,
+          code,
           region: normalizeRegion(data.region),
           teacherId: Number(data.teacherId),
           school: data.school,
@@ -70,9 +88,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const courseId = Number(id);
     await prisma.$transaction(async (tx) => {
-      await tx.attendance.deleteMany({ where: { courseId: Number(id) } });
-      await tx.course.delete({ where: { id: Number(id) } });
+      await tx.attendance.deleteMany({ where: { courseId } });
+      await tx.course.delete({ where: { id: courseId } });
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

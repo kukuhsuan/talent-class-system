@@ -27,6 +27,22 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { schoolRel, teacher, scheduledDates, ...data } = body;
     void schoolRel; void teacher;
+    const code = String(data.code ?? "").trim();
+
+    const existing = code
+      ? await prisma.course.findUnique({
+          where: { code },
+          include: { teacher: { select: { name: true } } },
+        })
+      : null;
+    if (existing) {
+      return NextResponse.json(
+        {
+          error: `課程編號「${code}」已存在（${existing.school}｜${existing.teacher.name}）。請編輯原課程新增日期，或改用新的課程編號。`,
+        },
+        { status: 409 },
+      );
+    }
 
     const scheduled: string[] = Array.isArray(scheduledDates)
       ? [...new Set((scheduledDates as string[]).map((d) => String(d).trim().slice(0, 10)).filter(Boolean))]
@@ -42,7 +58,7 @@ export async function POST(req: NextRequest) {
     const course = await prisma.$transaction(async (tx) => {
       const c = await tx.course.create({
         data: {
-          code: data.code,
+          code,
           region: normalizeRegion(data.region),
           teacherId: Number(data.teacherId),
           school: data.school,
