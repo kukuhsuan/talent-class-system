@@ -60,6 +60,22 @@ function describeCourse(c: Course) {
   return `${c.code}｜${c.school}｜${courseLabel(c.courseType)}｜${c.teacher.name}｜${c.dayOfWeek} ${c.time || ""}`;
 }
 
+async function readErrorMessage(res: Response, fallback: string) {
+  if (res.status === 401 || res.status === 403 || res.redirected || res.url.includes("/login")) {
+    return "登入狀態已失效，請重新登入後再試";
+  }
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const data = await res.json().catch(() => ({}));
+    return data.error ?? fallback;
+  }
+
+  const text = await res.text().catch(() => "");
+  if (text.trim()) return `${fallback}（HTTP ${res.status}：${text.trim().slice(0, 120)}）`;
+  return `${fallback}（HTTP ${res.status}）`;
+}
+
 export default function CoursesPage() {
   const { dept } = useDepartment();
   const [courses, setCourses] = useState<Course[]>([]);
@@ -120,8 +136,10 @@ export default function CoursesPage() {
       res = await fetch("/api/courses", { method: "POST", headers, body });
     }
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      return alert(data.error ?? "課程儲存失敗，請稍後再試");
+      const message = await readErrorMessage(res, "課程儲存失敗");
+      alert(message);
+      if (message.includes("登入狀態")) window.location.href = "/login";
+      return;
     }
     setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); load();
   };
@@ -130,8 +148,10 @@ export default function CoursesPage() {
     if (!confirm(`確定刪除課程「${code}」？相關出勤紀錄也會一併刪除。`)) return;
     const res = await fetch(`/api/courses/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      return alert(data.error ?? "刪除失敗，請確認是否仍有關聯資料");
+      const message = await readErrorMessage(res, "刪除失敗，請確認是否仍有關聯資料");
+      alert(message);
+      if (message.includes("登入狀態")) window.location.href = "/login";
+      return;
     }
     load();
   };

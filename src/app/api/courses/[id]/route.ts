@@ -62,6 +62,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     });
     return NextResponse.json(course);
   } catch (e) {
+    console.error("course update failed", e);
     return NextResponse.json({ error: `課程儲存失敗：${(e as Error).message}` }, { status: 500 });
   }
 }
@@ -75,6 +76,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     });
     return NextResponse.json({ ok: true });
   } catch (e) {
+    console.error("course delete failed", e);
     return NextResponse.json({ error: `課程刪除失敗：${(e as Error).message}` }, { status: 500 });
   }
 }

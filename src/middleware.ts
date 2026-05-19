@@ -10,6 +10,15 @@ const PUBLIC = ["/login", "/api/auth", "/api/line", "/api/cron", "/api/setup"];
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const token = req.cookies.get("auth-token")?.value;
+  const unauthorized = () => {
+    if (path.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "登入狀態已失效，請重新登入後再試" },
+        { status: 401 },
+      );
+    }
+    return NextResponse.redirect(new URL("/login", req.url));
+  };
 
   if (path.startsWith("/login")) {
     if (!token) return NextResponse.next();
@@ -23,13 +32,13 @@ export async function middleware(req: NextRequest) {
 
   if (PUBLIC.some((p) => path.startsWith(p))) return NextResponse.next();
 
-  if (!token) return NextResponse.redirect(new URL("/login", req.url));
+  if (!token) return unauthorized();
 
   try {
     await jwtVerify(token, secret);
     return NextResponse.next();
   } catch {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return unauthorized();
   }
 }
 
