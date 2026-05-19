@@ -23,7 +23,12 @@ export async function GET(req: NextRequest) {
     include: { course: true, actualTeacher: true },
     orderBy: { date: "desc" },
   });
-  return NextResponse.json(records);
+  const unique = new Map<string, (typeof records)[number]>();
+  for (const record of records) {
+    const key = `${record.course.code || record.courseId}|${record.date.toISOString().slice(0, 10)}`;
+    if (!unique.has(key)) unique.set(key, record);
+  }
+  return NextResponse.json([...unique.values()]);
 }
 
 function buildFields(data: Record<string, unknown>) {
