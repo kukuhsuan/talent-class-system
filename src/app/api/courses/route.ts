@@ -9,10 +9,17 @@ export async function GET(req: NextRequest) {
   const dept = searchParams.get("dept") ?? "";
   const courses = await prisma.course.findMany({
     where: dept ? { department: { in: departmentQueryValues(dept) } } : {},
-    include: { teacher: true, schoolRel: true },
+    include: {
+      teacher: true,
+      schoolRel: true,
+      attendances: { select: { date: true }, orderBy: { date: "asc" } },
+    },
     orderBy: [{ region: "asc" }, { dayOfWeek: "asc" }],
   });
-  return NextResponse.json(courses);
+  return NextResponse.json(courses.map((course) => ({
+    ...course,
+    scheduledDates: course.attendances.map((a) => a.date.toISOString().slice(0, 10)),
+  })));
 }
 
 export async function POST(req: NextRequest) {

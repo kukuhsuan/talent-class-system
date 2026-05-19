@@ -42,6 +42,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     });
 
     if (allScheduled.length > 0) {
+      await tx.attendance.deleteMany({
+        where: {
+          courseId: c.id,
+          studentCount: null,
+          reportContent: "",
+          notes: "",
+        },
+      });
       await createAttendancesForUniqueDays(
         allScheduled,
         {
@@ -64,6 +72,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await prisma.course.delete({ where: { id: Number(id) } });
+  await prisma.$transaction(async (tx) => {
+    await tx.attendance.deleteMany({ where: { courseId: Number(id) } });
+    await tx.course.delete({ where: { id: Number(id) } });
+  });
   return NextResponse.json({ ok: true });
 }

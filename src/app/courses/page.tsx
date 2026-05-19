@@ -11,6 +11,7 @@ type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number;
   school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string;
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
+  scheduledDates?: string[];
 };
 
 type DeptOption = (typeof DEPARTMENTS)[number];
@@ -112,25 +113,35 @@ export default function CoursesPage() {
     if (conflicts.length > 0 && !confirm(`偵測到可能排課衝突：\n\n${conflicts.slice(0, 6).join("\n")}\n\n仍要儲存嗎？`)) return;
     const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), category: normalizeCategory(form.category), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
+    let res: Response;
     if (editing !== null) {
-      await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
+      res = await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
     } else {
-      await fetch("/api/courses", { method: "POST", headers, body });
+      res = await fetch("/api/courses", { method: "POST", headers, body });
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return alert(data.error ?? "課程儲存失敗，請稍後再試");
     }
     setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); load();
   };
 
   const del = async (id: number, code: string) => {
-    if (!confirm(`確定刪除課程「${code}」？`)) return;
-    await fetch(`/api/courses/${id}`, { method: "DELETE" });
+    if (!confirm(`確定刪除課程「${code}」？相關出勤紀錄也會一併刪除。`)) return;
+    const res = await fetch(`/api/courses/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return alert(data.error ?? "刪除失敗，請確認是否仍有關聯資料");
+    }
     load();
   };
 
   const edit = (c: Course) => {
+    const existingDates = (c.scheduledDates ?? []).map((d) => d.slice(0, 10));
     setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: normalizeCategory(c.category),
       department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
-      dateMode: "multiple", scheduledDateText: "", scheduledDateYear: new Date().getFullYear(), scheduledDates: [],
+      dateMode: "multiple", scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: existingDates,
       rangeStart: "", rangeEnd: "", recurringStart: "", recurringEnd: "", recurringDays: [c.dayOfWeek || "星期一"] });
     setEditing(c.id); setShowForm(true);
     scrollToFormOnEdit();
@@ -374,6 +385,14 @@ export default function CoursesPage() {
                   </div>
                   <div className="mt-1 text-sm text-slate-600">{courseLabel(c.courseType)} · {c.teacher.name}</div>
                   <div className="mt-1 text-xs text-slate-500">{c.dayOfWeek}{c.time ? ` · ${c.time}` : ""}</div>
+                  {(c.scheduledDates?.length ?? 0) > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {c.scheduledDates!.slice(0, 4).map((d) => (
+                        <span key={d} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">{formatMonthDay(d)}</span>
+                      ))}
+                      {c.scheduledDates!.length > 4 && <span className="text-[11px] text-slate-400">+{c.scheduledDates!.length - 4}</span>}
+                    </div>
+                  )}
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span>
               </div>
@@ -422,7 +441,17 @@ export default function CoursesPage() {
                       {courseLabel(c.courseType) !== c.courseType && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{c.courseType}</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{c.dayOfWeek}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
+                    <div>{c.dayOfWeek}</div>
+                    {(c.scheduledDates?.length ?? 0) > 0 && (
+                      <div className="mt-1 flex max-w-[150px] flex-wrap gap-1 whitespace-normal">
+                        {c.scheduledDates!.slice(0, 3).map((d) => (
+                          <span key={d} className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">{formatMonthDay(d)}</span>
+                        ))}
+                        {c.scheduledDates!.length > 3 && <span className="text-[10px] text-slate-400">+{c.scheduledDates!.length - 3}</span>}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.time || "—"}</td>
                   <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-normal break-words">{c.address || "—"}</td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span></td>
