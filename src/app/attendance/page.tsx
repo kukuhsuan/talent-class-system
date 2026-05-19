@@ -1,8 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton } from "@/components/SaveButton";
+import { Toast } from "@/components/Toast";
+import { ensureOk } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
 import { CATEGORY_OPTIONS, courseLabel, normalizeCategory } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
+import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string };
@@ -29,6 +33,8 @@ export default function AttendancePage() {
   const [showForm, setShowForm] = useState(false);
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
+  const [saving, setSaving] = useState(false);
+  const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
@@ -52,30 +58,43 @@ export default function AttendancePage() {
 
   const save = async () => {
     if (!form.courseId || !form.actualTeacherId || !form.date) return alert("請填寫必填欄位");
+    if (saving) return;
     const headers = { "Content-Type": "application/json" };
-    if (editing !== null) {
-      const { extraDates: _x, ...rest } = form;
-      void _x;
-      const body = JSON.stringify({ ...rest, studentCount: form.studentCount === "" ? null : Number(form.studentCount) });
-      await fetch(`/api/attendance/${editing}`, { method: "PUT", headers, body });
-    } else {
-      const dateSet = [...new Set([form.date, ...form.extraDates].map((d) => d.slice(0, 10)).filter(Boolean))];
-      const { extraDates: _x, date: _d, ...rest } = form;
-      void _x; void _d;
-      const body = JSON.stringify({
-        ...rest,
-        dates: dateSet,
-        studentCount: form.studentCount === "" ? null : Number(form.studentCount),
-      });
-      const res = await fetch("/api/attendance", { method: "POST", headers, body });
-      const data = await res.json();
-      if (data.created != null) {
-        const parts = [`已建立 ${data.created} 筆上課紀錄`];
-        if (data.skipped > 0) parts.push(`略過 ${data.skipped} 筆重複日期`);
-        alert(parts.join("；"));
+    setSaving(true);
+    try {
+      if (editing !== null) {
+        const { extraDates: _x, ...rest } = form;
+        void _x;
+        const body = JSON.stringify({ ...rest, studentCount: form.studentCount === "" ? null : Number(form.studentCount) });
+        const res = await fetch(`/api/attendance/${editing}`, { method: "PUT", headers, body });
+        await ensureOk(res, "上課紀錄儲存失敗");
+        showToast("success", "上課紀錄已儲存");
+      } else {
+        const dateSet = [...new Set([form.date, ...form.extraDates].map((d) => d.slice(0, 10)).filter(Boolean))];
+        const { extraDates: _x, date: _d, ...rest } = form;
+        void _x; void _d;
+        const body = JSON.stringify({
+          ...rest,
+          dates: dateSet,
+          studentCount: form.studentCount === "" ? null : Number(form.studentCount),
+        });
+        const res = await fetch("/api/attendance", { method: "POST", headers, body });
+        await ensureOk(res, "上課紀錄新增失敗");
+        const data = await res.json();
+        if (data.created != null) {
+          const parts = [`已建立 ${data.created} 筆上課紀錄`];
+          if (data.skipped > 0) parts.push(`略過 ${data.skipped} 筆重複日期`);
+          showToast("success", parts.join("；"));
+        } else {
+          showToast("success", "上課紀錄已儲存");
+        }
       }
+      setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
+    } catch (e) {
+      showToast("error", (e as Error).message || "上課紀錄儲存失敗", 3000);
+    } finally {
+      setSaving(false);
     }
-    setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
   };
 
   const del = async (id: number) => {
@@ -94,6 +113,7 @@ export default function AttendancePage() {
 
   return (
     <div>
+      <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
@@ -206,8 +226,8 @@ export default function AttendancePage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 md:py-2 rounded-lg text-sm">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-3 md:py-2 rounded-lg text-sm">取消</button>
+            <SaveButton saving={saving} onClick={save} />
+            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-3 md:py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
         </div>
       )}

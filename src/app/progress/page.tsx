@@ -1,8 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { SaveButton } from "@/components/SaveButton";
+import { Toast } from "@/components/Toast";
+import { ensureOk } from "@/lib/clientApi";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
+import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
 type CourseInfo = { id: number; school: string; courseType: string; department: string };
@@ -25,6 +29,8 @@ export default function ProgressPage() {
   const [manageCourse, setManageCourse] = useState("足球");
   const [progressRows, setProgressRows] = useState<CourseProgress[]>([]);
   const [progressForm, setProgressForm] = useState({ id: 0, lesson: "", title: "" });
+  const [savingProgress, setSavingProgress] = useState(false);
+  const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
@@ -43,11 +49,21 @@ export default function ProgressPage() {
   async function saveProgress() {
     const payload = { courseType: manageCourse, lesson: Number(progressForm.lesson), title: progressForm.title };
     if (!payload.lesson || !payload.title.trim()) return alert("請填寫第幾堂與課程內容");
+    if (savingProgress) return;
     const url = progressForm.id ? `/api/course-progress/${progressForm.id}` : "/api/course-progress";
-    await fetch(url, { method: progressForm.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const rows = await fetch(`/api/course-progress?courseType=${encodeURIComponent(manageCourse)}`).then((r) => r.json());
-    setProgressRows(rows);
-    setProgressForm({ id: 0, lesson: "", title: "" });
+    setSavingProgress(true);
+    try {
+      const res = await fetch(url, { method: progressForm.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      await ensureOk(res, "課程進度儲存失敗");
+      const rows = await fetch(`/api/course-progress?courseType=${encodeURIComponent(manageCourse)}`).then((r) => r.json());
+      setProgressRows(rows);
+      setProgressForm({ id: 0, lesson: "", title: "" });
+      showToast("success", "課程進度已儲存");
+    } catch (e) {
+      showToast("error", (e as Error).message || "課程進度儲存失敗", 3000);
+    } finally {
+      setSavingProgress(false);
+    }
   }
 
   async function deleteProgress(id: number) {
@@ -90,6 +106,7 @@ export default function ProgressPage() {
 
   return (
     <div>
+      <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">課程進度記錄</h1>
@@ -114,9 +131,7 @@ export default function ProgressPage() {
             type="number" min="1" placeholder="第幾堂" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
           <input value={progressForm.title} onChange={(e) => setProgressForm({ ...progressForm, title: e.target.value })}
             placeholder="課程內容名稱" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <button onClick={saveProgress} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">
-            {progressForm.id ? "更新" : "新增"}
-          </button>
+          <SaveButton saving={savingProgress} onClick={saveProgress} idleText={progressForm.id ? "更新" : "新增"} savingText="儲存中…" />
         </div>
 
         <div className="overflow-x-auto">

@@ -1,5 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { SaveButton } from "@/components/SaveButton";
+import { Toast } from "@/components/Toast";
+import { ensureOk } from "@/lib/clientApi";
+import { useToast } from "@/lib/useToast";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type Teacher = {
@@ -22,6 +26,8 @@ export default function TeachersPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
@@ -31,12 +37,23 @@ export default function TeachersPage() {
 
   const save = async () => {
     if (!form.name.trim()) return alert("請填寫老師姓名");
-    if (editing !== null) {
-      await fetch(`/api/teachers/${editing}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    } else {
-      await fetch("/api/teachers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (editing !== null) {
+        const res = await fetch(`/api/teachers/${editing}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        await ensureOk(res, "老師資料儲存失敗");
+      } else {
+        const res = await fetch("/api/teachers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        await ensureOk(res, "老師資料新增失敗");
+      }
+      setForm(EMPTY); setEditing(null); setShowForm(false); load();
+      showToast("success", "老師資料已儲存");
+    } catch (e) {
+      showToast("error", (e as Error).message || "老師資料儲存失敗", 3000);
+    } finally {
+      setSaving(false);
     }
-    setForm(EMPTY); setEditing(null); setShowForm(false); load();
   };
 
   const del = async (id: number, name: string) => {
@@ -55,6 +72,7 @@ export default function TeachersPage() {
 
   return (
     <div>
+      <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">👩‍🏫 老師管理</h1>
@@ -129,8 +147,8 @@ export default function TeachersPage() {
             </div>
           </div>
           <div className="flex gap-3 mt-5">
-            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm">取消</button>
+            <SaveButton saving={saving} onClick={save} />
+            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
         </div>
       )}

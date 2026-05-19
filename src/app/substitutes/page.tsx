@@ -1,7 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { SaveButton } from "@/components/SaveButton";
+import { Toast } from "@/components/Toast";
+import { ensureOk } from "@/lib/clientApi";
 import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
+import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
 type Substitute = {
@@ -22,6 +26,8 @@ export default function SubstitutesPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
@@ -36,18 +42,29 @@ export default function SubstitutesPage() {
 
   const save = async () => {
     if (!form.date || !form.school || !form.originalTeacherId) return alert("請填寫必填欄位");
+    if (saving) return;
     const body = JSON.stringify({
       ...form,
       substituteTeacherId: form.substituteTeacherId || null,
       fee: form.fee === "" ? null : Number(form.fee),
     });
     const headers = { "Content-Type": "application/json" };
-    if (editing !== null) {
-      await fetch(`/api/substitutes/${editing}`, { method: "PUT", headers, body });
-    } else {
-      await fetch("/api/substitutes", { method: "POST", headers, body });
+    setSaving(true);
+    try {
+      if (editing !== null) {
+        const res = await fetch(`/api/substitutes/${editing}`, { method: "PUT", headers, body });
+        await ensureOk(res, "代課紀錄儲存失敗");
+      } else {
+        const res = await fetch("/api/substitutes", { method: "POST", headers, body });
+        await ensureOk(res, "代課紀錄新增失敗");
+      }
+      setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
+      showToast("success", "代課紀錄已儲存");
+    } catch (e) {
+      showToast("error", (e as Error).message || "代課紀錄儲存失敗", 3000);
+    } finally {
+      setSaving(false);
     }
-    setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
   };
 
   const del = async (id: number | string) => {
@@ -85,6 +102,7 @@ export default function SubstitutesPage() {
 
   return (
     <div>
+      <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">🔄 代課紀錄</h1>
@@ -150,8 +168,8 @@ export default function SubstitutesPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 md:py-2 rounded-lg text-sm">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-3 md:py-2 rounded-lg text-sm">取消</button>
+            <SaveButton saving={saving} onClick={save} />
+            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-3 md:py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
         </div>
       )}

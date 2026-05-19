@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { SaveButton } from "@/components/SaveButton";
+import { Toast } from "@/components/Toast";
+import { ensureOk } from "@/lib/clientApi";
 import { DEPARTMENT_OPTIONS, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
+import { useToast } from "@/lib/useToast";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string };
@@ -14,6 +18,8 @@ export default function SchoolsPage() {
   const [filterRegion, setFilterRegion] = useState("");
   const [filterType, setFilterType] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, nameInputRef);
@@ -27,15 +33,26 @@ export default function SchoolsPage() {
 
   async function save() {
     if (!form.name) return;
-    if (editing != null) {
-      await fetch(`/api/schools/${editing}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    } else {
-      await fetch("/api/schools", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (editing != null) {
+        const res = await fetch(`/api/schools/${editing}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        await ensureOk(res, "園所資料儲存失敗");
+      } else {
+        const res = await fetch("/api/schools", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        await ensureOk(res, "園所資料新增失敗");
+      }
+      setForm(empty);
+      setEditing(null);
+      setShowForm(false);
+      fetchSchools();
+      showToast("success", "園所資料已儲存");
+    } catch (e) {
+      showToast("error", (e as Error).message || "園所資料儲存失敗", 3000);
+    } finally {
+      setSaving(false);
     }
-    setForm(empty);
-    setEditing(null);
-    setShowForm(false);
-    fetchSchools();
   }
 
   async function del(id: number) {
@@ -59,6 +76,7 @@ export default function SchoolsPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
+      <Toast toast={toast} />
       <div className="flex items-center justify-between gap-3 mb-6">
         <h1 className="text-xl md:text-2xl font-bold text-gray-800">園所管理</h1>
         <button onClick={() => { setForm(empty); setEditing(null); setShowForm(true); }} className="bg-blue-600 text-white px-4 py-3 md:py-2 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">+ 新增園所</button>
@@ -104,8 +122,8 @@ export default function SchoolsPage() {
             </div>
           </div>
           <div className="flex gap-3 mt-4">
-            <button onClick={save} className="bg-blue-600 text-white px-6 py-3 md:py-2 rounded-lg text-sm hover:bg-blue-700">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); setForm(empty); }} className="bg-gray-100 text-gray-700 px-6 py-3 md:py-2 rounded-lg text-sm hover:bg-gray-200">取消</button>
+            <SaveButton saving={saving} onClick={save} className="px-6" />
+            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); setForm(empty); }} className="bg-gray-100 text-gray-700 px-6 py-3 md:py-2 rounded-lg text-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
         </div>
       )}

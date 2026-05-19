@@ -1,9 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveButton } from "@/components/SaveButton";
+import { Toast } from "@/components/Toast";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, normalizeCategory, normalizeDepartment, normalizeRegion, regionMatchesFilter, REGION_OPTIONS } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
+import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
 type School = { id: number; name: string; type: string; region: string; address: string };
@@ -85,6 +88,8 @@ export default function CoursesPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
@@ -116,6 +121,7 @@ export default function CoursesPage() {
 
   const save = async () => {
     if (!form.code.trim() || !form.school.trim() || !form.teacherId) return alert("請填寫必填欄位");
+    if (saving) return;
     const parsed = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { errors: [] };
     if (parsed.errors.length > 0) return alert(`日期格式無法解析：${parsed.errors.join("、")}`);
     const scheduledDates = collectScheduledDates(form);
@@ -129,19 +135,26 @@ export default function CoursesPage() {
     if (conflicts.length > 0 && !confirm(`偵測到可能排課衝突：\n\n${conflicts.slice(0, 6).join("\n")}\n\n仍要儲存嗎？`)) return;
     const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), category: normalizeCategory(form.category), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
-    let res: Response;
-    if (editing !== null) {
-      res = await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
-    } else {
-      res = await fetch("/api/courses", { method: "POST", headers, body });
+    setSaving(true);
+    try {
+      let res: Response;
+      if (editing !== null) {
+        res = await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
+      } else {
+        res = await fetch("/api/courses", { method: "POST", headers, body });
+      }
+      if (!res.ok) {
+        const message = await readErrorMessage(res, "課程儲存失敗");
+        if (message.includes("登入狀態")) window.location.href = "/login";
+        throw new Error(message);
+      }
+      setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); load();
+      showToast("success", "課程已儲存");
+    } catch (e) {
+      showToast("error", (e as Error).message || "課程儲存失敗", 3500);
+    } finally {
+      setSaving(false);
     }
-    if (!res.ok) {
-      const message = await readErrorMessage(res, "課程儲存失敗");
-      alert(message);
-      if (message.includes("登入狀態")) window.location.href = "/login";
-      return;
-    }
-    setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); load();
   };
 
   const del = async (id: number, code: string) => {
@@ -174,6 +187,7 @@ export default function CoursesPage() {
 
   return (
     <div>
+      <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
@@ -382,8 +396,8 @@ export default function CoursesPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={save} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg text-sm">儲存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm">取消</button>
+            <SaveButton saving={saving} onClick={save} />
+            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
         </div>
       )}
