@@ -323,7 +323,7 @@ export function buildReminderMessage(opts: {
   };
 }
 
-// Build post-class report request (cream/coffee theme, no cancel option)
+// Build post-class report request (mobile form entry point)
 export function buildReportRequestMessage(opts: {
   school: string;
   courseType: string;
@@ -354,7 +354,7 @@ export function buildReportRequestMessage(opts: {
           { type: "text", text: opts.school, weight: "bold", color: "#2E2B27", size: "lg" },
           { type: "text", text: `課程：${label}`, size: "sm", color: "#6B6358" },
           { type: "separator", margin: "md", color: "#DDD8D0" },
-          { type: "text", text: "請選擇今日課程進度：", size: "sm", color: "#6B6358", margin: "md" },
+          { type: "text", text: "請點下方按鈕進入手機表單，完成進度、人數與課堂狀況回報。", size: "sm", color: "#6B6358", margin: "md", wrap: true },
         ],
       },
       footer: {
@@ -367,19 +367,7 @@ export function buildReportRequestMessage(opts: {
             type: "button",
             style: "primary",
             color: "#7B9E87",
-            action: { type: "uri", label: "🧸 完整回報表單", uri: `${appUrl()}/report/${opts.attendanceId}` },
-          },
-          {
-            type: "button",
-            style: "secondary",
-            color: "#DDD8D0",
-            action: { type: "postback", label: "📋 快速選進度", data: `action=select_progress&id=${opts.attendanceId}` },
-          },
-          {
-            type: "button",
-            style: "primary",
-            color: "#8BA4B2",
-            action: { type: "postback", label: "✏️ 自訂輸入", data: `action=report_detail&id=${opts.attendanceId}` },
+            action: { type: "uri", label: "🧸 課後回報", uri: `${appUrl()}/report/${opts.attendanceId}` },
           },
         ],
       },

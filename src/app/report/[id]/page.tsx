@@ -12,6 +12,7 @@ type ReportInfo = {
   teacherName: string;
   studentCount: number | null;
   reportContent: string;
+  progressOptions: Array<{ id: number; lesson: number; title: string; value: string }>;
   skillFocus: string[];
   classStatus: string;
   incident: boolean;
@@ -70,6 +71,7 @@ export default function TeacherReportPage() {
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
+  const [customProgress, setCustomProgress] = useState(false);
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -79,10 +81,11 @@ export default function TeacherReportPage() {
         return data;
       })
       .then((data: ReportInfo) => {
+        const savedProgress = data.reportContent?.split("\n")[0]?.replace(/^課程進度：/, "") ?? "";
         setInfo(data);
         setForm({
           studentCount: data.studentCount?.toString() ?? "",
-          progress: data.reportContent?.split("\n")[0]?.replace(/^課程進度：/, "") ?? "",
+          progress: savedProgress,
           skillFocus: data.skillFocus ?? [],
           classStatus: data.classStatus || "很順利",
           incident: Boolean(data.incident),
@@ -92,6 +95,7 @@ export default function TeacherReportPage() {
           incidentNotified: data.incidentNotified || "否",
           photos: data.photos ?? [],
         });
+        setCustomProgress(Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress)));
       })
       .catch((e) => setError((e as Error).message || "讀取回報表單失敗，請稍後再試"))
       .finally(() => setLoading(false));
@@ -120,6 +124,10 @@ export default function TeacherReportPage() {
     if (saving) return;
     if (!form.studentCount) {
       setError("請填寫今日出席人數");
+      return;
+    }
+    if (!form.progress.trim()) {
+      setError("請選擇或填寫今日課程進度");
       return;
     }
     if (form.skillFocus.length === 0) {
@@ -183,9 +191,34 @@ export default function TeacherReportPage() {
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">今日課程進度</label>
-          <textarea value={form.progress} onChange={(e) => setForm({ ...form, progress: e.target.value })}
-            className="mt-2 min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
-            placeholder="例：推壺控制與分組挑戰（可簡短填寫）" />
+          <p className="mt-1 text-xs text-slate-500">請點選今天上到哪一堂，若沒有適合的內容再自訂輸入。</p>
+          {info.progressOptions?.length > 0 && (
+            <div className="mt-3 grid gap-2">
+              {info.progressOptions.map((item) => (
+                <button key={`${item.lesson}-${item.title}`} type="button"
+                  onClick={() => {
+                    setCustomProgress(false);
+                    setForm({ ...form, progress: item.value });
+                  }}
+                  className={`rounded-2xl border px-4 py-3 text-left transition-colors ${!customProgress && form.progress === item.value ? "border-[#7B9E87] bg-[#E7F0E9] text-[#2F5D49]" : "border-slate-200 bg-white text-slate-700"}`}>
+                  <div className="text-xs font-semibold text-[#7B9E87]">第 {item.lesson} 堂</div>
+                  <div className="mt-1 text-sm font-semibold leading-5">{item.title}</div>
+                </button>
+              ))}
+              <button type="button" onClick={() => {
+                setCustomProgress(true);
+                setForm({ ...form, progress: "" });
+              }}
+                className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold ${customProgress ? "border-[#C8956C] bg-[#FFF6ED] text-[#8A552D]" : "border-slate-200 bg-white text-slate-600"}`}>
+                自訂輸入
+              </button>
+            </div>
+          )}
+          {(customProgress || !info.progressOptions?.length) && (
+            <textarea value={form.progress} onChange={(e) => setForm({ ...form, progress: e.target.value })}
+              className="mt-3 min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
+              placeholder="例：第 6 堂 側拉球，或自行填寫今日進度" />
+          )}
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">

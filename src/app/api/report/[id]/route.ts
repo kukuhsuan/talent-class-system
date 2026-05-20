@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { generateTeachingReport, safeJsonArray } from "@/lib/teachingReport";
+import { COURSE_CURRICULUM } from "@/lib/line";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -16,6 +17,10 @@ type ReportPayload = {
   photos?: string[];
 };
 
+function progressText(item: { lesson: number; title: string }) {
+  return `第${item.lesson}堂 ${item.title}`;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -27,17 +32,37 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
     }
+    const normalizedCourseType = courseLabel(attendance.course.courseType);
+    let progressRows = await prisma.courseProgress.findMany({
+      where: { courseType: normalizedCourseType },
+      orderBy: { lesson: "asc" },
+    });
+    if (progressRows.length === 0 && COURSE_CURRICULUM[normalizedCourseType]) {
+      progressRows = COURSE_CURRICULUM[normalizedCourseType].map((item) => ({
+        id: 0,
+        courseType: normalizedCourseType,
+        lesson: item.lesson,
+        title: item.title,
+        createdAt: new Date(),
+      }));
+    }
 
     return NextResponse.json({
       id: attendance.id,
       date: attendance.date.toISOString().slice(0, 10),
       school: attendance.course.school,
       courseType: attendance.course.courseType,
-      courseName: courseLabel(attendance.course.courseType),
+      courseName: normalizedCourseType,
       className: attendance.course.enrollCount,
       teacherName: attendance.actualTeacher.name,
       studentCount: attendance.studentCount,
       reportContent: attendance.reportContent,
+      progressOptions: progressRows.slice(0, 30).map((item) => ({
+        id: item.id,
+        lesson: item.lesson,
+        title: item.title,
+        value: progressText(item),
+      })),
       skillFocus: safeJsonArray(attendance.skillFocus),
       classStatus: attendance.classStatus,
       incident: attendance.incident,
