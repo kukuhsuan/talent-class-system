@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
-import { assessmentSemester, generateGrowthComment, growthTitle, normalizeScores } from "@/lib/kindergartenAssessment";
+import { assessmentSemester, generateGrowthComment, growthTitle, normalizeScores, parseScores, scoreAverage } from "@/lib/kindergartenAssessment";
 
 type Payload = {
   childName?: string;
-  semester?: string;
   scores?: Record<string, number>;
 };
 
@@ -41,8 +40,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ att
     if (!attendance) return NextResponse.json({ error: "找不到評量課程" }, { status: 404 });
     if (!isKindergarten(attendance.course.department)) return NextResponse.json({ error: "此功能只開放幼兒園課程使用" }, { status: 400 });
 
-    const rows = await prisma.$queryRawUnsafe<{ count: number }[]>(
-      "SELECT COUNT(*) as count FROM KindergartenAssessment WHERE attendanceId = ?",
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      id: number;
+      childName: string;
+      scores: string;
+      title: string;
+      comment: string;
+    }>>(
+      "SELECT id, childName, scores, title, comment FROM KindergartenAssessment WHERE attendanceId = ? ORDER BY id DESC",
       attendance.id,
     );
 
@@ -53,9 +58,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ att
       department: attendance.course.department,
       courseName: courseLabel(attendance.course.courseType),
       teacherName: attendance.actualTeacher.name,
-      semester: assessmentSemester(attendance.date),
       isFinalCourse: await isFinalAttendance(attendance),
-      assessmentCount: Number(rows[0]?.count ?? 0),
+      assessmentCount: rows.length,
+      assessments: rows.map((row) => ({
+        ...row,
+        average: Number(scoreAverage(parseScores(row.scores)).toFixed(1)),
+      })),
     });
   } catch (e) {
     console.error("assessment load failed", e);
@@ -80,7 +88,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ att
     if (!childName) return NextResponse.json({ error: "請填寫孩子姓名" }, { status: 400 });
     const scores = normalizeScores(data.scores ?? {});
     const courseName = courseLabel(attendance.course.courseType);
-    const semester = String(data.semester ?? assessmentSemester(attendance.date)).trim();
+    const semester = assessmentSemester(attendance.date);
     const comment = generateGrowthComment(childName, courseName, scores);
     const title = growthTitle(scores);
     const certificatePayload = JSON.stringify({

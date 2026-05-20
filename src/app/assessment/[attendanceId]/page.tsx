@@ -10,16 +10,15 @@ type Info = {
   department: string;
   courseName: string;
   teacherName: string;
-  semester: string;
   isFinalCourse: boolean;
   assessmentCount: number;
+  assessments: Array<{ id: number; childName: string; average: number; title: string; comment: string }>;
 };
 
 export default function KindergartenAssessmentForm() {
   const params = useParams<{ attendanceId: string }>();
   const [info, setInfo] = useState<Info | null>(null);
   const [childName, setChildName] = useState("");
-  const [semester, setSemester] = useState("");
   const [scores, setScores] = useState(emptyScores());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,7 +34,6 @@ export default function KindergartenAssessmentForm() {
       })
       .then((data: Info) => {
         setInfo(data);
-        setSemester(data.semester);
       })
       .catch((e) => setError((e as Error).message || "讀取評量表失敗"))
       .finally(() => setLoading(false));
@@ -56,11 +54,16 @@ export default function KindergartenAssessmentForm() {
       const res = await fetch(`/api/assessment/${params.attendanceId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ childName, semester, scores }),
+        body: JSON.stringify({ childName, scores }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "儲存評量失敗");
       setResult(data);
+      setInfo((current) => current ? {
+        ...current,
+        assessmentCount: current.assessmentCount + 1,
+        assessments: [{ id: data.id, childName, average: 0, title: data.title, comment: data.comment }, ...current.assessments],
+      } : current);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setError((e as Error).message || "儲存評量失敗");
@@ -72,6 +75,14 @@ export default function KindergartenAssessmentForm() {
   if (loading) return <div className="mx-auto max-w-md py-16 text-center text-slate-500">載入學期評量中...</div>;
   if (!info) return <div className="mx-auto max-w-md py-16 text-center text-red-500">{error || "找不到評量表"}</div>;
 
+  function nextChild() {
+    setChildName("");
+    setScores(emptyScores());
+    setResult(null);
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
     <div className="mx-auto max-w-md pb-10">
       <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#F5EBDD] via-[#F9F6EF] to-[#DCE8DD] px-5 pb-6 pt-5 shadow-sm">
@@ -80,7 +91,7 @@ export default function KindergartenAssessmentForm() {
         <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-slate-700 shadow-sm">
           <div className="font-semibold text-slate-900">{info.school}</div>
           <div className="mt-1">{info.date}｜{info.courseName}</div>
-          <div className="mt-1 text-xs text-slate-500">學期：{semester}｜老師：{info.teacherName}</div>
+          <div className="mt-1 text-xs text-slate-500">老師：{info.teacherName}</div>
         </div>
       </div>
 
@@ -88,9 +99,15 @@ export default function KindergartenAssessmentForm() {
         <div className="mb-4 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
           <div className="font-bold">評量完成：{result.title}</div>
           <p className="mt-2 leading-6">{result.comment}</p>
-          <a href={`/assessments/${result.id}/certificate`} className="mt-3 block rounded-xl bg-[#3F6B55] px-4 py-3 text-center font-bold text-white">
-            查看成果證書
-          </a>
+          <div className="mt-3 grid gap-2">
+            <div className="rounded-xl bg-white px-3 py-2 font-semibold text-green-800">已完成：{childName}</div>
+            <button onClick={nextChild} className="rounded-xl bg-[#3F6B55] px-4 py-3 text-center font-bold text-white">
+              繼續新增下一位孩子
+            </button>
+            <a href={`/assessments/${result.id}/certificate`} className="rounded-xl border border-green-200 bg-white px-4 py-3 text-center font-bold text-green-700">
+              查看已完成評量
+            </a>
+          </div>
         </div>
       )}
       {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
@@ -101,14 +118,28 @@ export default function KindergartenAssessmentForm() {
       )}
 
       <div className="space-y-4">
+        <section className="rounded-2xl border border-[#DCE8DD] bg-[#F8FBF8] p-4 shadow-sm">
+          <div className="text-sm font-bold text-[#3F6B55]">本次已完成 {info.assessmentCount} 位評量</div>
+          {info.assessments.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {info.assessments.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm">
+                  <div>
+                    <div className="font-semibold text-slate-800">{item.childName}</div>
+                    <div className="text-xs text-slate-500">{item.title}{item.average ? `｜平均 ${item.average} 分` : ""}</div>
+                  </div>
+                  <a href={`/assessments/${item.id}/certificate`} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">查看證書</a>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">孩子姓名</label>
           <input value={childName} onChange={(e) => setChildName(e.target.value)}
             className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-semibold outline-none focus:border-[#7B9E87]"
             placeholder="請輸入孩子姓名" />
-          <label className="mt-4 block text-sm font-semibold text-slate-800">學期名稱</label>
-          <input value={semester} onChange={(e) => setSemester(e.target.value)}
-            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]" />
         </section>
 
         <section className="rounded-2xl bg-white p-4 text-xs leading-6 text-slate-600 shadow-sm">

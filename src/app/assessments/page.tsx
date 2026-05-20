@@ -38,6 +38,7 @@ export default function AssessmentsPage() {
   }, [year, month, school]);
 
   const schools = useMemo(() => [...new Set(rows.map((row) => row.school))].sort(), [rows]);
+  const batchUrl = rows.length ? `/assessments/batch?ids=${rows.map((row) => row.id).join(",")}` : "";
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = [2024, 2025, 2026, 2027];
 
@@ -48,6 +49,11 @@ export default function AssessmentsPage() {
           <h1 className="text-xl font-bold text-slate-800">幼兒園學期評量</h1>
           <p className="text-sm text-slate-500">查看幼兒運動評量、AI 成長評語與電子證書</p>
         </div>
+        {batchUrl && (
+          <Link href={batchUrl} className="rounded-lg bg-[#0756B7] px-4 py-2 text-sm font-semibold text-white">
+            批次產生證書 / PDF
+          </Link>
+        )}
       </div>
 
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -82,7 +88,7 @@ export default function AssessmentsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-lg font-bold text-slate-800">{row.childName}</div>
-                    <div className="mt-1 text-sm text-slate-500">{row.school}｜{row.courseName}｜{row.semester}</div>
+                    <div className="mt-1 text-sm text-slate-500">{row.school}｜{row.courseName}</div>
                     <div className="mt-1 text-xs text-slate-400">{new Date(row.date).toLocaleDateString("zh-TW")}｜{row.teacherName}</div>
                   </div>
                   <span className="rounded-full bg-[#F3E7D0] px-3 py-1 text-xs font-bold text-[#6E4C1E]">{row.title}</span>

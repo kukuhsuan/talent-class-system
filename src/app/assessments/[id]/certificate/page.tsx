@@ -35,7 +35,7 @@ function Radar({ scores }: { scores: string }) {
   });
   const polygon = points.map((point) => `${point.x},${point.y}`).join(" ");
   return (
-    <svg viewBox="0 0 300 300" className="mx-auto h-[74mm] w-[74mm]">
+    <svg viewBox="0 0 300 300" className="mx-auto h-[80mm] w-[80mm]">
       {[1, 2, 3, 4, 5].map((level) => {
         const radius = (level / 5) * maxRadius;
         const ring = groups.map((_group, index) => {
@@ -150,7 +150,7 @@ export default function CertificatePage() {
           </button>
         </div>
       </div>
-      <article className="certificate-print-root certificate-sheet mx-auto h-[297mm] w-[210mm] overflow-hidden bg-white p-[7mm] shadow-sm">
+      <article className="certificate-print-root certificate-sheet mx-auto h-[297mm] w-[210mm] overflow-hidden bg-white p-[6mm] shadow-sm">
         <div className="flex h-[45mm] items-center gap-[12mm] bg-[#0756B7] px-[9mm] text-white">
           <img src="/upbear-logo.png" alt="優比熊 Logo" className="h-[36mm] w-[36mm] shrink-0 object-contain" />
           <div>
@@ -159,7 +159,7 @@ export default function CertificatePage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-[5mm] px-[8mm] py-[6mm] text-[13pt] font-black">
+        <div className="grid grid-cols-3 gap-[5mm] px-[8mm] py-[5mm] text-[13pt] font-black">
           <div className="rounded-2xl bg-[#F5F8FF] px-[4mm] py-[3mm]">孩子姓名<br /><span className="text-[18pt] text-[#0756B7]">{detail.childName}</span></div>
           <div className="rounded-2xl bg-[#F8F3E8] px-[4mm] py-[3mm]">課程名稱<br /><span className="text-[18pt] text-[#0756B7]">{detail.courseName}</span></div>
           <div className="rounded-2xl bg-[#F5F8FF] px-[4mm] py-[3mm]">園所名稱<br /><span className="text-[16pt] text-[#0756B7]">{detail.school}</span></div>
@@ -170,12 +170,12 @@ export default function CertificatePage() {
             <h2 className="text-[21pt] font-black">三大核心發展指標</h2>
             <div className="rounded-full bg-[#F3E7D0] px-[5mm] py-[2mm] text-[12pt] font-black text-[#6E4C1E]">{detail.title}</div>
           </div>
-          <div className="-mt-[2mm]">
+          <div className="-mt-[5mm]">
             <Radar scores={detail.scores} />
           </div>
         </section>
 
-        <section className="mt-[1mm] px-[8mm]">
+        <section className="mt-[-3mm] px-[8mm]">
           <div className="inline-block rounded-t-2xl bg-[#0756B7] px-[6mm] py-[2.5mm] text-[15pt] font-bold text-white">教練專業觀察與建議</div>
           <div className="h-[42mm] overflow-hidden rounded-b-[26px] rounded-tr-[26px] bg-[#E8D9BC] px-[8mm] py-[5mm] text-[14pt] leading-[1.72] text-slate-800">
             {compactComment}
