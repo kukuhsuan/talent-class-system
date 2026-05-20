@@ -14,11 +14,14 @@ type ReportPayload = {
   incidentProcess?: string;
   incidentAction?: string;
   incidentNotified?: string;
-  photos?: string[];
 };
 
 function progressText(item: { lesson: number; title: string }) {
   return `第${item.lesson}堂 ${item.title}`;
+}
+
+function isKindergarten(department: string | null | undefined) {
+  return (department ?? "").includes("幼兒園");
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +55,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       date: attendance.date.toISOString().slice(0, 10),
       school: attendance.course.school,
       courseType: attendance.course.courseType,
+      department: attendance.course.department,
+      reportMode: isKindergarten(attendance.course.department) ? "kindergarten" : "simple",
       courseName: normalizedCourseType,
       className: attendance.course.enrollCount,
       teacherName: attendance.actualTeacher.name,
@@ -70,7 +75,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       incidentProcess: attendance.incidentProcess,
       incidentAction: attendance.incidentAction,
       incidentNotified: attendance.incidentNotified,
-      photos: safeJsonArray(attendance.reportPhotos),
       aiSummary: attendance.aiSummary,
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
@@ -95,26 +99,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const data = (await req.json()) as ReportPayload;
     const skillFocus = safeJsonArray(data.skillFocus);
-    const photos = safeJsonArray(data.photos).slice(0, 5);
     const progress = String(data.progress ?? "").trim();
-    const classStatus = String(data.classStatus ?? "普通").trim();
+    const kindergarten = isKindergarten(attendance.course.department);
+    const classStatus = kindergarten ? String(data.classStatus ?? "普通").trim() : "";
     const incident = Boolean(data.incident);
 
-    const generated = generateTeachingReport({
-      school: attendance.course.school,
-      courseType: attendance.course.courseType,
-      progress,
-      skillFocus,
-      classStatus,
-      incident,
-      incidentChild: String(data.incidentChild ?? "").trim(),
-      incidentProcess: String(data.incidentProcess ?? "").trim(),
-      incidentAction: String(data.incidentAction ?? "").trim(),
-      incidentNotified: String(data.incidentNotified ?? "").trim(),
-    });
+    const incidentChild = String(data.incidentChild ?? "").trim();
+    const incidentProcess = String(data.incidentProcess ?? "").trim();
+    const incidentAction = String(data.incidentAction ?? "").trim();
+    const incidentNotified = String(data.incidentNotified ?? "").trim();
+    const generated = kindergarten
+      ? generateTeachingReport({
+        school: attendance.course.school,
+        courseType: attendance.course.courseType,
+        progress,
+        skillFocus,
+        classStatus,
+        incident,
+        incidentChild,
+        incidentProcess,
+        incidentAction,
+        incidentNotified,
+      })
+      : {
+        aiSummary: `今日訓練內容：${progress || "老師已完成現場訓練回報"}。`,
+        aiSkillFocus: "",
+        aiTeachingNote: incident
+          ? `本次課程有特殊事件，${incidentChild ? `孩子「${incidentChild}」` : "現場"}狀況為：${incidentProcess || "已由老師現場觀察與處理"}。處理方式：${incidentAction || "已即時處理"}。${incidentNotified === "是" ? "已通知現場老師或窗口。" : "尚未通知現場老師或窗口。"}`
+          : "本次課程無特殊事件。",
+      };
 
     const reportContent = [
-      progress ? `課程進度：${progress}` : "",
+      progress ? `${kindergarten ? "課程進度" : "訓練內容"}：${progress}` : "",
       generated.aiSummary,
       generated.aiSkillFocus,
       generated.aiTeachingNote,
@@ -126,14 +142,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         studentCount: data.studentCount == null ? attendance.studentCount : Number(data.studentCount),
         reportContent,
         reportSentAt: new Date(),
-        skillFocus: JSON.stringify(skillFocus),
+        skillFocus: JSON.stringify(kindergarten ? skillFocus : []),
         classStatus,
         incident,
-        incidentChild: incident ? String(data.incidentChild ?? "").trim() : "",
-        incidentProcess: incident ? String(data.incidentProcess ?? "").trim() : "",
-        incidentAction: incident ? String(data.incidentAction ?? "").trim() : "",
-        incidentNotified: incident ? String(data.incidentNotified ?? "").trim() : "",
-        reportPhotos: JSON.stringify(photos),
+        incidentChild: incident ? incidentChild : "",
+        incidentProcess: incident ? incidentProcess : "",
+        incidentAction: incident ? incidentAction : "",
+        incidentNotified: incident ? incidentNotified : "",
         ...generated,
       },
     });

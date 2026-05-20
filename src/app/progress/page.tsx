@@ -15,7 +15,7 @@ type ProgressRecord = {
   id: number; date: string; course: CourseInfo; actualTeacher: Teacher;
   studentCount: number | null; cancelled: boolean; reportContent: string; reportSentAt: string | null;
   skillFocus?: string; classStatus?: string; incident?: boolean; incidentChild?: string; incidentProcess?: string;
-  incidentAction?: string; incidentNotified?: string; reportPhotos?: string; aiSummary?: string; aiSkillFocus?: string; aiTeachingNote?: string;
+  incidentAction?: string; incidentNotified?: string; aiSummary?: string; aiSkillFocus?: string; aiTeachingNote?: string;
 };
 type CourseProgress = { id: number; courseType: string; lesson: number; title: string };
 
@@ -246,6 +246,9 @@ export default function ProgressPage() {
                             {new Date(r.date).toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "short" })}
                           </span>
                           <span className="text-xs text-slate-500">{courseLabel(r.course.courseType)}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.course.department.includes("幼兒園") ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-600"}`}>
+                            {r.course.department || "未分類"}
+                          </span>
                           <span className="text-xs text-slate-500">👨‍🏫 {r.actualTeacher.name}</span>
                           {r.studentCount !== null && (
                             <span className="text-xs text-slate-500">👦 {r.studentCount}人</span>
@@ -260,15 +263,15 @@ export default function ProgressPage() {
                         <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
                           {r.reportContent}
                         </p>
-                        {(parseList(r.skillFocus).length > 0 || r.classStatus || r.incident) && (
+                        {((r.course.department.includes("幼兒園") && (parseList(r.skillFocus).length > 0 || r.classStatus)) || r.incident) && (
                           <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
-                            {parseList(r.skillFocus).length > 0 && (
+                            {r.course.department.includes("幼兒園") && parseList(r.skillFocus).length > 0 && (
                               <div className="rounded-lg bg-green-50 px-3 py-2 text-green-700">
                                 <div className="font-semibold">今日能力培養</div>
                                 <div className="mt-1">{parseList(r.skillFocus).join("、")}</div>
                               </div>
                             )}
-                            {r.classStatus && (
+                            {r.course.department.includes("幼兒園") && r.classStatus && (
                               <div className="rounded-lg bg-blue-50 px-3 py-2 text-blue-700">
                                 <div className="font-semibold">課堂狀況</div>
                                 <div className="mt-1">{r.classStatus}</div>
@@ -277,7 +280,7 @@ export default function ProgressPage() {
                             {r.incident && (
                               <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
                                 <div className="font-semibold">特殊事件</div>
-                                <div className="mt-1">{r.incidentChild || "未填姓名"}｜{r.incidentNotified === "是" ? "已通知園所" : "未通知園所"}</div>
+                                <div className="mt-1">{r.incidentChild || "未填姓名"}｜{r.incidentNotified === "是" ? `已通知${r.course.department.includes("幼兒園") ? "園所" : "現場老師或窗口"}` : `未通知${r.course.department.includes("幼兒園") ? "園所" : "現場老師或窗口"}`}</div>
                               </div>
                             )}
                           </div>
@@ -288,16 +291,6 @@ export default function ProgressPage() {
                             {r.aiSummary && <p>{r.aiSummary}</p>}
                             {r.aiSkillFocus && <p>{r.aiSkillFocus}</p>}
                             {r.aiTeachingNote && <p>{r.aiTeachingNote}</p>}
-                          </div>
-                        )}
-                        {parseList(r.reportPhotos).length > 0 && (
-                          <div className="mt-3 grid grid-cols-3 gap-2 md:grid-cols-5">
-                            {parseList(r.reportPhotos).slice(0, 5).map((photo, index) => (
-                              <a key={`${r.id}-${index}`} href={photo} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg bg-slate-100">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={photo} alt={`課堂照片 ${index + 1}`} className="h-full w-full object-cover" />
-                              </a>
-                            ))}
                           </div>
                         )}
                         {r.incident && (r.incidentProcess || r.incidentAction) && (

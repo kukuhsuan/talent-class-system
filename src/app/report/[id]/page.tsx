@@ -7,6 +7,8 @@ type ReportInfo = {
   id: number;
   date: string;
   school: string;
+  department: string;
+  reportMode: "kindergarten" | "simple";
   courseName: string;
   className: string;
   teacherName: string;
@@ -20,7 +22,6 @@ type ReportInfo = {
   incidentProcess: string;
   incidentAction: string;
   incidentNotified: string;
-  photos: string[];
   aiSummary: string;
   aiSkillFocus: string;
   aiTeachingNote: string;
@@ -36,32 +37,7 @@ const EMPTY = {
   incidentProcess: "",
   incidentAction: "",
   incidentNotified: "否",
-  photos: [] as string[],
 };
-
-function resizeImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const max = 1200;
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return reject(new Error("照片處理失敗"));
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.72));
-      };
-      img.onerror = reject;
-      img.src = String(reader.result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function TeacherReportPage() {
   const params = useParams<{ id: string }>();
@@ -81,7 +57,7 @@ export default function TeacherReportPage() {
         return data;
       })
       .then((data: ReportInfo) => {
-        const savedProgress = data.reportContent?.split("\n")[0]?.replace(/^課程進度：/, "") ?? "";
+        const savedProgress = data.reportContent?.split("\n")[0]?.replace(/^(課程進度|訓練內容)：/, "") ?? "";
         setInfo(data);
         setForm({
           studentCount: data.studentCount?.toString() ?? "",
@@ -93,7 +69,6 @@ export default function TeacherReportPage() {
           incidentProcess: data.incidentProcess ?? "",
           incidentAction: data.incidentAction ?? "",
           incidentNotified: data.incidentNotified || "否",
-          photos: data.photos ?? [],
         });
         setCustomProgress(Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress)));
       })
@@ -108,29 +83,18 @@ export default function TeacherReportPage() {
     }));
   }
 
-  async function onPhotoChange(files: FileList | null) {
-    if (!files) return;
-    setError("");
-    try {
-      const selected = Array.from(files).slice(0, 5 - form.photos.length);
-      const images = await Promise.all(selected.map(resizeImage));
-      setForm((f) => ({ ...f, photos: [...f.photos, ...images].slice(0, 5) }));
-    } catch {
-      setError("照片處理失敗，請換一張照片再試");
-    }
-  }
-
   async function submit() {
     if (saving) return;
+    const kindergarten = info?.reportMode === "kindergarten";
     if (!form.studentCount) {
       setError("請填寫今日出席人數");
       return;
     }
     if (!form.progress.trim()) {
-      setError("請選擇或填寫今日課程進度");
+      setError(kindergarten ? "請選擇或填寫今日課程進度" : "請填寫今天訓練什麼");
       return;
     }
-    if (form.skillFocus.length === 0) {
+    if (kindergarten && form.skillFocus.length === 0) {
       setError("請至少選擇一個今日能力培養");
       return;
     }
@@ -143,6 +107,8 @@ export default function TeacherReportPage() {
         body: JSON.stringify({
           ...form,
           studentCount: Number(form.studentCount),
+          skillFocus: kindergarten ? form.skillFocus : [],
+          classStatus: kindergarten ? form.classStatus : "",
         }),
       });
       const responseData = await res.json().catch(() => ({}));
@@ -160,6 +126,7 @@ export default function TeacherReportPage() {
 
   if (loading) return <div className="mx-auto max-w-md py-16 text-center text-slate-500">載入表單中...</div>;
   if (!info) return <div className="mx-auto max-w-md py-16 text-center text-red-500">{error || "找不到表單"}</div>;
+  const isKindergarten = info.reportMode === "kindergarten";
 
   return (
     <div className="mx-auto max-w-md pb-10">
@@ -169,7 +136,7 @@ export default function TeacherReportPage() {
         <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-slate-700 shadow-sm">
           <div className="font-semibold text-slate-900">{info.school}</div>
           <div className="mt-1">{info.date}｜{info.courseName}</div>
-          <div className="mt-1 text-xs text-slate-500">老師：{info.teacherName}{info.className ? `｜班級：${info.className}` : ""}</div>
+          <div className="mt-1 text-xs text-slate-500">類型：{info.department || "未分類"}｜老師：{info.teacherName}{info.className ? `｜班級：${info.className}` : ""}</div>
         </div>
       </div>
 
@@ -190,9 +157,11 @@ export default function TeacherReportPage() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">今日課程進度</label>
-          <p className="mt-1 text-xs text-slate-500">請點選今天上到哪一堂，若沒有適合的內容再自訂輸入。</p>
-          {info.progressOptions?.length > 0 && (
+          <label className="text-sm font-semibold text-slate-800">{isKindergarten ? "今日課程進度" : "今天訓練什麼"}</label>
+          <p className="mt-1 text-xs text-slate-500">
+            {isKindergarten ? "請點選今天上到哪一堂，若沒有適合的內容再自訂輸入。" : "簡短填寫今天訓練內容即可。"}
+          </p>
+          {isKindergarten && info.progressOptions?.length > 0 && (
             <div className="mt-3 grid gap-2">
               {info.progressOptions.map((item) => (
                 <button key={`${item.lesson}-${item.title}`} type="button"
@@ -214,36 +183,40 @@ export default function TeacherReportPage() {
               </button>
             </div>
           )}
-          {(customProgress || !info.progressOptions?.length) && (
+          {(!isKindergarten || customProgress || !info.progressOptions?.length) && (
             <textarea value={form.progress} onChange={(e) => setForm({ ...form, progress: e.target.value })}
               className="mt-3 min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
-              placeholder="例：第 6 堂 側拉球，或自行填寫今日進度" />
+              placeholder={isKindergarten ? "例：第 6 堂 側拉球，或自行填寫今日進度" : "例：傳接球、體能循環、分組對抗"} />
           )}
         </section>
 
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">今日能力培養</div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {SKILL_FOCUS_OPTIONS.map((skill) => (
-              <button key={skill} type="button" onClick={() => toggleSkill(skill)}
-                className={`rounded-full border px-3 py-3 text-sm font-medium transition-colors ${form.skillFocus.includes(skill) ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 bg-white text-slate-600"}`}>
-                {skill}
-              </button>
-            ))}
-          </div>
-        </section>
+        {isKindergarten && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="text-sm font-semibold text-slate-800">今日能力培養</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {SKILL_FOCUS_OPTIONS.map((skill) => (
+                <button key={skill} type="button" onClick={() => toggleSkill(skill)}
+                  className={`rounded-full border px-3 py-3 text-sm font-medium transition-colors ${form.skillFocus.includes(skill) ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 bg-white text-slate-600"}`}>
+                  {skill}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">課堂狀況</div>
-          <div className="mt-3 space-y-2">
-            {CLASS_STATUS_OPTIONS.map((status) => (
-              <label key={status} className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${form.classStatus === status ? "border-[#7B9E87] bg-[#F1F7F2]" : "border-slate-200"}`}>
-                <input type="radio" checked={form.classStatus === status} onChange={() => setForm({ ...form, classStatus: status })} />
-                <span className="text-sm font-medium text-slate-700">{status}</span>
-              </label>
-            ))}
-          </div>
-        </section>
+        {isKindergarten && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="text-sm font-semibold text-slate-800">課堂狀況</div>
+            <div className="mt-3 space-y-2">
+              {CLASS_STATUS_OPTIONS.map((status) => (
+                <label key={status} className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${form.classStatus === status ? "border-[#7B9E87] bg-[#F1F7F2]" : "border-slate-200"}`}>
+                  <input type="radio" checked={form.classStatus === status} onChange={() => setForm({ ...form, classStatus: status })} />
+                  <span className="text-sm font-medium text-slate-700">{status}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">今天是否有特殊事件？</div>
@@ -261,7 +234,7 @@ export default function TeacherReportPage() {
               <textarea value={form.incidentProcess} onChange={(e) => setForm({ ...form, incidentProcess: e.target.value })} className="min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="發生經過" />
               <textarea value={form.incidentAction} onChange={(e) => setForm({ ...form, incidentAction: e.target.value })} className="min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="處理方式" />
               <div>
-                <div className="mb-2 text-xs font-medium text-slate-500">是否通知園所</div>
+                <div className="mb-2 text-xs font-medium text-slate-500">是否通知{isKindergarten ? "園所" : "現場老師或窗口"}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {["是", "否"].map((v) => (
                     <button key={v} type="button" onClick={() => setForm({ ...form, incidentNotified: v })}
@@ -271,28 +244,6 @@ export default function TeacherReportPage() {
                   ))}
                 </div>
               </div>
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">課堂照片</div>
-          <p className="mt-1 text-xs text-slate-500">可上傳 1～5 張，可從相簿選擇或直接拍照。</p>
-          <div className="mt-2 text-xs font-medium text-[#3F6B55]">已選擇 {form.photos.length} / 5 張照片</div>
-          <label className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#B8CDBE] bg-[#F8FBF8] px-4 py-5 text-sm font-medium text-[#3F6B55]">
-            + 選擇或拍攝照片
-            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => onPhotoChange(e.target.files)} />
-          </label>
-          {form.photos.length > 0 && (
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {form.photos.map((photo, index) => (
-                <div key={`${photo.slice(0, 20)}-${index}`} className="relative aspect-square overflow-hidden rounded-xl bg-slate-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photo} alt={`課堂照片 ${index + 1}`} className="h-full w-full object-cover" />
-                  <button type="button" onClick={() => setForm((f) => ({ ...f, photos: f.photos.filter((_, i) => i !== index) }))}
-                    className="absolute right-1 top-1 rounded-full bg-black/55 px-2 py-1 text-xs text-white">刪除</button>
-                </div>
-              ))}
             </div>
           )}
         </section>
