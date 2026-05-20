@@ -277,10 +277,11 @@ export default function TeacherReportPage() {
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">課堂照片</div>
-          <p className="mt-1 text-xs text-slate-500">可上傳 1～5 張，支援手機拍照。</p>
+          <p className="mt-1 text-xs text-slate-500">可上傳 1～5 張，可從相簿選擇或直接拍照。</p>
+          <div className="mt-2 text-xs font-medium text-[#3F6B55]">已選擇 {form.photos.length} / 5 張照片</div>
           <label className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#B8CDBE] bg-[#F8FBF8] px-4 py-5 text-sm font-medium text-[#3F6B55]">
             + 選擇或拍攝照片
-            <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onPhotoChange(e.target.files)} />
+            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => onPhotoChange(e.target.files)} />
           </label>
           {form.photos.length > 0 && (
             <div className="mt-3 grid grid-cols-3 gap-2">
