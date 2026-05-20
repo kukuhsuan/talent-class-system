@@ -25,6 +25,8 @@ type ReportInfo = {
   aiSummary: string;
   aiSkillFocus: string;
   aiTeachingNote: string;
+  shouldAskAssessment?: boolean;
+  assessmentCount?: number;
 };
 
 const EMPTY = {
@@ -48,6 +50,7 @@ export default function TeacherReportPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [customProgress, setCustomProgress] = useState(false);
+  const [assessmentUrl, setAssessmentUrl] = useState("");
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -115,6 +118,7 @@ export default function TeacherReportPage() {
       if (!res.ok) throw new Error(responseData.error || "送出失敗");
       const generated = responseData;
       setInfo((current) => current ? { ...current, ...generated } : current);
+      setAssessmentUrl(responseData.assessmentUrl || "");
       setDone(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
@@ -142,7 +146,16 @@ export default function TeacherReportPage() {
 
       {done && (
         <div className="mb-4 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
-          已送出回報，教學紀錄已自動整理完成。
+          <div className="font-semibold">已送出回報，教學紀錄已自動整理完成。</div>
+          {assessmentUrl && (
+            <div className="mt-3 rounded-xl bg-white p-3 text-slate-700">
+              <div className="font-semibold text-[#3F6B55]">這是幼兒園最後一堂課</div>
+              <p className="mt-1 text-xs text-slate-500">是否進行本學期幼兒運動評量？</p>
+              <a href={assessmentUrl} className="mt-3 block rounded-xl bg-[#3F6B55] px-4 py-3 text-center text-sm font-bold text-white">
+                進入學期末運動評量
+              </a>
+            </div>
+          )}
         </div>
       )}
       {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">{error}</div>}

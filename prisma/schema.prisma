@@ -125,8 +125,26 @@ model Attendance {
   aiSkillFocus    String    @default("")
   aiTeachingNote  String    @default("")
   createdAt       DateTime  @default(now())
+  assessments     KindergartenAssessment[]
 
   @@unique([courseId, date])
+}
+
+model KindergartenAssessment {
+  id                Int      @id @default(autoincrement())
+  attendance        Attendance @relation(fields: [attendanceId], references: [id])
+  attendanceId      Int
+  childName         String
+  semester          String   @default("")
+  courseName        String   @default("")
+  scores            String   @default("")
+  comment           String   @default("")
+  title             String   @default("")
+  certificatePayload String  @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([attendanceId])
 }
 
 model Substitute {

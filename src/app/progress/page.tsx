@@ -119,6 +119,12 @@ export default function ProgressPage() {
     }
   }
 
+  function primaryReportText(value: string | undefined) {
+    if (!value) return "";
+    const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
+    return lines[0] ?? "";
+  }
+
   return (
     <div>
       <Toast toast={toast} />
@@ -260,9 +266,11 @@ export default function ProgressPage() {
                             <span className="px-1.5 py-0.5 bg-green-100 text-green-600 rounded text-xs">已發送</span>
                           )}
                         </div>
-                        <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
-                          {r.reportContent}
-                        </p>
+                        {primaryReportText(r.reportContent) && (
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
+                            {primaryReportText(r.reportContent)}
+                          </p>
+                        )}
                         {((r.course.department.includes("幼兒園") && (parseList(r.skillFocus).length > 0 || r.classStatus)) || r.incident) && (
                           <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
                             {r.course.department.includes("幼兒園") && parseList(r.skillFocus).length > 0 && (

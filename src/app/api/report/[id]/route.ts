@@ -24,6 +24,29 @@ function isKindergarten(department: string | null | undefined) {
   return (department ?? "").includes("幼兒園");
 }
 
+async function isFinalKindergartenAttendance(attendance: { id: number; date: Date; courseId: number; course: { department: string } }) {
+  if (!isKindergarten(attendance.course.department)) return false;
+  const latest = await prisma.attendance.findFirst({
+    where: { courseId: attendance.courseId },
+    orderBy: { date: "desc" },
+    select: { id: true, date: true },
+  });
+  if (!latest) return false;
+  return latest.id === attendance.id || latest.date <= attendance.date;
+}
+
+async function assessmentCount(attendanceId: number) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ count: number }[]>(
+      "SELECT COUNT(*) as count FROM KindergartenAssessment WHERE attendanceId = ?",
+      attendanceId,
+    );
+    return Number(rows[0]?.count ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -78,6 +101,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSummary: attendance.aiSummary,
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
+      shouldAskAssessment: await isFinalKindergartenAttendance(attendance),
+      assessmentCount: await assessmentCount(attendance.id),
     });
   } catch (e) {
     console.error("report form load failed", e);
@@ -153,7 +178,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
 
-    return NextResponse.json({ ok: true, ...generated });
+    const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
+    return NextResponse.json({
+      ok: true,
+      ...generated,
+      shouldAskAssessment,
+      assessmentUrl: shouldAskAssessment ? `/assessment/${attendance.id}` : "",
+      assessmentCount: await assessmentCount(attendance.id),
+    });
   } catch (e) {
     console.error("report form save failed", e);
     return NextResponse.json({ error: `送出回報失敗：${(e as Error).message}` }, { status: 500 });

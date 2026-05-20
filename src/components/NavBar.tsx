@@ -15,6 +15,7 @@ const NAV = [
   { href: "/substitutes", label: "代課紀錄" },
   { href: "/salary", label: "薪資計算" },
   { href: "/progress", label: "課程進度" },
+  { href: "/assessments", label: "學期評量" },
   { href: "/notify", label: "LINE 通知" },
   { href: "/users", label: "帳號管理" },
 ];
@@ -25,7 +26,7 @@ export default function NavBar() {
   const { dept, setDept } = useDepartment();
   const [open, setOpen] = useState(false);
 
-  if (pathname.startsWith("/report")) return null;
+  if (pathname.startsWith("/report") || pathname.startsWith("/assessment")) return null;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
