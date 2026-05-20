@@ -3,6 +3,12 @@ import { COURSE_LABEL, courseLabel } from "@/lib/courseMeta";
 
 export { COURSE_LABEL, courseLabel };
 
+function appUrl() {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "https://talent-class-system.vercel.app";
+}
+
 // Course curriculum data (lesson number → title)
 export const COURSE_CURRICULUM: Record<string, Array<{ lesson: number; title: string }>> = {
   足球: [
@@ -362,7 +368,13 @@ export function buildReportRequestMessage(opts: {
             type: "button",
             style: "primary",
             color: "#7B9E87",
-            action: { type: "postback", label: "📋 選擇課程進度", data: `action=select_progress&id=${opts.attendanceId}` },
+            action: { type: "uri", label: "🧸 完整回報表單", uri: `${appUrl()}/report/${opts.attendanceId}` },
+          },
+          {
+            type: "button",
+            style: "secondary",
+            color: "#DDD8D0",
+            action: { type: "postback", label: "📋 快速選進度", data: `action=select_progress&id=${opts.attendanceId}` },
           },
           {
             type: "button",

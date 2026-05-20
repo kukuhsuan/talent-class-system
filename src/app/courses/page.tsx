@@ -10,6 +10,7 @@ import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
 type School = { id: number; name: string; type: string; region: string; address: string };
+type CourseOption = { code: string; label: string };
 type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number;
   school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string;
@@ -108,12 +109,16 @@ export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
+  const [courseOptions, setCourseOptions] = useState<CourseOption[]>(COURSE_OPTIONS.map((option) => ({ ...option })));
   const [form, setForm] = useState({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") });
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
   const [saving, setSaving] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
+  const [showCourseOptionForm, setShowCourseOptionForm] = useState(false);
+  const [newCourseOption, setNewCourseOption] = useState("");
+  const [savingCourseOption, setSavingCourseOption] = useState(false);
   const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
@@ -125,7 +130,8 @@ export default function CoursesPage() {
         fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
         fetch("/api/teachers").then((r) => r.json()),
         fetch("/api/schools").then((r) => r.json()),
-      ]).then(([c, t, s]) => { setCourses(c); setTeachers(t); setSchools(s); }),
+        fetch("/api/course-options").then((r) => r.json()),
+      ]).then(([c, t, s, o]) => { setCourses(c); setTeachers(t); setSchools(s); setCourseOptions(o); }),
     [dept],
   );
 
@@ -155,6 +161,34 @@ export default function CoursesPage() {
       showToast("error", (e as Error).message || "課程編號產生失敗", 2500);
     } finally {
       setGeneratingCode(false);
+    }
+  }
+
+  async function saveCourseOption() {
+    const label = newCourseOption.trim();
+    if (!label) return alert("請輸入課程名稱");
+    if (savingCourseOption) return;
+    setSavingCourseOption(true);
+    try {
+      const res = await fetch("/api/course-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) throw new Error(await readErrorMessage(res, "課程選項新增失敗"));
+      const option = await res.json();
+      setCourseOptions((options) => {
+        const next = options.filter((item) => item.code !== option.code);
+        return [...next, option].sort((a, b) => a.label.localeCompare(b.label, "zh-Hant"));
+      });
+      setForm((f) => ({ ...f, courseType: option.code }));
+      setNewCourseOption("");
+      setShowCourseOptionForm(false);
+      showToast("success", "課程選項已新增");
+    } catch (e) {
+      showToast("error", (e as Error).message || "課程選項新增失敗", 3000);
+    } finally {
+      setSavingCourseOption(false);
     }
   }
 
@@ -309,9 +343,22 @@ export default function CoursesPage() {
               <label>課程項目</label>
               <select value={form.courseType} onChange={(e) => setForm({ ...form, courseType: e.target.value })}>
                 <option value="">-- 選擇課程 --</option>
-                {COURSE_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.label}（{c.code}）</option>)}
-                {form.courseType && !COURSE_OPTIONS.some((c) => c.code === form.courseType) && <option value={form.courseType}>{courseLabel(form.courseType)}（既有資料）</option>}
+                {courseOptions.map((c) => <option key={c.code} value={c.code}>{c.label}{c.label !== c.code ? `（${c.code}）` : ""}</option>)}
+                {form.courseType && !courseOptions.some((c) => c.code === form.courseType) && <option value={form.courseType}>{courseLabel(form.courseType)}（既有資料）</option>}
               </select>
+              <button type="button" onClick={() => setShowCourseOptionForm((v) => !v)}
+                className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800">
+                + 新增課程選項
+              </button>
+              {showCourseOptionForm && (
+                <div className="mt-2 flex gap-2 rounded-lg border border-blue-100 bg-blue-50/50 p-2">
+                  <input value={newCourseOption} onChange={(e) => setNewCourseOption(e.target.value)} placeholder="例如：美術、直排輪" />
+                  <button type="button" disabled={savingCourseOption} onClick={saveCourseOption}
+                    className="shrink-0 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
+                    {savingCourseOption ? "新增中…" : "新增"}
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <label>星期幾</label>

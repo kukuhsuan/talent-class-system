@@ -33,6 +33,12 @@ export default function AttendancePage() {
   const [showForm, setShowForm] = useState(false);
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [filterSchool, setFilterSchool] = useState("");
+  const [filterTeacher, setFilterTeacher] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +116,52 @@ export default function AttendancePage() {
   };
 
   const fmt = (d: string) => d.slice(0, 10);
+  const fmtShort = (d: string) => {
+    const day = fmt(d);
+    const date = new Date(`${day}T00:00:00`);
+    const weekday = ["日", "一", "二", "三", "四", "五", "六"][date.getDay()];
+    return `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))} 週${weekday}`;
+  };
+  const isMissingReport = (r: Attendance) => !r.cancelled && r.studentCount === null;
+  const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
+  const matchesControls = (r: Attendance) => {
+    if (filterSchool && r.course.school !== filterSchool) return false;
+    if (filterTeacher && String(r.actualTeacher.id) !== filterTeacher) return false;
+    if (filterDate && fmt(r.date) !== filterDate) return false;
+    if (filterCategory && normalizeCategory(r.category) !== filterCategory) return false;
+    return true;
+  };
+  const filteredRecords = records.filter((r) => {
+    if (!matchesControls(r)) return false;
+    if (statusFilter === "missing") return isMissingReport(r);
+    if (statusFilter === "done") return !r.cancelled && r.studentCount !== null;
+    if (statusFilter === "substitute") return isSubstitute(r);
+    if (statusFilter === "cancelled") return r.cancelled;
+    return true;
+  });
+  const filteredByControls = records.filter(matchesControls);
+  const statusTabs = [
+    { key: "all", label: "全部", count: filteredByControls.length, className: "bg-blue-50 text-blue-700 border-blue-100" },
+    { key: "missing", label: "待回報", count: filteredByControls.filter(isMissingReport).length, className: "bg-amber-50 text-amber-700 border-amber-100" },
+    { key: "done", label: "已回報", count: filteredByControls.filter((r) => !r.cancelled && r.studentCount !== null).length, className: "bg-green-50 text-green-700 border-green-100" },
+    { key: "substitute", label: "代課", count: filteredByControls.filter(isSubstitute).length, className: "bg-orange-50 text-orange-700 border-orange-100" },
+    { key: "cancelled", label: "停課", count: filteredByControls.filter((r) => r.cancelled).length, className: "bg-red-50 text-red-700 border-red-100" },
+  ];
+  const schoolOptions = [...new Set(records.map((r) => r.course.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  const summary = {
+    todayCourses: records.filter((r) => fmt(r.date) === today()).length,
+    missing: records.filter(isMissingReport).length,
+    todaySubstitutes: records.filter((r) => fmt(r.date) === today() && isSubstitute(r)).length,
+    monthTotal: records.length,
+  };
+  const groupedRecords = filteredRecords.reduce<Array<{ school: string; rows: Attendance[] }>>((groups, record) => {
+    const key = record.course.school || "未命名園所";
+    const group = groups.find((item) => item.school === key);
+    if (group) group.rows.push(record);
+    else groups.push({ school: key, rows: [record] });
+    return groups;
+  }, []).sort((a, b) => a.school.localeCompare(b.school, "zh-Hant"));
+  const toggleGroup = (school: string) => setExpandedGroups((groups) => ({ ...groups, [school]: !groups[school] }));
 
   return (
     <div>
@@ -117,7 +169,7 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
-          <p className="text-sm text-slate-500">共 {records.length} 筆</p>
+          <p className="text-sm text-slate-500">共 {filteredRecords.length} 筆 / 本月 {records.length} 筆</p>
         </div>
         <div className="flex gap-2">
           <a href={`/api/export/attendance?year=${filterYear}&month=${filterMonth}`} download
@@ -232,106 +284,172 @@ export default function AttendancePage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex gap-3 items-center">
-          <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} className="max-w-[100px]">
+      <div className="grid grid-cols-2 gap-3 mb-4 md:grid-cols-4">
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+          <div className="text-xs font-medium text-blue-600">今日課程</div>
+          <div className="mt-1 text-2xl font-bold text-blue-700">{summary.todayCourses}</div>
+        </div>
+        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-medium text-amber-700">待回報</div>
+          <div className="mt-1 text-2xl font-bold text-amber-700">{summary.missing}</div>
+        </div>
+        <div className="rounded-xl border border-orange-100 bg-orange-50 px-4 py-3">
+          <div className="text-xs font-medium text-orange-700">今日代課</div>
+          <div className="mt-1 text-2xl font-bold text-orange-700">{summary.todaySubstitutes}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs font-medium text-slate-500">本月堂數</div>
+          <div className="mt-1 text-2xl font-bold text-slate-800">{summary.monthTotal}</div>
+        </div>
+      </div>
+
+      <div className="sticky top-0 z-20 mb-4 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+          <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))}>
             {[2025, 2026, 2027].map((y) => <option key={y}>{y}</option>)}
           </select>
-          <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} className="max-w-[80px]">
+          <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
-          <span className="text-sm text-slate-500">共 {records.length} 筆</span>
+          <select value={filterSchool} onChange={(e) => setFilterSchool(e.target.value)}>
+            <option value="">全部園所</option>
+            {schoolOptions.map((school) => <option key={school}>{school}</option>)}
+          </select>
+          <select value={filterTeacher} onChange={(e) => setFilterTeacher(e.target.value)}>
+            <option value="">全部老師</option>
+            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+          </select>
+          <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+            <option value="">全部類別</option>
+            {CATEGORY_OPTIONS.map((category) => <option key={category}>{category}</option>)}
+          </select>
         </div>
-        <div className="md:hidden divide-y divide-slate-100">
-          {records.map((r) => {
-            const isSubstitute = r.actualTeacher.id !== r.course.teacherId;
-            return (
-              <div key={r.id} className={`p-4 ${r.cancelled ? "opacity-60" : ""}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{fmt(r.date)}</div>
-                    <div className="mt-1 text-xs text-slate-500">{r.course.code}｜{courseLabel(r.course.courseType)}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    {r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">出課</span>}
-                    {r.cancelled && r.makeupDate && <span className={`text-[11px] px-2 py-0.5 rounded-full ${r.makeupDone ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{r.makeupDone ? "已補課" : `補 ${r.makeupDate.slice(5, 10)}`}</span>}
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">學校</div><div className="font-medium text-slate-800">{r.course.school}</div></div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    <div className="text-xs text-slate-400">老師</div>
-                    <div className="font-medium text-slate-800">{r.actualTeacher.name}</div>
-                    {isSubstitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[11px] text-orange-700">代課</div>}
-                  </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">出席人數</div><div className="font-medium">{r.studentCount ?? "-"}</div></div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{normalizeCategory(r.category)}｜{r.hours}h</div></div>
-                </div>
-                {(r.cancelReason || r.notes) && <div className="mt-3 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
-                <div className="mt-4 flex gap-4">
-                  <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
-                  <button onClick={() => del(r.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
-                </div>
-              </div>
-            );
-          })}
-          {records.length === 0 && <div className="py-8 text-center text-slate-400">本月尚無上課紀錄</div>}
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 md:flex-wrap">
+          {statusTabs.map((tab) => (
+            <button key={tab.key} onClick={() => setStatusFilter(tab.key)}
+              className={`shrink-0 rounded-full border px-3 py-2 text-xs font-medium transition-colors ${statusFilter === tab.key ? tab.className : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>
+              {tab.label} <span className="ml-1 font-semibold">{tab.count}</span>
+            </button>
+          ))}
+          {(filterSchool || filterTeacher || filterDate || filterCategory || statusFilter !== "all") && (
+            <button onClick={() => { setFilterSchool(""); setFilterTeacher(""); setFilterDate(""); setFilterCategory(""); setStatusFilter("all"); }}
+              className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100">
+              清除篩選
+            </button>
+          )}
         </div>
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1120px] text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-600">
-                <th className="px-4 py-3 text-left font-semibold">日期</th>
-                <th className="px-4 py-3 text-left font-semibold">課程</th>
-                <th className="px-4 py-3 text-left font-semibold">學校</th>
-                <th className="px-4 py-3 text-left font-semibold">上課老師</th>
-                <th className="px-4 py-3 text-center font-semibold">出席人數</th>
-                <th className="px-4 py-3 text-left font-semibold">類別</th>
-                <th className="px-4 py-3 text-center font-semibold">時數</th>
-                <th className="px-4 py-3 text-left font-semibold">狀態</th>
-                <th className="px-4 py-3 text-left font-semibold">備註</th>
-                <th className="px-4 py-3 text-left font-semibold">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {records.map((r) => {
-                const isSubstitute = r.actualTeacher.id !== r.course.teacherId;
-                return (
-                <tr key={r.id} className={`${r.cancelled ? "opacity-50" : ""} hover:bg-slate-50/70`}>
-                  <td className="px-4 py-4 text-sm whitespace-nowrap">{fmt(r.date)}</td>
-                  <td className="px-4 py-4">
-                    <div className="font-medium text-slate-900">{courseLabel(r.course.courseType)}</div>
-                    <div className="font-mono text-xs text-slate-400">{r.course.code}</div>
-                  </td>
-                  <td className="px-4 py-4 font-medium text-slate-800">{r.course.school}</td>
-                  <td className="px-4 py-4">
-                    <div className={isSubstitute ? "text-orange-700 font-medium" : "text-slate-700"}>{r.actualTeacher.name}</div>
-                    {isSubstitute && <div className="mt-1 inline-flex text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">代課</div>}
-                  </td>
-                  <td className="px-4 py-4 text-center">{r.studentCount ?? "-"}</td>
-                  <td className="px-4 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{normalizeCategory(r.category)}</span></td>
-                  <td className="px-4 py-4 text-center">{r.hours}h</td>
-                  <td className="px-4 py-4">
-                    <div className="flex flex-col items-start gap-1">
-                      {r.cancelled ? <span className="text-xs bg-red-100 text-red-600 px-2.5 py-1 rounded-full">停課</span> : <span className="text-xs bg-green-100 text-green-600 px-2.5 py-1 rounded-full">出課</span>}
-                      {r.cancelled && r.makeupDate && <span className={`text-[11px] px-2 py-0.5 rounded-full ${r.makeupDone ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{r.makeupDone ? "已補課" : `補課 ${r.makeupDate.slice(0, 10)}`}</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 max-w-[220px] truncate text-xs text-slate-500" title={r.cancelReason || r.notes || ""}>{r.cancelReason || r.notes || "-"}</td>
-                  <td className="px-4 py-4">
-                    <div className="flex gap-4 whitespace-nowrap">
-                      <button onClick={() => edit(r)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
-                      <button onClick={() => del(r.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
-                    </div>
-                  </td>
-                </tr>
-              );})}
-              {records.length === 0 && (
-                <tr><td colSpan={10} className="text-center text-slate-400 py-8">本月尚無上課紀錄</td></tr>
+        <div className="mt-2 text-xs text-slate-400">目前顯示 {filteredRecords.length} 筆，依園所收合顯示</div>
+      </div>
+
+      <div className="space-y-3">
+        {groupedRecords.map((group) => {
+          const opened = Boolean(expandedGroups[group.school]);
+          const missing = group.rows.filter(isMissingReport).length;
+          const substitutes = group.rows.filter(isSubstitute).length;
+          const totalStudents = group.rows.reduce((sum, row) => sum + (row.studentCount ?? 0), 0);
+          return (
+            <div key={group.school} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <button type="button" onClick={() => toggleGroup(group.school)}
+                className="flex w-full flex-col gap-3 px-4 py-4 text-left hover:bg-slate-50 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-semibold text-slate-900">{group.school}</span>
+                    <span className="text-sm text-slate-400">{opened ? "收合" : "展開"}</span>
+                  </div>
+                  <div className="mt-1 text-sm text-slate-500">本月 {group.rows.length} 堂 · 出席合計 {totalStudents} 人</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {missing > 0 && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">待回報 {missing}</span>}
+                  {substitutes > 0 && <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">代課 {substitutes}</span>}
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{group.rows.length} 筆</span>
+                </div>
+              </button>
+
+              {opened && (
+                <div className="border-t border-slate-100">
+                  <div className="divide-y divide-slate-100 md:hidden">
+                    {group.rows.map((r) => {
+                      const substitute = isSubstitute(r);
+                      return (
+                        <div key={r.id} className={`p-4 ${r.cancelled ? "opacity-60" : ""}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-slate-900">{fmtShort(r.date)}</div>
+                              <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜{r.actualTeacher.name}</div>
+                            </div>
+                            {r.cancelled ? <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-600">停課</span> : <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-600">出課</span>}
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{r.studentCount ?? "待回報"}</div></div>
+                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{normalizeCategory(r.category)}｜{r.hours}h</div></div>
+                          </div>
+                          {substitute && <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
+                          {(r.cancelReason || r.notes) && <div className="mt-2 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
+                          <div className="mt-4 flex gap-4">
+                            <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
+                            <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full min-w-[980px] text-sm">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold">日期</th>
+                          <th className="px-4 py-3 text-left font-semibold">課程</th>
+                          <th className="px-4 py-3 text-left font-semibold">老師</th>
+                          <th className="px-4 py-3 text-center font-semibold">人數</th>
+                          <th className="px-4 py-3 text-left font-semibold">類別</th>
+                          <th className="px-4 py-3 text-center font-semibold">時數</th>
+                          <th className="px-4 py-3 text-left font-semibold">狀態</th>
+                          <th className="px-4 py-3 text-left font-semibold">備註</th>
+                          <th className="px-4 py-3 text-left font-semibold">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {group.rows.map((r) => {
+                          const substitute = isSubstitute(r);
+                          return (
+                            <tr key={r.id} className={`${r.cancelled ? "opacity-50" : ""} hover:bg-slate-50/70`}>
+                              <td className="px-4 py-4 whitespace-nowrap">{fmtShort(r.date)}</td>
+                              <td className="px-4 py-4">
+                                <div className="font-medium text-slate-900">{courseLabel(r.course.courseType)}</div>
+                                <div className="font-mono text-xs text-slate-400">{r.course.code}</div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className={substitute ? "font-medium text-orange-700" : "text-slate-700"}>{r.actualTeacher.name}</div>
+                                {substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
+                              </td>
+                              <td className="px-4 py-4 text-center">{r.studentCount ?? <span className="text-amber-600">待回報</span>}</td>
+                              <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{normalizeCategory(r.category)}</span></td>
+                              <td className="px-4 py-4 text-center">{r.hours}h</td>
+                              <td className="px-4 py-4">
+                                {r.cancelled ? <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs text-red-600">停課</span> : <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs text-green-600">出課</span>}
+                              </td>
+                              <td className="max-w-[220px] truncate px-4 py-4 text-xs text-slate-500" title={r.cancelReason || r.notes || ""}>{r.cancelReason || r.notes || "-"}</td>
+                              <td className="px-4 py-4">
+                                <div className="flex gap-4 whitespace-nowrap">
+                                  <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
+                                  <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          );
+        })}
+        {groupedRecords.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-slate-400">目前篩選沒有上課紀錄</div>
+        )}
       </div>
     </div>
   );

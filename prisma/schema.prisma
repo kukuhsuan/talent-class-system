@@ -31,6 +31,14 @@ model CourseProgress {
   @@unique([courseType, lesson])
 }
 
+model CourseOption {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  label     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
 model UserAccount {
   id           Int      @id @default(autoincrement())
   username     String   @unique
@@ -105,6 +113,17 @@ model Attendance {
   notes           String    @default("")
   reportContent   String    @default("")
   reportSentAt    DateTime?
+  skillFocus      String    @default("")
+  classStatus     String    @default("")
+  incident        Boolean   @default(false)
+  incidentChild   String    @default("")
+  incidentProcess String    @default("")
+  incidentAction  String    @default("")
+  incidentNotified String   @default("")
+  reportPhotos    String    @default("")
+  aiSummary       String    @default("")
+  aiSkillFocus    String    @default("")
+  aiTeachingNote  String    @default("")
   createdAt       DateTime  @default(now())
 
   @@unique([courseId, date])

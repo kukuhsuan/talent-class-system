@@ -25,6 +25,8 @@ export default function NavBar() {
   const { dept, setDept } = useDepartment();
   const [open, setOpen] = useState(false);
 
+  if (pathname.startsWith("/report")) return null;
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");

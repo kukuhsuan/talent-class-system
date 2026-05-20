@@ -10,9 +10,12 @@ import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
 type CourseInfo = { id: number; school: string; courseType: string; department: string };
+type CourseOption = { code: string; label: string };
 type ProgressRecord = {
   id: number; date: string; course: CourseInfo; actualTeacher: Teacher;
   studentCount: number | null; cancelled: boolean; reportContent: string; reportSentAt: string | null;
+  skillFocus?: string; classStatus?: string; incident?: boolean; incidentChild?: string; incidentProcess?: string;
+  incidentAction?: string; incidentNotified?: string; reportPhotos?: string; aiSummary?: string; aiSkillFocus?: string; aiTeachingNote?: string;
 };
 type CourseProgress = { id: number; courseType: string; lesson: number; title: string };
 
@@ -27,6 +30,7 @@ export default function ProgressPage() {
   const [filterSchool, setFilterSchool] = useState("");
   const [loading, setLoading] = useState(true);
   const [manageCourse, setManageCourse] = useState("足球");
+  const [courseOptions, setCourseOptions] = useState<CourseOption[]>(COURSE_OPTIONS.map((option) => ({ ...option })));
   const [progressRows, setProgressRows] = useState<CourseProgress[]>([]);
   const [progressForm, setProgressForm] = useState({ id: 0, lesson: "", title: "" });
   const [savingProgress, setSavingProgress] = useState(false);
@@ -37,6 +41,7 @@ export default function ProgressPage() {
 
   useEffect(() => {
     fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
+    fetch("/api/course-options").then((r) => r.json()).then(setCourseOptions);
   }, []);
 
   useEffect(() => {
@@ -104,6 +109,16 @@ export default function ProgressPage() {
     return acc;
   }, {});
 
+  function parseList(value: string | undefined) {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+    } catch {
+      return value.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
+    }
+  }
+
   return (
     <div>
       <Toast toast={toast} />
@@ -122,7 +137,7 @@ export default function ProgressPage() {
           </div>
           <select value={manageCourse} onChange={(e) => setManageCourse(e.target.value)}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
-            {COURSE_OPTIONS.map((c) => <option key={c.code} value={c.label}>{c.label}</option>)}
+            {courseOptions.map((c) => <option key={c.code} value={c.label}>{c.label}</option>)}
           </select>
         </div>
 
@@ -245,6 +260,52 @@ export default function ProgressPage() {
                         <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
                           {r.reportContent}
                         </p>
+                        {(parseList(r.skillFocus).length > 0 || r.classStatus || r.incident) && (
+                          <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+                            {parseList(r.skillFocus).length > 0 && (
+                              <div className="rounded-lg bg-green-50 px-3 py-2 text-green-700">
+                                <div className="font-semibold">今日能力培養</div>
+                                <div className="mt-1">{parseList(r.skillFocus).join("、")}</div>
+                              </div>
+                            )}
+                            {r.classStatus && (
+                              <div className="rounded-lg bg-blue-50 px-3 py-2 text-blue-700">
+                                <div className="font-semibold">課堂狀況</div>
+                                <div className="mt-1">{r.classStatus}</div>
+                              </div>
+                            )}
+                            {r.incident && (
+                              <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
+                                <div className="font-semibold">特殊事件</div>
+                                <div className="mt-1">{r.incidentChild || "未填姓名"}｜{r.incidentNotified === "是" ? "已通知園所" : "未通知園所"}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {(r.aiSummary || r.aiSkillFocus || r.aiTeachingNote) && (
+                          <div className="mt-3 rounded-lg border border-green-100 bg-[#F8FBF8] px-3 py-2 text-sm leading-6 text-slate-700">
+                            <div className="mb-1 text-xs font-semibold text-green-700">AI 教學紀錄</div>
+                            {r.aiSummary && <p>{r.aiSummary}</p>}
+                            {r.aiSkillFocus && <p>{r.aiSkillFocus}</p>}
+                            {r.aiTeachingNote && <p>{r.aiTeachingNote}</p>}
+                          </div>
+                        )}
+                        {parseList(r.reportPhotos).length > 0 && (
+                          <div className="mt-3 grid grid-cols-3 gap-2 md:grid-cols-5">
+                            {parseList(r.reportPhotos).slice(0, 5).map((photo, index) => (
+                              <a key={`${r.id}-${index}`} href={photo} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg bg-slate-100">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={photo} alt={`課堂照片 ${index + 1}`} className="h-full w-full object-cover" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {r.incident && (r.incidentProcess || r.incidentAction) && (
+                          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                            {r.incidentProcess && <div><span className="font-semibold">發生經過：</span>{r.incidentProcess}</div>}
+                            {r.incidentAction && <div><span className="font-semibold">處理方式：</span>{r.incidentAction}</div>}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
