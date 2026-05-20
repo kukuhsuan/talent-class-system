@@ -16,6 +16,7 @@ type ProgressRecord = {
   studentCount: number | null; cancelled: boolean; reportContent: string; reportSentAt: string | null;
   skillFocus?: string; classStatus?: string; incident?: boolean; incidentChild?: string; incidentProcess?: string;
   incidentAction?: string; incidentNotified?: string; aiSummary?: string; aiSkillFocus?: string; aiTeachingNote?: string;
+  schoolNotifyStatus?: string; schoolNotifyError?: string; schoolNotifiedAt?: string | null;
 };
 type CourseProgress = { id: number; courseType: string; lesson: number; title: string };
 
@@ -123,6 +124,20 @@ export default function ProgressPage() {
     if (!value) return "";
     const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
     return lines[0] ?? "";
+  }
+
+  async function resendSchoolNotify(id: number) {
+    try {
+      const res = await fetch(`/api/progress/${id}/notify-school`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.error || "園所通知發送失敗");
+      showToast("success", "園所通知已重新發送");
+      setRecords((items) => items.map((item) => item.id === id ? { ...item, schoolNotifyStatus: "通知成功", schoolNotifyError: "" } : item));
+    } catch (e) {
+      const message = (e as Error).message || "園所通知發送失敗";
+      showToast("error", message, 3500);
+      setRecords((items) => items.map((item) => item.id === id ? { ...item, schoolNotifyStatus: "通知失敗", schoolNotifyError: message } : item));
+    }
   }
 
   return (
@@ -265,7 +280,23 @@ export default function ProgressPage() {
                           {r.reportSentAt && (
                             <span className="px-1.5 py-0.5 bg-green-100 text-green-600 rounded text-xs">已發送</span>
                           )}
+                          <span className={`px-1.5 py-0.5 rounded text-xs ${
+                            r.schoolNotifyStatus === "通知成功" ? "bg-green-100 text-green-700" :
+                              r.schoolNotifyStatus === "通知失敗" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"
+                          }`}>
+                            園所{r.schoolNotifyStatus || "未通知"}
+                          </span>
+                          {r.schoolNotifyStatus === "通知失敗" && (
+                            <button onClick={() => resendSchoolNotify(r.id)} className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                              重新發送
+                            </button>
+                          )}
                         </div>
+                        {r.schoolNotifyStatus === "通知失敗" && r.schoolNotifyError && (
+                          <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                            園所通知失敗原因：{r.schoolNotifyError}
+                          </div>
+                        )}
                         {primaryReportText(r.reportContent) && (
                           <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
                             {primaryReportText(r.reportContent)}

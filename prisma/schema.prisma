@@ -113,6 +113,9 @@ model Attendance {
   notes           String    @default("")
   reportContent   String    @default("")
   reportSentAt    DateTime?
+  schoolNotifyStatus String @default("未通知")
+  schoolNotifyError String @default("")
+  schoolNotifiedAt DateTime?
   skillFocus      String    @default("")
   classStatus     String    @default("")
   incident        Boolean   @default(false)

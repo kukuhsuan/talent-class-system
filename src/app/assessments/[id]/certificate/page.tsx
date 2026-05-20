@@ -16,31 +16,7 @@ type Detail = {
   teacherName: string;
 };
 
-const BEAR_LOGO = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
-  <defs>
-    <radialGradient id="gold" cx="50%" cy="40%" r="65%">
-      <stop offset="0%" stop-color="#fff2c8"/>
-      <stop offset="55%" stop-color="#c79a48"/>
-      <stop offset="100%" stop-color="#60421f"/>
-    </radialGradient>
-    <radialGradient id="fur" cx="50%" cy="38%" r="60%">
-      <stop offset="0%" stop-color="#f6c999"/>
-      <stop offset="100%" stop-color="#8a552d"/>
-    </radialGradient>
-  </defs>
-  <circle cx="110" cy="110" r="104" fill="url(#gold)"/>
-  <circle cx="110" cy="110" r="91" fill="#ead6aa" stroke="#6e4c1e" stroke-width="5"/>
-  <circle cx="72" cy="77" r="27" fill="#8a552d"/><circle cx="148" cy="77" r="27" fill="#8a552d"/>
-  <circle cx="72" cy="77" r="15" fill="#f0c9a1"/><circle cx="148" cy="77" r="15" fill="#f0c9a1"/>
-  <circle cx="110" cy="112" r="58" fill="url(#fur)"/>
-  <circle cx="88" cy="105" r="8" fill="#1f2937"/><circle cx="132" cy="105" r="8" fill="#1f2937"/>
-  <circle cx="110" cy="124" r="11" fill="#2e2016"/>
-  <path d="M90 143c12 13 28 13 40 0" fill="none" stroke="#2e2016" stroke-width="6" stroke-linecap="round"/>
-  <path d="M48 170c37 23 87 23 124 0" fill="none" stroke="#6e4c1e" stroke-width="7" stroke-linecap="round"/>
-  <text x="110" y="196" font-family="Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle" fill="#60421f">UPBEAR</text>
-</svg>
-`)}`;
+type ListRow = Pick<Detail, "id" | "childName" | "courseName" | "school" | "date">;
 
 function Radar({ scores }: { scores: string }) {
   const groups = groupAverages(parseScores(scores));
@@ -59,7 +35,7 @@ function Radar({ scores }: { scores: string }) {
   });
   const polygon = points.map((point) => `${point.x},${point.y}`).join(" ");
   return (
-    <svg viewBox="0 0 300 300" className="mx-auto h-[60mm] w-[60mm]">
+    <svg viewBox="0 0 300 300" className="mx-auto h-[74mm] w-[74mm]">
       {[1, 2, 3, 4, 5].map((level) => {
         const radius = (level / 5) * maxRadius;
         const ring = groups.map((_group, index) => {
@@ -88,6 +64,7 @@ function Radar({ scores }: { scores: string }) {
 export default function CertificatePage() {
   const params = useParams<{ id: string }>();
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [rows, setRows] = useState<ListRow[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     fetch(`/api/assessments/${params.id}`)
@@ -98,6 +75,7 @@ export default function CertificatePage() {
       })
       .then(setDetail)
       .catch((e) => setError((e as Error).message || "讀取證書失敗"));
+    fetch("/api/assessments").then((res) => res.json()).then(setRows).catch(() => setRows([]));
   }, [params.id]);
 
   const dateText = useMemo(() => {
@@ -107,7 +85,7 @@ export default function CertificatePage() {
   const compactComment = useMemo(() => {
     if (!detail) return "";
     const text = detail.comment.replace(/\s+/g, " ").trim();
-    return text.length > 150 ? `${text.slice(0, 150)}...` : text;
+    return text.length > 132 ? `${text.slice(0, 132)}...` : text;
   }, [detail]);
 
   if (error) return <div className="py-16 text-center text-red-500">{error}</div>;
@@ -149,23 +127,42 @@ export default function CertificatePage() {
           }
         }
       `}</style>
-      <div className="no-print mb-4 flex justify-end gap-2">
-        <button onClick={() => window.print()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
-          下載 / 列印 PDF
-        </button>
+      <div className="no-print mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => history.back()} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
+            返回上一頁
+          </button>
+          <select value={detail.id} onChange={(e) => { location.href = `/assessments/${e.target.value}/certificate`; }}
+            className="min-w-64 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            {rows.map((row) => (
+              <option key={row.id} value={row.id}>{row.childName}｜{row.school}｜{row.courseName}</option>
+            ))}
+          </select>
+          <button onClick={() => window.print()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
+            下載 PDF
+          </button>
+          <button onClick={() => window.print()} className="rounded-lg bg-[#B68A4C] px-4 py-2 text-sm font-semibold text-white">
+            列印
+          </button>
+          <button onClick={() => alert("AI 評語會依目前評分自動產生；若要重算，請重新送出該孩子評量。")}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
+            重新產生 AI 評語
+          </button>
+        </div>
       </div>
-      <article className="certificate-print-root certificate-sheet mx-auto h-[297mm] w-[210mm] overflow-hidden bg-white p-[8mm] shadow-sm">
-        <div className="flex h-[47mm] items-center gap-[12mm] bg-[#0756B7] px-[9mm] text-white">
-          <img src={BEAR_LOGO} alt="優比熊 Logo" className="h-[34mm] w-[34mm] shrink-0" />
+      <article className="certificate-print-root certificate-sheet mx-auto h-[297mm] w-[210mm] overflow-hidden bg-white p-[7mm] shadow-sm">
+        <div className="flex h-[45mm] items-center gap-[12mm] bg-[#0756B7] px-[9mm] text-white">
+          <img src="/upbear-logo.png" alt="優比熊 Logo" className="h-[36mm] w-[36mm] shrink-0 object-contain" />
           <div>
             <div className="text-[9pt] font-semibold tracking-[0.25em] text-blue-100">PROFESSIONAL ATHLETIC GROWTH REPORT</div>
             <h1 className="mt-[3mm] text-[27pt] font-black tracking-wide">專業運動素養發展報告</h1>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-[7mm] px-[8mm] py-[8mm] text-[18pt] font-black">
-          <div>孩子姓名：<span className="text-[#0756B7]">{detail.childName}</span></div>
-          <div>課程名稱：<span className="text-[#0756B7]">{detail.courseName}</span></div>
+        <div className="grid grid-cols-3 gap-[5mm] px-[8mm] py-[6mm] text-[13pt] font-black">
+          <div className="rounded-2xl bg-[#F5F8FF] px-[4mm] py-[3mm]">孩子姓名<br /><span className="text-[18pt] text-[#0756B7]">{detail.childName}</span></div>
+          <div className="rounded-2xl bg-[#F8F3E8] px-[4mm] py-[3mm]">課程名稱<br /><span className="text-[18pt] text-[#0756B7]">{detail.courseName}</span></div>
+          <div className="rounded-2xl bg-[#F5F8FF] px-[4mm] py-[3mm]">園所名稱<br /><span className="text-[16pt] text-[#0756B7]">{detail.school}</span></div>
         </div>
 
         <section className="px-[8mm]">
@@ -173,17 +170,19 @@ export default function CertificatePage() {
             <h2 className="text-[21pt] font-black">三大核心發展指標</h2>
             <div className="rounded-full bg-[#F3E7D0] px-[5mm] py-[2mm] text-[12pt] font-black text-[#6E4C1E]">{detail.title}</div>
           </div>
-          <Radar scores={detail.scores} />
+          <div className="-mt-[2mm]">
+            <Radar scores={detail.scores} />
+          </div>
         </section>
 
-        <section className="mt-[4mm] px-[8mm]">
-          <div className="inline-block rounded-t-2xl bg-[#0756B7] px-[6mm] py-[3mm] text-[16pt] font-bold text-white">教練專業觀察與建議</div>
-          <div className="h-[48mm] overflow-hidden rounded-b-[28px] rounded-tr-[28px] bg-[#E8D9BC] px-[8mm] py-[6mm] text-[15pt] leading-[1.75] text-slate-800">
+        <section className="mt-[1mm] px-[8mm]">
+          <div className="inline-block rounded-t-2xl bg-[#0756B7] px-[6mm] py-[2.5mm] text-[15pt] font-bold text-white">教練專業觀察與建議</div>
+          <div className="h-[42mm] overflow-hidden rounded-b-[26px] rounded-tr-[26px] bg-[#E8D9BC] px-[8mm] py-[5mm] text-[14pt] leading-[1.72] text-slate-800">
             {compactComment}
           </div>
         </section>
 
-        <div className="mt-[7mm] flex items-end justify-between px-[8mm] text-[10pt] text-slate-500">
+        <div className="mt-[5mm] flex items-end justify-between px-[8mm] text-[10pt] text-slate-500">
           <div>
             <div>園所：{detail.school}</div>
             <div>授課老師：{detail.teacherName}</div>

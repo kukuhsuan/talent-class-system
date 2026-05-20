@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { notifySchoolReport } from "@/lib/schoolNotification";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage, pushMessage,
-  buildReportRequestMessage, buildCurriculumSelectMessage, buildSchoolReportMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
+  buildReportRequestMessage, buildCurriculumSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
 import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
@@ -508,36 +509,7 @@ async function saveDetailedReport(userId: string, attendanceId: number, text: st
 }
 
 async function forwardReportToSchool(attendanceId: number) {
-  const att = await prisma.attendance.findUnique({
-    where: { id: attendanceId },
-    include: { course: { include: { schoolRel: true } }, actualTeacher: true },
-  });
-  if (!att) return;
-
-  const school = att.course.schoolRel;
-  if (!school?.lineUserId) return;
-
-  const schoolCfg = getLineConfig("school");
-
-  // Build display studentCount: prefer total; if A/B exist, compute
-  const attData = att as unknown as { studentCount: number | null; studentCountA: number | null; studentCountB: number | null };
-  const displayCount = attData.studentCount ??
-    (attData.studentCountA != null && attData.studentCountB != null
-      ? attData.studentCountA + attData.studentCountB
-      : attData.studentCountA ?? attData.studentCountB ?? null);
-
-  const msg = buildSchoolReportMessage({
-    teacherName: att.actualTeacher.name,
-    school: att.course.school,
-    courseType: att.course.courseType,
-    date: att.date.toISOString().slice(0, 10),
-    studentCount: displayCount,
-    content: att.reportContent,
-    cancelled: att.cancelled,
-  });
-
-  await pushMessage(school.lineUserId, [msg], schoolCfg.token);
-  await prisma.attendance.update({ where: { id: attendanceId }, data: { reportSentAt: new Date() } });
+  await notifySchoolReport(attendanceId);
 }
 
 export { generateBindCode };

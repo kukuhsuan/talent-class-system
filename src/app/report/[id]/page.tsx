@@ -27,6 +27,8 @@ type ReportInfo = {
   aiTeachingNote: string;
   shouldAskAssessment?: boolean;
   assessmentCount?: number;
+  schoolNotifyStatus?: string;
+  schoolNotifyError?: string;
 };
 
 const EMPTY = {
@@ -51,6 +53,8 @@ export default function TeacherReportPage() {
   const [error, setError] = useState("");
   const [customProgress, setCustomProgress] = useState(false);
   const [assessmentUrl, setAssessmentUrl] = useState("");
+  const [notifyStatus, setNotifyStatus] = useState("");
+  const [notifyError, setNotifyError] = useState("");
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -62,6 +66,8 @@ export default function TeacherReportPage() {
       .then((data: ReportInfo) => {
         const savedProgress = data.reportContent?.split("\n")[0]?.replace(/^(課程進度|訓練內容)：/, "") ?? "";
         setInfo(data);
+        setNotifyStatus(data.schoolNotifyStatus || "");
+        setNotifyError(data.schoolNotifyError || "");
         setForm({
           studentCount: data.studentCount?.toString() ?? "",
           progress: savedProgress,
@@ -119,6 +125,8 @@ export default function TeacherReportPage() {
       const generated = responseData;
       setInfo((current) => current ? { ...current, ...generated } : current);
       setAssessmentUrl(responseData.assessmentUrl || "");
+      setNotifyStatus(responseData.schoolNotifyStatus || "");
+      setNotifyError(responseData.schoolNotifyError || "");
       setDone(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
@@ -147,6 +155,12 @@ export default function TeacherReportPage() {
       {done && (
         <div className="mb-4 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
           <div className="font-semibold">已送出回報，教學紀錄已自動整理完成。</div>
+          {notifyStatus && (
+            <div className={`mt-2 rounded-xl px-3 py-2 text-xs ${notifyStatus === "通知成功" ? "bg-white text-green-700" : "bg-white text-amber-700"}`}>
+              園所通知狀態：{notifyStatus}
+              {notifyError ? <div className="mt-1 text-slate-500">{notifyError}</div> : null}
+            </div>
+          )}
           {assessmentUrl && (
             <div className="mt-3 rounded-xl bg-white p-3 text-slate-700">
               <div className="font-semibold text-[#3F6B55]">這是幼兒園最後一堂課</div>

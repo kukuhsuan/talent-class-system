@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { generateTeachingReport, safeJsonArray } from "@/lib/teachingReport";
 import { COURSE_CURRICULUM } from "@/lib/line";
+import { notifySchoolReport } from "@/lib/schoolNotification";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -103,6 +104,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiTeachingNote: attendance.aiTeachingNote,
       shouldAskAssessment: await isFinalKindergartenAttendance(attendance),
       assessmentCount: await assessmentCount(attendance.id),
+      schoolNotifyStatus: (attendance as unknown as { schoolNotifyStatus?: string }).schoolNotifyStatus ?? "未通知",
+      schoolNotifyError: (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? "",
     });
   } catch (e) {
     console.error("report form load failed", e);
@@ -178,10 +181,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
 
+    const notify = await notifySchoolReport(attendance.id);
     const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
     return NextResponse.json({
       ok: true,
       ...generated,
+      schoolNotifyStatus: notify.status,
+      schoolNotifyError: notify.error ?? "",
       shouldAskAssessment,
       assessmentUrl: shouldAskAssessment ? `/assessment/${attendance.id}` : "",
       assessmentCount: await assessmentCount(attendance.id),
