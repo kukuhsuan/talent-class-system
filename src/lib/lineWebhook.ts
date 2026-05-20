@@ -116,19 +116,13 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       atts.push({ id: att.id, school: course.school, courseType: course.courseType, department: course.department });
     }
 
-    // 安親班：直接跳出算盤（不需填課程進度）
-    // 其他班：先顯示課程進度選擇卡
+    // All departments enter the mobile report form. The form itself decides
+    // whether to show full kindergarten fields or the simplified after-school flow.
     const replyMsgs: object[] = [
       { type: "text", text: `${teacher.name} 老師，您今天有 ${atts.length} 堂課，請依序回報：` },
     ];
     for (const a of atts.slice(0, 3)) {
-      if (a.department.includes("安親")) {
-        replyMsgs.push(
-          buildStudentCountBoard(a.id, "A", a.department),
-        );
-      } else {
-        replyMsgs.push(buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
-      }
+      replyMsgs.push(buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
     }
     await replyMessage(replyToken, replyMsgs, token);
     return;
