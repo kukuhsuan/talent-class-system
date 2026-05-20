@@ -23,6 +23,7 @@ export async function GET() {
     coursesWithoutDates,
     duplicateAttendanceByCourse,
     duplicateAttendanceByCode,
+    latestAttendances,
   ] = await Promise.all([
     prisma.course.count(),
     prisma.attendance.count(),
@@ -55,6 +56,16 @@ export async function GET() {
     prisma.$queryRawUnsafe<AttendanceDuplicateRow[]>(
       "SELECT (COALESCE(Course.code, CAST(Attendance.courseId AS TEXT)) || '|' || substr(Attendance.date, 1, 10)) AS key, Course.code AS code, Course.school AS school, substr(Attendance.date, 1, 10) AS date, COUNT(*) AS count FROM Attendance LEFT JOIN Course ON Course.id = Attendance.courseId GROUP BY key HAVING COUNT(*) > 1 ORDER BY count DESC LIMIT 30",
     ),
+    prisma.attendance.findMany({
+      select: {
+        id: true,
+        date: true,
+        course: { select: { code: true, school: true, courseType: true } },
+        actualTeacher: { select: { name: true } },
+      },
+      orderBy: { id: "desc" },
+      take: 12,
+    }),
   ]);
 
   return NextResponse.json({
@@ -69,6 +80,14 @@ export async function GET() {
       school: row.school,
       date: row.date,
       count: numberCount(row.count),
+    })),
+    latestAttendances: latestAttendances.map((row) => ({
+      id: row.id,
+      date: row.date.toISOString().slice(0, 10),
+      school: row.course.school,
+      code: row.course.code,
+      courseType: row.course.courseType,
+      teacher: row.actualTeacher.name,
     })),
   });
 }

@@ -73,7 +73,11 @@ export default function TeacherReportPage() {
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "讀取回報表單失敗，請稍後再試");
+        return data;
+      })
       .then((data: ReportInfo) => {
         setInfo(data);
         setForm({
@@ -89,7 +93,7 @@ export default function TeacherReportPage() {
           photos: data.photos ?? [],
         });
       })
-      .catch(() => setError("讀取回報表單失敗，請稍後再試"))
+      .catch((e) => setError((e as Error).message || "讀取回報表單失敗，請稍後再試"))
       .finally(() => setLoading(false));
   }, [params.id]);
 
@@ -133,13 +137,14 @@ export default function TeacherReportPage() {
           studentCount: Number(form.studentCount),
         }),
       });
-      if (!res.ok) throw new Error("送出失敗");
-      const generated = await res.json();
+      const responseData = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(responseData.error || "送出失敗");
+      const generated = responseData;
       setInfo((current) => current ? { ...current, ...generated } : current);
       setDone(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {
-      setError("送出失敗，請稍後再試");
+    } catch (e) {
+      setError((e as Error).message || "送出失敗，請稍後再試");
     } finally {
       setSaving(false);
     }

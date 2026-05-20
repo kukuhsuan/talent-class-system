@@ -17,95 +17,105 @@ type ReportPayload = {
 };
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const attendance = await prisma.attendance.findUnique({
-    where: { id: Number(id) },
-    include: { course: true, actualTeacher: true },
-  });
+  try {
+    const { id } = await params;
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: Number(id) },
+      include: { course: true, actualTeacher: true },
+    });
 
-  if (!attendance) {
-    return NextResponse.json({ error: "找不到課程回報資料" }, { status: 404 });
+    if (!attendance) {
+      return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      id: attendance.id,
+      date: attendance.date.toISOString().slice(0, 10),
+      school: attendance.course.school,
+      courseType: attendance.course.courseType,
+      courseName: courseLabel(attendance.course.courseType),
+      className: attendance.course.enrollCount,
+      teacherName: attendance.actualTeacher.name,
+      studentCount: attendance.studentCount,
+      reportContent: attendance.reportContent,
+      skillFocus: safeJsonArray(attendance.skillFocus),
+      classStatus: attendance.classStatus,
+      incident: attendance.incident,
+      incidentChild: attendance.incidentChild,
+      incidentProcess: attendance.incidentProcess,
+      incidentAction: attendance.incidentAction,
+      incidentNotified: attendance.incidentNotified,
+      photos: safeJsonArray(attendance.reportPhotos),
+      aiSummary: attendance.aiSummary,
+      aiSkillFocus: attendance.aiSkillFocus,
+      aiTeachingNote: attendance.aiTeachingNote,
+    });
+  } catch (e) {
+    console.error("report form load failed", e);
+    return NextResponse.json({ error: `讀取回報表單失敗：${(e as Error).message}` }, { status: 500 });
   }
-
-  return NextResponse.json({
-    id: attendance.id,
-    date: attendance.date.toISOString().slice(0, 10),
-    school: attendance.course.school,
-    courseType: attendance.course.courseType,
-    courseName: courseLabel(attendance.course.courseType),
-    className: attendance.course.enrollCount,
-    teacherName: attendance.actualTeacher.name,
-    studentCount: attendance.studentCount,
-    reportContent: attendance.reportContent,
-    skillFocus: safeJsonArray(attendance.skillFocus),
-    classStatus: attendance.classStatus,
-    incident: attendance.incident,
-    incidentChild: attendance.incidentChild,
-    incidentProcess: attendance.incidentProcess,
-    incidentAction: attendance.incidentAction,
-    incidentNotified: attendance.incidentNotified,
-    photos: safeJsonArray(attendance.reportPhotos),
-    aiSummary: attendance.aiSummary,
-    aiSkillFocus: attendance.aiSkillFocus,
-    aiTeachingNote: attendance.aiTeachingNote,
-  });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const attendance = await prisma.attendance.findUnique({
-    where: { id: Number(id) },
-    include: { course: true },
-  });
+  try {
+    const { id } = await params;
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: Number(id) },
+      include: { course: true },
+    });
 
-  if (!attendance) {
-    return NextResponse.json({ error: "找不到課程回報資料" }, { status: 404 });
-  }
+    if (!attendance) {
+      return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
+    }
 
-  const data = (await req.json()) as ReportPayload;
-  const skillFocus = safeJsonArray(data.skillFocus);
-  const photos = safeJsonArray(data.photos).slice(0, 5);
-  const progress = String(data.progress ?? "").trim();
-  const classStatus = String(data.classStatus ?? "普通").trim();
-  const incident = Boolean(data.incident);
+    const data = (await req.json()) as ReportPayload;
+    const skillFocus = safeJsonArray(data.skillFocus);
+    const photos = safeJsonArray(data.photos).slice(0, 5);
+    const progress = String(data.progress ?? "").trim();
+    const classStatus = String(data.classStatus ?? "普通").trim();
+    const incident = Boolean(data.incident);
 
-  const generated = generateTeachingReport({
-    school: attendance.course.school,
-    courseType: attendance.course.courseType,
-    progress,
-    skillFocus,
-    classStatus,
-    incident,
-    incidentChild: String(data.incidentChild ?? "").trim(),
-    incidentProcess: String(data.incidentProcess ?? "").trim(),
-    incidentAction: String(data.incidentAction ?? "").trim(),
-    incidentNotified: String(data.incidentNotified ?? "").trim(),
-  });
-
-  const reportContent = [
-    progress ? `課程進度：${progress}` : "",
-    generated.aiSummary,
-    generated.aiSkillFocus,
-    generated.aiTeachingNote,
-  ].filter(Boolean).join("\n");
-
-  await prisma.attendance.update({
-    where: { id: attendance.id },
-    data: {
-      studentCount: data.studentCount == null ? attendance.studentCount : Number(data.studentCount),
-      reportContent,
-      reportSentAt: new Date(),
-      skillFocus: JSON.stringify(skillFocus),
+    const generated = generateTeachingReport({
+      school: attendance.course.school,
+      courseType: attendance.course.courseType,
+      progress,
+      skillFocus,
       classStatus,
       incident,
-      incidentChild: incident ? String(data.incidentChild ?? "").trim() : "",
-      incidentProcess: incident ? String(data.incidentProcess ?? "").trim() : "",
-      incidentAction: incident ? String(data.incidentAction ?? "").trim() : "",
-      incidentNotified: incident ? String(data.incidentNotified ?? "").trim() : "",
-      reportPhotos: JSON.stringify(photos),
-      ...generated,
-    },
-  });
+      incidentChild: String(data.incidentChild ?? "").trim(),
+      incidentProcess: String(data.incidentProcess ?? "").trim(),
+      incidentAction: String(data.incidentAction ?? "").trim(),
+      incidentNotified: String(data.incidentNotified ?? "").trim(),
+    });
 
-  return NextResponse.json({ ok: true, ...generated });
+    const reportContent = [
+      progress ? `課程進度：${progress}` : "",
+      generated.aiSummary,
+      generated.aiSkillFocus,
+      generated.aiTeachingNote,
+    ].filter(Boolean).join("\n");
+
+    await prisma.attendance.update({
+      where: { id: attendance.id },
+      data: {
+        studentCount: data.studentCount == null ? attendance.studentCount : Number(data.studentCount),
+        reportContent,
+        reportSentAt: new Date(),
+        skillFocus: JSON.stringify(skillFocus),
+        classStatus,
+        incident,
+        incidentChild: incident ? String(data.incidentChild ?? "").trim() : "",
+        incidentProcess: incident ? String(data.incidentProcess ?? "").trim() : "",
+        incidentAction: incident ? String(data.incidentAction ?? "").trim() : "",
+        incidentNotified: incident ? String(data.incidentNotified ?? "").trim() : "",
+        reportPhotos: JSON.stringify(photos),
+        ...generated,
+      },
+    });
+
+    return NextResponse.json({ ok: true, ...generated });
+  } catch (e) {
+    console.error("report form save failed", e);
+    return NextResponse.json({ error: `送出回報失敗：${(e as Error).message}` }, { status: 500 });
+  }
 }
