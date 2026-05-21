@@ -61,27 +61,27 @@ export default function SchoolPortalPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F2F8FF] text-[#142452]">
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_8%,rgba(255,222,118,0.42),transparent_22%),radial-gradient(circle_at_8%_18%,rgba(255,255,255,0.9),transparent_20%),linear-gradient(180deg,#FFF6D8_0%,#FFFBEF_28%,#E9F7FF_28%,#F7FBFF_100%)]" />
+    <div className="min-h-screen bg-[#f8fafc] text-[#142452]">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_6%,rgba(96,165,250,0.16),transparent_24%),linear-gradient(180deg,#f8fafc_0%,#eef4ff_42%,#f8fafc_100%)]" />
 
       <div className="relative mx-auto flex min-h-screen max-w-[1440px] gap-7 px-3 pb-24 pt-3 sm:px-5 lg:px-7 lg:pb-8">
-        <aside className="hidden w-[218px] shrink-0 rounded-[30px] bg-white/90 p-4 shadow-[0_20px_60px_rgba(87,107,145,0.15)] ring-1 ring-white/80 lg:sticky lg:top-5 lg:block lg:h-[calc(100vh-40px)]">
+        <aside className="hidden w-[218px] shrink-0 rounded-[26px] bg-white p-4 shadow-[0_16px_42px_rgba(30,64,175,0.08)] ring-1 ring-slate-200/80 lg:sticky lg:top-5 lg:block lg:h-[calc(100vh-40px)]">
           <BrandBlock />
           <nav className="mt-6 space-y-2">
             {NAV.map((item) => (
               <NavButton key={item.id} active={tab === item.id} icon={item.icon} label={item.label === "首頁" ? "首頁總覽" : item.label} onClick={() => setTab(item.id)} />
             ))}
           </nav>
-          <div className="mt-6 rounded-[28px] bg-gradient-to-b from-[#FFF4CF] to-[#E8F7D9] p-4 text-center">
-            <div className="mx-auto h-14 w-14 rounded-full bg-[#FFD66E]" />
-            <p className="mt-3 text-sm font-black text-[#8A6A2E]">成果展示平台</p>
-            <p className="mt-1 text-xs leading-5 text-[#A08348]">給園所主任快速查看課程成果</p>
+          <div className="mt-6 rounded-[24px] bg-[#f5f7fb] p-4 text-center ring-1 ring-slate-200/70">
+            <div className="mx-auto h-10 w-10 rounded-2xl bg-blue-100" />
+            <p className="mt-3 text-sm font-black text-slate-800">成果展示平台</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">快速查看課程成果與月報</p>
           </div>
         </aside>
 
         {menuOpen && (
           <div className="fixed inset-0 z-40 bg-slate-900/30 lg:hidden" onClick={() => setMenuOpen(false)}>
-            <div className="h-full w-[82vw] max-w-sm rounded-r-[32px] bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="h-full w-[82vw] max-w-sm rounded-r-[28px] bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <BrandBlock />
               <div className="mt-6 grid gap-2">
                 {NAV.map((item) => (
@@ -93,13 +93,13 @@ export default function SchoolPortalPage() {
         )}
 
         <main className="min-w-0 flex-1">
-          <div className="mb-4 flex items-center justify-between rounded-[24px] bg-white/88 px-4 py-3 shadow-sm ring-1 ring-white/80 lg:hidden">
+          <div className="mb-4 flex items-center justify-between rounded-[22px] bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/80 lg:hidden">
             <button onClick={() => setMenuOpen(true)} className="rounded-2xl bg-blue-50 px-4 py-3 text-lg font-black text-blue-700">☰</button>
             <div className="text-center">
-              <div className="text-sm font-black text-[#4A2C17]">才藝課管理系統</div>
+              <div className="text-sm font-black text-slate-900">才藝課管理系統</div>
               <div className="text-xs text-slate-500">園所成果展示</div>
             </div>
-            <div className="h-12 w-12 rounded-2xl bg-[#FFE1A3]" />
+            <div className="h-12 w-12 rounded-2xl bg-blue-50" />
           </div>
 
           {loading || !data ? (
@@ -115,7 +115,7 @@ export default function SchoolPortalPage() {
                 <SummaryCard tone="purple" label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
               </section>
 
-              <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-white/70 bg-[#EAF7FF]/80 py-4 backdrop-blur lg:flex">
+              <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-slate-200/80 bg-[#f8fafc]/90 py-4 backdrop-blur lg:flex">
                 {NAV.map((item) => (
                   <TabPill key={item.id} active={tab === item.id} onClick={() => setTab(item.id)} icon={item.icon}>{item.label}</TabPill>
                 ))}
@@ -173,7 +173,7 @@ export default function SchoolPortalPage() {
         </main>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-2 rounded-[26px] bg-white/95 p-2 shadow-[0_18px_50px_rgba(65,85,120,0.22)] ring-1 ring-white/90 lg:hidden">
+      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-2 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
         {NAV.filter((item) => item.id !== "notifications").map((item) => (
           <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-2xl px-2 py-2 text-center text-[11px] font-black ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
             <div className="text-base">{item.icon}</div>
@@ -187,24 +187,23 @@ export default function SchoolPortalPage() {
 
 function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year: number; month: number; setYear: (v: number) => void; setMonth: (v: number) => void }) {
   return (
-    <section className="relative overflow-hidden rounded-[34px] px-4 py-7 sm:px-7 lg:px-8">
-      <div className="absolute right-8 top-6 hidden h-16 w-16 rounded-full bg-[#FFD569] shadow-[0_0_0_18px_rgba(255,213,105,0.25)] md:block" />
-      <div className="absolute right-48 top-12 hidden h-8 w-20 rounded-full bg-white/80 md:block" />
+    <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white px-4 py-7 shadow-[0_16px_42px_rgba(30,64,175,0.07)] sm:px-7 lg:px-8">
+      <div className="absolute right-8 top-8 hidden h-16 w-16 rounded-full bg-blue-50 md:block" />
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-[#142452] sm:text-4xl">您好！</h1>
-          <p className="mt-3 text-base font-medium leading-7 text-[#5C4A3E]">本月學習成果總覽，讓主任快速看見孩子的課程成果。</p>
+          <p className="mt-3 text-base font-medium leading-7 text-slate-600">本月學習成果總覽，讓主任快速看見孩子的課程成果。</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full bg-white/85 px-4 py-2 text-sm font-black text-blue-700 shadow-sm">{data.school.name}</span>
-            <span className="rounded-full bg-white/85 px-4 py-2 text-sm font-black text-emerald-700 shadow-sm">{data.school.type}</span>
-            {data.school.region && <span className="rounded-full bg-white/85 px-4 py-2 text-sm font-black text-amber-700 shadow-sm">{data.school.region}</span>}
+            <span className="rounded-full bg-blue-50 px-4 py-2 text-sm font-black text-blue-700">{data.school.name}</span>
+            <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-black text-slate-600">{data.school.type}</span>
+            {data.school.region && <span className="rounded-full bg-slate-100 px-4 py-2 text-sm font-black text-slate-600">{data.school.region}</span>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="min-h-12 rounded-2xl border border-white/80 bg-white/95 px-4 py-3 text-base font-black shadow-sm outline-none">
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-black text-slate-700 shadow-sm outline-none">
             {[2025, 2026, 2027].map((y) => <option key={y}>{y}年</option>)}
           </select>
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="min-h-12 rounded-2xl border border-white/80 bg-white/95 px-4 py-3 text-base font-black shadow-sm outline-none">
+          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-black text-slate-700 shadow-sm outline-none">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
         </div>
@@ -234,19 +233,19 @@ function OutcomeList({ rows }: { rows: PortalData["reports"] }) {
   return (
     <div className="space-y-4">
       {rows.map((row) => (
-        <article key={row.id} className="relative overflow-hidden rounded-[28px] border border-white/80 bg-white/94 p-5 shadow-[0_20px_50px_rgba(64,87,128,0.12)] sm:p-6">
-          <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[#FFF0BE]" />
+        <article key={row.id} className="relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(30,64,175,0.07)] sm:p-6">
+          <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-blue-50" />
           <div className="relative flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#FFE2EC] text-2xl text-[#E76C98]">▤</div>
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-600">▤</div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-xl font-black text-[#142452] sm:text-2xl">{row.courseName}</h3>
                   <p className="mt-1 text-sm font-bold text-[#7683A0]">{row.date}｜{row.teacherName}｜出席 {row.studentCount || "—"} 人</p>
                 </div>
-                <span className="w-fit rounded-2xl bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">已完成回報</span>
+                <span className="w-fit rounded-2xl bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 ring-1 ring-blue-100">已完成回報</span>
               </div>
-              <div className="mt-5 rounded-[22px] border border-[#BFD9FF] bg-[#F8FCFF] p-4 text-[15px] leading-8 text-[#142452]">
+              <div className="mt-5 rounded-[20px] border border-blue-100 bg-[#f8fafc] p-4 text-[15px] leading-8 text-[#142452]">
                 {row.reportContent && <p className="font-black">課程進度：{row.reportContent}</p>}
                 {row.aiSummary && <p className="mt-2">{row.aiSummary}</p>}
                 {row.aiTeachingNote && <p className="mt-2">{row.aiTeachingNote}</p>}
@@ -270,7 +269,7 @@ function ProgressTimeline({ rows }: { rows: ReturnType<typeof buildProgressRows>
   return (
     <div className="space-y-3">
       {rows.map((row, index) => (
-        <article key={row.id} className="flex gap-4 rounded-[24px] bg-white/94 p-5 shadow-sm ring-1 ring-white/80">
+        <article key={row.id} className="flex gap-4 rounded-[22px] bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
           <div className="flex flex-col items-center">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-sm font-black text-white">{index + 1}</div>
             {index < rows.length - 1 && <div className="mt-2 h-full min-h-10 w-1 rounded-full bg-blue-100" />}
@@ -291,7 +290,7 @@ function MonthlyCards({ rows }: { rows: PortalData["monthlyRows"] }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {rows.map((row) => (
-        <article key={row.id} className="rounded-[24px] bg-white/94 p-5 shadow-sm ring-1 ring-white/80">
+        <article key={row.id} className="rounded-[22px] bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
           <div className="text-sm font-bold text-[#7683A0]">{row.date}｜{row.time || "時間未填"}</div>
           <h3 className="mt-2 text-xl font-black text-[#142452]">{row.courseName}</h3>
           <p className="mt-1 text-sm font-semibold text-slate-500">{row.teacherName}</p>
@@ -310,16 +309,16 @@ function CertificateCards({ rows }: { rows: PortalData["assessments"] }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {rows.map((row) => (
-        <article key={row.id} className="rounded-[28px] border border-white/80 bg-white/94 p-5 shadow-[0_20px_50px_rgba(64,87,128,0.12)]">
+        <article key={row.id} className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(30,64,175,0.07)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xl font-black text-[#142452]">{row.childName}</div>
               <div className="mt-1 text-sm font-semibold text-[#7683A0]">{row.date}｜{row.courseName}｜{row.teacherName}</div>
             </div>
-            <span className="rounded-full bg-[#F3E7D0] px-3 py-1 text-xs font-black text-[#6E4C1E]">{row.title || "成長證書"}</span>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{row.title || "成長證書"}</span>
           </div>
           <p className="mt-4 line-clamp-3 text-sm leading-7 text-slate-600">{row.comment}</p>
-          <a href={row.certificateUrl} className="mt-5 inline-flex rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-200">
+          <a href={row.certificateUrl} className="mt-5 inline-flex rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm">
             查看證書
           </a>
         </article>
@@ -334,13 +333,13 @@ function NotificationList({ rows }: { rows: PortalData["reports"] }) {
   return (
     <div className="space-y-3">
       {notices.map((row) => (
-        <div key={row.id} className="rounded-[22px] bg-white/94 p-4 shadow-sm ring-1 ring-white/80">
+        <div key={row.id} className="rounded-[22px] bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="font-black text-[#142452]">{row.courseName} 成果回報</div>
               <div className="mt-1 text-sm font-semibold text-[#7683A0]">{row.date}｜{row.teacherName}</div>
             </div>
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{row.schoolNotifyStatus}</span>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{row.schoolNotifyStatus}</span>
           </div>
         </div>
       ))}
@@ -348,18 +347,12 @@ function NotificationList({ rows }: { rows: PortalData["reports"] }) {
   );
 }
 
-function SummaryCard({ label, value, helper, icon, tone }: { label: string; value: number; helper: string; icon: string; tone: "blue" | "green" | "pink" | "purple" }) {
-  const colors = {
-    blue: "bg-blue-100 text-blue-600",
-    green: "bg-green-100 text-green-600",
-    pink: "bg-pink-100 text-pink-600",
-    purple: "bg-violet-100 text-violet-600",
-  };
+function SummaryCard({ label, value, helper, icon }: { label: string; value: number; helper: string; icon: string; tone: "blue" | "green" | "pink" | "purple" }) {
   return (
-    <div className="relative overflow-hidden rounded-[24px] bg-white/94 p-4 shadow-[0_18px_40px_rgba(64,87,128,0.12)] ring-1 ring-white/80 sm:p-5">
-      <div className={`flex h-12 w-12 items-center justify-center rounded-full text-xl font-black sm:h-14 sm:w-14 ${colors[tone]}`}>{icon}</div>
+    <div className="relative overflow-hidden rounded-[22px] bg-white p-4 shadow-[0_14px_34px_rgba(30,64,175,0.07)] ring-1 ring-slate-200/80 sm:p-5">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl font-black text-blue-600 sm:h-14 sm:w-14">{icon}</div>
       <div className="mt-4 text-sm font-black text-[#142452]">{label}</div>
-      <div className={`mt-1 text-4xl font-black ${colors[tone].split(" ").at(-1)}`}>{value.toLocaleString("zh-TW")}</div>
+      <div className="mt-1 text-4xl font-black text-blue-600">{value.toLocaleString("zh-TW")}</div>
       <div className="mt-1 text-xs font-semibold text-slate-400">{helper}</div>
     </div>
   );
@@ -376,7 +369,7 @@ function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) {
 
 function TabPill({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: string; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={`shrink-0 rounded-full px-6 py-3 text-sm font-black shadow-sm transition ${active ? "bg-blue-600 text-white shadow-blue-200" : "bg-white text-[#142452] border border-white/80"}`}>
+    <button onClick={onClick} className={`shrink-0 rounded-full px-6 py-3 text-sm font-black shadow-sm transition ${active ? "bg-blue-600 text-white" : "bg-white text-[#142452] border border-slate-200"}`}>
       <span className="mr-2">{icon}</span>{children}
     </button>
   );
@@ -384,18 +377,18 @@ function TabPill({ active, onClick, icon, children }: { active: boolean; onClick
 
 function BrandBlock() {
   return (
-    <div className="flex flex-col items-center border-b border-[#F2E6CA] pb-5 pt-3">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[#FFE1A3] text-3xl shadow-inner">✦</div>
-      <div className="mt-3 text-center text-lg font-black text-[#4A2C17]">才藝課管理系統</div>
-      <div className="mt-1 text-xs font-bold text-[#A08348]">園所成果展示</div>
+    <div className="flex flex-col items-center border-b border-slate-200 pb-5 pt-3">
+      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-blue-50 text-3xl font-black text-blue-600">✦</div>
+      <div className="mt-3 text-center text-lg font-black text-slate-900">才藝課管理系統</div>
+      <div className="mt-1 text-xs font-bold text-slate-500">園所成果展示</div>
     </div>
   );
 }
 
 function NavButton({ active, label, icon, onClick }: { active: boolean; label: string; icon: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black transition ${active ? "bg-blue-500 text-white shadow-lg shadow-blue-200" : "text-[#5C4A3E] hover:bg-blue-50"}`}>
-      <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${active ? "bg-white/20" : "bg-[#FFF0BE] text-[#B67810]"}`}>{icon}</span>
+    <button onClick={onClick} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black transition ${active ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"}`}>
+      <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${active ? "bg-white/20" : "bg-slate-100 text-slate-500"}`}>{icon}</span>
       {label}
     </button>
   );
@@ -403,7 +396,7 @@ function NavButton({ active, label, icon, onClick }: { active: boolean; label: s
 
 function InfoBlock({ title, text, warning }: { title: string; text: string; warning?: boolean }) {
   return (
-    <div className={`rounded-2xl p-4 text-sm ${warning ? "bg-amber-50 text-amber-800" : "bg-blue-50 text-blue-800"}`}>
+    <div className={`rounded-2xl p-4 text-sm ${warning ? "bg-[#fff7ed] text-slate-700" : "bg-blue-50 text-blue-800"}`}>
       <div className="font-black">{title}</div>
       <div className="mt-1 leading-6">{text}</div>
     </div>
@@ -411,5 +404,5 @@ function InfoBlock({ title, text, warning }: { title: string; text: string; warn
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="rounded-[28px] border border-dashed border-blue-100 bg-white/90 p-10 text-center text-slate-400">{text}</div>;
+  return <div className="rounded-[24px] border border-dashed border-slate-200 bg-white p-10 text-center text-slate-400">{text}</div>;
 }
