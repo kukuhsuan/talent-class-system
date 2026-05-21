@@ -26,16 +26,18 @@ const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: "certificates", label: "證書", icon: "◇" },
 ];
 
-const SKILL_MAP: Record<string, { icon: string; description: string }> = {
-  專注力: { icon: "◎", description: "提升持續觀察與穩定投入的能力" },
-  團隊合作: { icon: "◇", description: "培養互動、輪流與合作完成任務的能力" },
-  團隊互動: { icon: "◇", description: "練習與同儕互動並建立合作默契" },
+const SKILL_MAP: Record<string, { icon: string; description: string; image?: string }> = {
+  專注力: { icon: "◎", image: "/skill-cards/focus.png", description: "專注觀察與判斷，提升學習專注與持續力" },
+  團隊合作: { icon: "◇", image: "/skill-cards/teamwork.png", description: "透過合作與互動，培養溝通能力與團隊精神" },
+  團隊互動: { icon: "◇", image: "/skill-cards/teamwork.png", description: "透過合作與互動，培養溝通能力與團隊精神" },
   肢體協調: { icon: "⌁", description: "整合身體動作，提升動作流暢度" },
   規則理解: { icon: "□", description: "理解課堂規則並依指令完成活動" },
   情緒控制: { icon: "○", description: "練習等待、調整情緒與穩定參與" },
   手眼協調: { icon: "◉", description: "提升視覺判斷與動作協調能力" },
-  反應力: { icon: "↯", description: "提升聽覺與視覺刺激下的快速反應" },
+  反應力: { icon: "↯", image: "/skill-cards/reaction.png", description: "提升對環境刺激的反應速度，培養敏銳觀察力" },
   敏捷速度: { icon: "↗", description: "訓練變向速度與快速移動能力" },
+  自信心建立: { icon: "♡", image: "/skill-cards/confidence.png", description: "透過完成挑戰與正向回饋，建立自信表現" },
+  自信表現: { icon: "♡", image: "/skill-cards/confidence.png", description: "透過完成挑戰與正向回饋，建立自信表現" },
 };
 
 export default function SchoolPortalPage() {
@@ -237,13 +239,15 @@ function OutcomeCard({ row }: { row: PortalData["reports"][number] }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const skills = parseSkillFocus(row.skillFocus || row.aiSkillFocus);
-  const mainText = [row.reportContent ? `課程進度：${row.reportContent}` : "", row.aiSummary, row.aiTeachingNote].filter(Boolean).join("\n\n") || "本堂課已完成回報。";
+  const progressText = cleanProgressText(row.reportContent);
+  const outcomeText = buildOutcomeText(row.aiTeachingNote, row.aiSummary);
+  const mainText = [progressText ? `課程進度：${progressText}` : "", outcomeText].filter(Boolean).join("\n\n") || "本堂課已完成回報。";
   const canExpand = mainText.length > 95;
 
   async function copyShareText() {
     const text = [
       `${row.date}｜${row.courseName}`,
-      `今日成果：${row.aiSummary || row.aiTeachingNote || row.reportContent || "本堂課已完成課程回報。"}`,
+      `今日成果：${outcomeText || progressText || "本堂課已完成課程回報。"}`,
       skills.length ? `能力培養：${skills.join("、")}` : "",
       `出席人數：${row.studentCount || "—"} 人`,
     ].filter(Boolean).join("\n");
@@ -313,6 +317,27 @@ function parseSkillFocus(value: string) {
   return value.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
+function cleanProgressText(value: string) {
+  return (value || "")
+    .replace(/^(課程進度[:：]\s*)+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeReportText(value: string) {
+  return (value || "")
+    .replace(/\s+/g, " ")
+    .replace(/(本堂課孩子整體參與狀況良好，能在老師引導下完成指定任務。)\s*\1/g, "$1")
+    .trim();
+}
+
+function buildOutcomeText(teachingNote: string, summary: string) {
+  const primary = normalizeReportText(teachingNote);
+  const secondary = normalizeReportText(summary);
+  if (primary && secondary && primary.includes(secondary)) return primary;
+  return primary || secondary;
+}
+
 function SkillCards({ skills }: { skills: string[] }) {
   if (skills.length === 0) return null;
   return (
@@ -323,7 +348,11 @@ function SkillCards({ skills }: { skills: string[] }) {
           const meta = SKILL_MAP[skill];
           return (
             <div key={skill} className="rounded-[20px] bg-[#f8fafc] p-4 ring-1 ring-slate-200/80">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-lg font-black text-blue-600">{meta?.icon ?? "•"}</div>
+              {meta?.image ? (
+                <img src={meta.image} alt={skill} loading="lazy" className="mx-auto aspect-square w-full max-w-[150px] rounded-[24px] object-contain" />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-lg font-black text-blue-600">{meta?.icon ?? "•"}</div>
+              )}
               <div className="mt-3 text-base font-black text-[#142452]">{skill}</div>
               <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{meta?.description ?? "本堂課已安排相關能力練習。"}</p>
             </div>
