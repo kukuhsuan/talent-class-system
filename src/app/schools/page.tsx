@@ -61,6 +61,18 @@ export default function SchoolsPage() {
     fetchSchools();
   }
 
+  async function copyPortalLink(id: number) {
+    try {
+      const res = await fetch(`/api/schools/${id}/portal-link`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "園所端連結產生失敗");
+      await navigator.clipboard.writeText(data.url);
+      showToast("success", "園所端連結已複製");
+    } catch (e) {
+      showToast("error", (e as Error).message || "園所端連結產生失敗", 3000);
+    }
+  }
+
   function edit(s: School) {
     setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
     setEditing(s.id);
@@ -154,6 +166,7 @@ export default function SchoolsPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-3">
+                  <button onClick={() => copyPortalLink(s.id)} className="text-sm font-medium text-emerald-600">連結</button>
                   <button onClick={() => edit(s)} className="text-sm font-medium text-blue-600">編輯</button>
                   <button onClick={() => del(s.id)} className="text-sm font-medium text-red-500">刪除</button>
                 </div>
@@ -190,6 +203,7 @@ export default function SchoolsPage() {
                 <td className="px-4 py-3 text-gray-500">{s.phone || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.contact || "—"}</td>
                 <td className="px-4 py-3 text-right space-x-2">
+                  <button onClick={() => copyPortalLink(s.id)} className="text-emerald-600 hover:underline text-xs">複製園所端連結</button>
                   <button onClick={() => edit(s)} className="text-blue-600 hover:underline text-xs">編輯</button>
                   <button onClick={() => del(s.id)} className="text-red-500 hover:underline text-xs">刪除</button>
                 </td>
