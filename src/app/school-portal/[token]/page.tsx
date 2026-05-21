@@ -2,8 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
-type Tab = "home" | "outcomes" | "progress" | "monthly" | "certificates" | "notifications";
-
 type PortalData = {
   school: { name: string; type: string; region: string; address: string; contact: string; phone: string };
   year: number;
@@ -19,14 +17,26 @@ type PortalData = {
   assessments: Array<{ id: number; childName: string; courseName: string; teacherName: string; date: string; title: string; comment: string; certificateUrl: string }>;
 };
 
+type Tab = "home" | "outcomes" | "progress" | "certificates";
+
 const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: "home", label: "首頁", icon: "⌂" },
   { id: "outcomes", label: "成果", icon: "★" },
   { id: "progress", label: "進度", icon: "⌁" },
-  { id: "monthly", label: "月報", icon: "▦" },
   { id: "certificates", label: "證書", icon: "◇" },
-  { id: "notifications", label: "通知", icon: "!" },
 ];
+
+const SKILL_MAP: Record<string, { icon: string; description: string }> = {
+  專注力: { icon: "◎", description: "提升持續觀察與穩定投入的能力" },
+  團隊合作: { icon: "◇", description: "培養互動、輪流與合作完成任務的能力" },
+  團隊互動: { icon: "◇", description: "練習與同儕互動並建立合作默契" },
+  肢體協調: { icon: "⌁", description: "整合身體動作，提升動作流暢度" },
+  規則理解: { icon: "□", description: "理解課堂規則並依指令完成活動" },
+  情緒控制: { icon: "○", description: "練習等待、調整情緒與穩定參與" },
+  手眼協調: { icon: "◉", description: "提升視覺判斷與動作協調能力" },
+  反應力: { icon: "↯", description: "提升聽覺與視覺刺激下的快速反應" },
+  敏捷速度: { icon: "↗", description: "訓練變向速度與快速移動能力" },
+};
 
 export default function SchoolPortalPage() {
   const params = useParams<{ token: string }>();
@@ -54,7 +64,6 @@ export default function SchoolPortalPage() {
 
   const recentReports = useMemo(() => (data?.reports ?? []).slice(0, 3), [data]);
   const progressRows = useMemo(() => buildProgressRows(data?.reports ?? []), [data]);
-  const latestNotice = data?.reports?.[0]?.schoolNotifyStatus ? `${data.reports[0].date} 最新課程回報已更新` : "本月尚無新的通知";
 
   if (error) {
     return <div className="min-h-screen bg-[#F2F8FF] px-5 py-16 text-center text-rose-500">{error}</div>;
@@ -75,7 +84,7 @@ export default function SchoolPortalPage() {
           <div className="mt-6 rounded-[24px] bg-[#f5f7fb] p-4 text-center ring-1 ring-slate-200/70">
             <div className="mx-auto h-10 w-10 rounded-2xl bg-blue-100" />
             <p className="mt-3 text-sm font-black text-slate-800">成果展示平台</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">快速查看課程成果與月報</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">快速查看課程成果與學期證書</p>
           </div>
         </aside>
 
@@ -109,10 +118,10 @@ export default function SchoolPortalPage() {
               <Hero data={data} year={year} month={month} setYear={setYear} setMonth={setMonth} />
 
               <section className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-                <SummaryCard tone="blue" label="本月堂數" value={data.summary.lessons} helper="已完成課程" icon="▣" />
-                <SummaryCard tone="green" label="本月總人數" value={data.summary.totalPeople} helper="累積參與" icon="◎" />
-                <SummaryCard tone="pink" label="最近課程" value={data.summary.reports} helper="成果回報" icon="★" />
-                <SummaryCard tone="purple" label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
+                <SummaryCard label="本月堂數" value={data.summary.lessons} helper="已完成課程" icon="▣" />
+                <SummaryCard label="本月總人數" value={data.summary.totalPeople} helper="累積參與" icon="◎" />
+                <SummaryCard label="成果回報" value={data.summary.reports} helper="本月紀錄" icon="★" />
+                <SummaryCard label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
               </section>
 
               <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-slate-200/80 bg-[#f8fafc]/90 py-4 backdrop-blur lg:flex">
@@ -128,8 +137,6 @@ export default function SchoolPortalPage() {
                     <OutcomeList rows={recentReports} />
                     <PanelTitle title="本學期進度" subtitle="依回報內容整理目前課程推進狀況。" />
                     <ProgressTimeline rows={progressRows.slice(0, 4)} />
-                    <PanelTitle title="最新通知" subtitle={latestNotice} />
-                    <NotificationList rows={data.reports.slice(0, 5)} />
                   </div>
                 )}
 
@@ -147,13 +154,6 @@ export default function SchoolPortalPage() {
                   </div>
                 )}
 
-                {tab === "monthly" && (
-                  <div className="space-y-5">
-                    <PanelTitle title="月報表" subtitle="本月課程、人數與回報狀態。" />
-                    <MonthlyCards rows={data.monthlyRows} />
-                  </div>
-                )}
-
                 {tab === "certificates" && (
                   <div className="space-y-5">
                     <PanelTitle title="孩子學習成果 / 證書" subtitle="學期證書、成長徽章與成果總結。" />
@@ -161,20 +161,14 @@ export default function SchoolPortalPage() {
                   </div>
                 )}
 
-                {tab === "notifications" && (
-                  <div className="space-y-5">
-                    <PanelTitle title="通知中心" subtitle="只顯示與園所相關的成果通知狀態。" />
-                    <NotificationList rows={data.reports} />
-                  </div>
-                )}
               </section>
             </>
           )}
         </main>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-2 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
-        {NAV.filter((item) => item.id !== "notifications").map((item) => (
+      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 gap-2 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
+        {NAV.map((item) => (
           <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-2xl px-2 py-2 text-center text-[11px] font-black ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
             <div className="text-base">{item.icon}</div>
             {item.label}
@@ -233,34 +227,110 @@ function OutcomeList({ rows }: { rows: PortalData["reports"] }) {
   return (
     <div className="space-y-4">
       {rows.map((row) => (
-        <article key={row.id} className="relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(30,64,175,0.07)] sm:p-6">
-          <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-blue-50" />
-          <div className="relative flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-600">▤</div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 className="text-xl font-black text-[#142452] sm:text-2xl">{row.courseName}</h3>
-                  <p className="mt-1 text-sm font-bold text-[#7683A0]">{row.date}｜{row.teacherName}｜出席 {row.studentCount || "—"} 人</p>
-                </div>
-                <span className="w-fit rounded-2xl bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 ring-1 ring-blue-100">已完成回報</span>
-              </div>
-              <div className="mt-5 rounded-[20px] border border-blue-100 bg-[#f8fafc] p-4 text-[15px] leading-8 text-[#142452]">
-                {row.reportContent && <p className="font-black">課程進度：{row.reportContent}</p>}
-                {row.aiSummary && <p className="mt-2">{row.aiSummary}</p>}
-                {row.aiTeachingNote && <p className="mt-2">{row.aiTeachingNote}</p>}
-                {!row.aiSummary && !row.aiTeachingNote && !row.reportContent && <p>本堂課已完成回報。</p>}
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {row.skillFocus && <InfoBlock title="能力培養" text={row.skillFocus} />}
-                {row.classStatus && <InfoBlock title="課堂狀況" text={row.classStatus} />}
-                {row.incident && <InfoBlock title="特殊事件" text={`${row.incidentChild || "未填孩子"}｜${row.incidentProcess || "未填經過"}｜${row.incidentAction || "未填處理方式"}`} warning />}
-              </div>
-            </div>
-          </div>
-        </article>
+        <OutcomeCard key={row.id} row={row} />
       ))}
     </div>
+  );
+}
+
+function OutcomeCard({ row }: { row: PortalData["reports"][number] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const skills = parseSkillFocus(row.skillFocus || row.aiSkillFocus);
+  const mainText = [row.reportContent ? `課程進度：${row.reportContent}` : "", row.aiSummary, row.aiTeachingNote].filter(Boolean).join("\n\n") || "本堂課已完成回報。";
+  const canExpand = mainText.length > 95;
+
+  async function copyShareText() {
+    const text = [
+      `${row.date}｜${row.courseName}`,
+      `今日成果：${row.aiSummary || row.aiTeachingNote || row.reportContent || "本堂課已完成課程回報。"}`,
+      skills.length ? `能力培養：${skills.join("、")}` : "",
+      `出席人數：${row.studentCount || "—"} 人`,
+    ].filter(Boolean).join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+      window.prompt("可複製以下內容分享給家長", text);
+    }
+  }
+
+  return (
+    <article className="relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(30,64,175,0.07)] sm:p-6">
+      <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-blue-50" />
+      <div className="relative flex items-start gap-4">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-600">▤</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-xl font-black text-[#142452] sm:text-2xl">{row.courseName}</h3>
+              <p className="mt-1 text-sm font-bold text-[#7683A0]">{row.date}｜{row.teacherName}｜出席 {row.studentCount || "—"} 人</p>
+            </div>
+            <span className="w-fit rounded-2xl bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 ring-1 ring-blue-100">已完成回報</span>
+          </div>
+
+          <div className="mt-5 rounded-[20px] border border-blue-100 bg-[#f8fafc] p-4 text-[15px] leading-8 text-[#142452]">
+            <p className={`whitespace-pre-line ${expanded ? "" : "line-clamp-3"}`}>{mainText}</p>
+            {canExpand && (
+              <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 text-sm font-black text-blue-600">
+                {expanded ? "收合內容" : "查看更多"}
+              </button>
+            )}
+          </div>
+
+          <SkillCards skills={skills} />
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {row.classStatus && <StatusBlock title="課堂狀況" text={row.classStatus} />}
+            {row.incident && <StatusBlock title="特殊事件" text={`${row.incidentChild || "未填孩子"}｜${row.incidentProcess || "未填經過"}｜${row.incidentAction || "未填處理方式"}`} warning />}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button type="button" onClick={copyShareText} className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700">
+              {copied ? "已複製" : "複製分享內容"}
+            </button>
+            <button type="button" disabled className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-400">
+              分享圖片（即將推出）
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function parseSkillFocus(value: string) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).map((item) => item.trim()).filter(Boolean);
+  } catch {
+    // Existing records may be plain text; split them below.
+  }
+  return value.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function SkillCards({ skills }: { skills: string[] }) {
+  if (skills.length === 0) return null;
+  return (
+    <section className="mt-5 rounded-[22px] border border-slate-200/80 bg-white p-4">
+      <div className="text-sm font-black tracking-wide text-[#142452]">孩子在課程中可以學習到</div>
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+        {skills.map((skill) => {
+          const meta = SKILL_MAP[skill];
+          return (
+            <div key={skill} className="rounded-[20px] bg-[#f8fafc] p-4 ring-1 ring-slate-200/80">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-lg font-black text-blue-600">{meta?.icon ?? "•"}</div>
+              <div className="mt-3 text-base font-black text-[#142452]">{skill}</div>
+              <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{meta?.description ?? "本堂課已安排相關能力練習。"}</p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -278,25 +348,6 @@ function ProgressTimeline({ rows }: { rows: ReturnType<typeof buildProgressRows>
             <div className="text-sm font-bold text-[#7683A0]">{row.date}｜{row.courseName}｜出席 {row.studentCount || "—"} 人</div>
             <h3 className="mt-1 text-lg font-black text-[#142452]">{row.title}</h3>
             <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{row.summary}</p>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function MonthlyCards({ rows }: { rows: PortalData["monthlyRows"] }) {
-  if (rows.length === 0) return <Empty text="這個月份尚無上課紀錄。" />;
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      {rows.map((row) => (
-        <article key={row.id} className="rounded-[22px] bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
-          <div className="text-sm font-bold text-[#7683A0]">{row.date}｜{row.time || "時間未填"}</div>
-          <h3 className="mt-2 text-xl font-black text-[#142452]">{row.courseName}</h3>
-          <p className="mt-1 text-sm font-semibold text-slate-500">{row.teacherName}</p>
-          <div className="mt-4 flex items-center justify-between">
-            <span className="rounded-2xl bg-blue-50 px-4 py-2 text-sm font-black text-blue-700">出席 {row.studentCount} 人</span>
-            <span className="text-sm font-bold text-slate-400">{row.reportContent ? "已回報" : "未回報"}</span>
           </div>
         </article>
       ))}
@@ -327,27 +378,7 @@ function CertificateCards({ rows }: { rows: PortalData["assessments"] }) {
   );
 }
 
-function NotificationList({ rows }: { rows: PortalData["reports"] }) {
-  const notices = rows.filter((row) => row.schoolNotifyStatus).slice(0, 8);
-  if (notices.length === 0) return <Empty text="目前沒有新的通知。" />;
-  return (
-    <div className="space-y-3">
-      {notices.map((row) => (
-        <div key={row.id} className="rounded-[22px] bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="font-black text-[#142452]">{row.courseName} 成果回報</div>
-              <div className="mt-1 text-sm font-semibold text-[#7683A0]">{row.date}｜{row.teacherName}</div>
-            </div>
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{row.schoolNotifyStatus}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, helper, icon }: { label: string; value: number; helper: string; icon: string; tone: "blue" | "green" | "pink" | "purple" }) {
+function SummaryCard({ label, value, helper, icon }: { label: string; value: number; helper: string; icon: string }) {
   return (
     <div className="relative overflow-hidden rounded-[22px] bg-white p-4 shadow-[0_14px_34px_rgba(30,64,175,0.07)] ring-1 ring-slate-200/80 sm:p-5">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl font-black text-blue-600 sm:h-14 sm:w-14">{icon}</div>
@@ -394,7 +425,7 @@ function NavButton({ active, label, icon, onClick }: { active: boolean; label: s
   );
 }
 
-function InfoBlock({ title, text, warning }: { title: string; text: string; warning?: boolean }) {
+function StatusBlock({ title, text, warning }: { title: string; text: string; warning?: boolean }) {
   return (
     <div className={`rounded-2xl p-4 text-sm ${warning ? "bg-[#fff7ed] text-slate-700" : "bg-blue-50 text-blue-800"}`}>
       <div className="font-black">{title}</div>
