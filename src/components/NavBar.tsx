@@ -73,7 +73,7 @@ export default function NavBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  if (pathname.startsWith("/report") || pathname.startsWith("/assessment/")) return null;
+  if (pathname.startsWith("/report") || pathname.startsWith("/assessment/") || pathname.startsWith("/school-portal")) return null;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
