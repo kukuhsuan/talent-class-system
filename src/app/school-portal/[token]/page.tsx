@@ -110,7 +110,9 @@ export default function SchoolPortalPage() {
               <div className="text-sm font-black text-slate-900">才藝課管理系統</div>
               <div className="text-xs text-slate-500">園所成果展示</div>
             </div>
-            <div className="h-12 w-12 rounded-2xl bg-blue-50" />
+            <div className="h-12 w-12 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+              <img src="/upbear-logo.png" alt="優比熊" className="h-full w-full object-cover" />
+            </div>
           </div>
 
           {loading || !data ? (
@@ -240,8 +242,8 @@ function OutcomeCard({ row }: { row: PortalData["reports"][number] }) {
   const [copied, setCopied] = useState(false);
   const skills = parseSkillFocus(row.skillFocus || row.aiSkillFocus);
   const progressText = cleanProgressText(row.reportContent);
-  const outcomeText = buildOutcomeText(row.aiTeachingNote, row.aiSummary);
-  const mainText = [progressText ? `課程進度：${progressText}` : "", outcomeText].filter(Boolean).join("\n\n") || "本堂課已完成回報。";
+  const outcomeText = buildParentFriendlyText(row.aiTeachingNote, row.aiSummary, skills);
+  const mainText = [progressText ? `課程進度\n${formatProgressLine(progressText, row.courseName)}` : "", outcomeText].filter(Boolean).join("\n\n") || "孩子們順利完成今天的課程活動 ✨";
   const canExpand = mainText.length > 95;
 
   async function copyShareText() {
@@ -324,18 +326,42 @@ function cleanProgressText(value: string) {
     .trim();
 }
 
-function normalizeReportText(value: string) {
-  return (value || "")
-    .replace(/\s+/g, " ")
-    .replace(/(本堂課孩子整體參與狀況良好，能在老師引導下完成指定任務。)\s*\1/g, "$1")
-    .trim();
+function formatProgressLine(value: string, courseName: string) {
+  const text = cleanProgressText(value).replace(/^第\s*(\d+)\s*堂\s*/, "第 $1 堂｜");
+  const emoji = courseName.includes("足球") ? " ⚽" : courseName.includes("高爾夫") ? " ⛳" : courseName.includes("棒球") ? " ⚾" : "";
+  return `${text}${emoji}`;
 }
 
-function buildOutcomeText(teachingNote: string, summary: string) {
-  const primary = normalizeReportText(teachingNote);
-  const secondary = normalizeReportText(summary);
+function normalizeReportText(value: string, skills: string[]) {
+  const text = (value || "")
+    .replace(/\s+/g, " ")
+    .replace(/今日課程主要進行/g, "孩子們練習")
+    .replace(/本次課程主要進行/g, "孩子們練習")
+    .replace(/本堂課主要進行/g, "孩子們練習")
+    .replace(/本次課程/g, "")
+    .replace(/本堂課/g, "")
+    .replace(/今日課程/g, "")
+    .replace(/整體課堂進行順利/g, "課堂進行順利")
+    .replace(/(本堂課孩子整體參與狀況良好，能在老師引導下完成指定任務。)\s*\1/g, "$1")
+    .trim();
+  return text
+    .split(/[。！？]/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .filter((sentence, index, list) => list.findIndex((item) => item === sentence) === index)
+    .filter((sentence) => !sentence.includes("能力培養") && !sentence.includes("培養孩子的") && !skills.some((skill) => sentence.includes(`、${skill}`)))
+    .slice(0, 2)
+    .map((sentence) => `${sentence}。`)
+    .join("\n");
+}
+
+function buildParentFriendlyText(teachingNote: string, summary: string, skills: string[]) {
+  const primary = normalizeReportText(teachingNote, skills);
+  const secondary = normalizeReportText(summary, skills);
   if (primary && secondary && primary.includes(secondary)) return primary;
-  return primary || secondary;
+  const text = primary || secondary;
+  if (text) return text;
+  return "孩子們能跟著老師完成指定任務，課堂氣氛活潑順利 ✨";
 }
 
 function SkillCards({ skills }: { skills: string[] }) {
@@ -438,7 +464,9 @@ function TabPill({ active, onClick, icon, children }: { active: boolean; onClick
 function BrandBlock() {
   return (
     <div className="flex flex-col items-center border-b border-slate-200 pb-5 pt-3">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-blue-50 text-3xl font-black text-blue-600">✦</div>
+      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-200">
+        <img src="/upbear-logo.png" alt="優比熊" className="h-full w-full object-cover" />
+      </div>
       <div className="mt-3 text-center text-lg font-black text-slate-900">才藝課管理系統</div>
       <div className="mt-1 text-xs font-bold text-slate-500">園所成果展示</div>
     </div>
