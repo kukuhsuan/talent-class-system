@@ -27,17 +27,17 @@ const NAV: Array<{ id: Tab; label: string; icon: string }> = [
 ];
 
 const SKILL_MAP: Record<string, { icon: string; description: string; image?: string }> = {
-  專注力: { icon: "◎", image: "/skill-cards/focus.png", description: "專注觀察與判斷，提升學習專注與持續力" },
-  團隊合作: { icon: "◇", image: "/skill-cards/teamwork.png", description: "透過合作與互動，培養溝通能力與團隊精神" },
-  團隊互動: { icon: "◇", image: "/skill-cards/teamwork.png", description: "透過合作與互動，培養溝通能力與團隊精神" },
-  肢體協調: { icon: "⌁", description: "整合身體動作，提升動作流暢度" },
-  規則理解: { icon: "□", description: "理解課堂規則並依指令完成活動" },
-  情緒控制: { icon: "○", description: "練習等待、調整情緒與穩定參與" },
-  手眼協調: { icon: "◉", description: "提升視覺判斷與動作協調能力" },
-  反應力: { icon: "↯", image: "/skill-cards/reaction.png", description: "提升對環境刺激的反應速度，培養敏銳觀察力" },
-  敏捷速度: { icon: "↗", description: "訓練變向速度與快速移動能力" },
-  自信心建立: { icon: "♡", image: "/skill-cards/confidence.png", description: "透過完成挑戰與正向回饋，建立自信表現" },
-  自信表現: { icon: "♡", image: "/skill-cards/confidence.png", description: "透過完成挑戰與正向回饋，建立自信表現" },
+  專注力: { icon: "◎", image: "/skill-cards/focus.png", description: "提升專注判斷" },
+  團隊合作: { icon: "◇", image: "/skill-cards/teamwork.png", description: "練習合作互動" },
+  團隊互動: { icon: "◇", image: "/skill-cards/teamwork.png", description: "培養互動默契" },
+  肢體協調: { icon: "⌁", description: "提升動作流暢" },
+  規則理解: { icon: "□", description: "理解課堂規則" },
+  情緒控制: { icon: "○", description: "練習穩定參與" },
+  手眼協調: { icon: "◉", description: "提升反應配合" },
+  反應力: { icon: "↯", image: "/skill-cards/reaction.png", description: "提升敏銳反應" },
+  敏捷速度: { icon: "↗", description: "練習快速移動" },
+  自信心建立: { icon: "♡", image: "/skill-cards/confidence.png", description: "建立自信表現" },
+  自信表現: { icon: "♡", image: "/skill-cards/confidence.png", description: "建立自信表現" },
 };
 
 export default function SchoolPortalPage() {
@@ -341,20 +341,20 @@ function buildOutcomeText(teachingNote: string, summary: string) {
 function SkillCards({ skills }: { skills: string[] }) {
   if (skills.length === 0) return null;
   return (
-    <section className="mt-5 rounded-[22px] border border-slate-200/80 bg-white p-4">
-      <div className="text-sm font-black tracking-wide text-[#142452]">孩子在課程中可以學習到</div>
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+    <section className="mt-5 rounded-[24px] border border-slate-200/80 bg-white p-4 sm:p-5">
+      <div className="text-base font-black tracking-wide text-[#142452]">孩子在課程中可以學習到</div>
+      <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
         {skills.map((skill) => {
           const meta = SKILL_MAP[skill];
           return (
-            <div key={skill} className="rounded-[20px] bg-[#f8fafc] p-4 ring-1 ring-slate-200/80">
+            <div key={skill} className="flex min-h-[190px] flex-col items-center justify-start rounded-[24px] bg-[#f8fafc] p-4 text-center ring-1 ring-slate-200/80 shadow-[0_10px_24px_rgba(30,64,175,0.05)] sm:min-h-[210px] sm:p-5">
               {meta?.image ? (
-                <img src={meta.image} alt={skill} loading="lazy" className="mx-auto aspect-square w-full max-w-[150px] rounded-[24px] object-contain" />
+                <img src={meta.image} alt={skill} loading="lazy" className="aspect-square w-full max-w-[118px] rounded-[24px] object-contain sm:max-w-[150px]" />
               ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-lg font-black text-blue-600">{meta?.icon ?? "•"}</div>
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-3xl font-black text-blue-600 shadow-inner">{meta?.icon ?? "•"}</div>
               )}
-              <div className="mt-3 text-base font-black text-[#142452]">{skill}</div>
-              <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{meta?.description ?? "本堂課已安排相關能力練習。"}</p>
+              <div className="mt-3 text-lg font-black leading-tight text-[#142452]">{skill}</div>
+              <p className="mt-2 text-sm font-bold leading-5 text-slate-500">{meta?.description ?? "安排能力練習"}</p>
             </div>
           );
         })}
