@@ -98,12 +98,12 @@ export async function GET(req: NextRequest) {
 
   const transporter = createTransport();
   await transporter.sendMail({
-    from: `才藝課管理備份 <${process.env.GMAIL_USER}>`,
+    from: `WaysLeader AI 備份 <${process.env.GMAIL_USER}>`,
     to,
-    subject: `才藝課管理系統每日備份 ${stamp}`,
+    subject: `WaysLeader AI 每日備份 ${stamp}`,
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.7;">
-        <h2>才藝課管理系統每日備份</h2>
+        <h2>WaysLeader AI 每日備份</h2>
         <p>備份時間：${stamp}（Asia/Taipei）</p>
         <p>附件：${filename}</p>
         <ul>

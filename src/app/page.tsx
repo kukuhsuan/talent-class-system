@@ -95,8 +95,8 @@ export default function Home() {
   return (
     <div>
       <div className="mb-5 md:mb-6">
-        <h1 className="text-xl md:text-2xl font-bold text-slate-800">才藝課管理系統</h1>
-        <p className="text-slate-500 text-sm mt-1">{dateDisplay}</p>
+        <h1 className="text-xl md:text-2xl font-bold text-slate-800">WaysLeader AI</h1>
+        <p className="text-slate-500 text-sm mt-1">幼兒園學習成果平台｜{dateDisplay}</p>
       </div>
 
       {!seeded && (

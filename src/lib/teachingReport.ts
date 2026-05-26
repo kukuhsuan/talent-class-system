@@ -1,5 +1,6 @@
 import { courseLabel } from "@/lib/courseMeta";
 import { getLessonProfile } from "@/lib/lessonContent";
+import type { LessonTemplateForReport } from "@/lib/lessonTemplates";
 
 export const SKILL_FOCUS_OPTIONS = ["專注力", "團隊合作", "肢體協調", "規則理解", "情緒控制", "手眼協調"] as const;
 export const CLASS_STATUS_OPTIONS = ["積極參與", "穩定學習", "持續練習"] as const;
@@ -28,6 +29,7 @@ export type TeachingReportInput = {
   incidentProcess: string;
   incidentAction: string;
   incidentNotified: string;
+  lessonTemplate?: LessonTemplateForReport | null;
 };
 
 function joinList(items: string[]) {
@@ -76,6 +78,43 @@ function learningValue(course: string, progress: string) {
   return ["練習基礎動作控制", "提升專注與身體協調", "培養參與感與自信心"];
 }
 
+function uniqueSentences(items: string[]) {
+  const seen = new Set<string>();
+  return items
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+function splitManualItems(value: string) {
+  return value
+    .split(/[\n、,，]/u)
+    .map((item) => item.replace(/^[\-*•\s]+/u, "").trim())
+    .filter(Boolean);
+}
+
+function templateLearningValue(template: LessonTemplateForReport, emoji: string) {
+  const manualFocus = splitManualItems(template.focus);
+  const points = uniqueSentences(
+    (manualFocus.length ? manualFocus : [`進行「${template.title}」活動`])
+      .slice(0, 3),
+  );
+
+  return points.map((item) => `${emoji} ${item}`).join("\n");
+}
+
+function templateParagraph(template: LessonTemplateForReport) {
+  const manualText = [template.activityDirection, template.aiStyle]
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("\n");
+  if (manualText) return manualText;
+  return `今天透過「${template.title || `第${template.lesson}堂課程`}」，孩子以遊戲方式完成練習。`;
+}
+
 function learningParagraph(course: string, progress: string, skills: string[]) {
   const profile = getLessonProfile(course, progress);
   const focusText = profile.skillFocus.length ? profile.skillFocus.join("、") : (skills.length ? skills.join("、") : "身體協調與參與自信");
@@ -108,22 +147,26 @@ export function generateTeachingReport(input: TeachingReportInput) {
   const progress = input.progress.trim() || `${course}課程練習`;
   const skills = joinList(input.skillFocus);
   const emoji = courseEmoji(course);
-  const lessonProfile = getLessonProfile(course, progress);
-  const values = learningValue(course, progress).map((item) => `${emoji} ${item}`).join("\n");
+  const template = input.lessonTemplate ?? null;
+  const lessonProfile = template ? null : getLessonProfile(course, progress);
+  const reportSkills = template?.skills?.length ? template.skills : (lessonProfile?.skillFocus ?? []);
+  const values = template
+    ? templateLearningValue(template, emoji)
+    : learningValue(course, progress).map((item) => `${emoji} ${item}`).join("\n");
   const statusText = normalizeClassStatus(input.classStatus);
   const statusSentence = statusText === "積極參與"
-    ? lessonProfile.classFeedback.active
+    ? (lessonProfile?.classFeedback.active ?? "孩子能投入課程活動，願意主動嘗試與互動。")
     : statusText === "持續練習"
-      ? lessonProfile.classFeedback.practice
-      : lessonProfile.classFeedback.steady;
+      ? (lessonProfile?.classFeedback.practice ?? "孩子仍在熟悉課程內容，需要更多鼓勵與練習。")
+      : (lessonProfile?.classFeedback.steady ?? "孩子能跟著老師引導完成課程內容。");
 
   const incidentSentence = input.incident
     ? `${emoji} 今日有特殊事件，孩子${input.incidentChild ? `「${input.incidentChild}」` : ""}狀況為：${input.incidentProcess || "已由老師現場觀察與處理"}。處理方式：${input.incidentAction || "已即時安撫並協助回到課程" }。${input.incidentNotified === "是" ? "已通知園所。" : "尚未通知園所。"}`
     : "";
 
   return {
-    aiSummary: `今天孩子學習：\n\n${values}\n\n${learningParagraph(course, progress, input.skillFocus)}`,
-    aiSkillFocus: `能力重點：${lessonProfile.skillFocus.join("、") || skills}`,
+    aiSummary: `今天孩子學習：\n\n${values}\n\n${template ? templateParagraph(template) : learningParagraph(course, progress, input.skillFocus)}`,
+    aiSkillFocus: `能力重點：${reportSkills.join("、") || skills}`,
     aiTeachingNote: [statusSentence, incidentSentence].filter(Boolean).join("\n\n"),
   };
 }

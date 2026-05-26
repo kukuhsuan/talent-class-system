@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     where: dept ? { department: { in: departmentQueryValues(dept) } } : {},
     include: {
       teacher: true,
+      assistantTeacher: true,
       schoolRel: true,
       attendances: { select: { date: true }, orderBy: { date: "asc" } },
     },
@@ -31,8 +32,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { schoolRel, teacher, scheduledDates, ...data } = body;
-    void schoolRel; void teacher;
+    const { schoolRel, teacher, assistantTeacher, scheduledDates, ...data } = body;
+    void schoolRel; void teacher; void assistantTeacher;
     const requestedCode = String(data.code ?? "").trim();
     const code = requestedCode || nextCourseCode((await prisma.course.findMany({ select: { code: true } })).map((r) => r.code));
 
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
         code,
         region: normalizeRegion(data.region),
         teacherId: Number(data.teacherId),
+        assistantTeacherId: data.assistantTeacherId ? Number(data.assistantTeacherId) : null,
         school: data.school,
         schoolId: data.schoolId ? Number(data.schoolId) : null,
         courseType: data.courseType ?? "",
@@ -79,13 +81,14 @@ export async function POST(req: NextRequest) {
         isActive: data.isActive ?? true,
         notes: data.notes ?? "",
       },
-      include: { teacher: true },
+      include: { teacher: true, assistantTeacher: true },
     });
 
     if (allScheduled.length > 0) {
       await createAttendancesForUniqueDays(allScheduled, {
         courseId: course.id,
         actualTeacherId: course.teacherId,
+        assistantTeacherId: course.assistantTeacherId ?? null,
         category: normalizeCategory(course.category),
         hours: 1,
         notes: "",

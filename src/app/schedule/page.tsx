@@ -6,6 +6,7 @@ import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, courseLabel, normalizeCategory,
 type Teacher = { id: number; name: string };
 type Course = {
   id: number; courseId?: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number;
+  assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   category: string; dayOfWeek: string; date: string; dateLabel: string; time: string; region: string; enrollCount: string; address: string;
 };
 
@@ -142,7 +143,8 @@ export default function SchedulePage() {
                         <div className="min-w-0">
                           <div className="font-semibold text-slate-900">{courseLabel(c.courseType)}</div>
                           <div className="mt-1 text-sm text-slate-600">{c.school}</div>
-                          <div className="mt-1 text-xs text-slate-500">{c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
+                          <div className="mt-1 text-xs text-slate-500">主教 {c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
+                          {c.assistantTeacher && <div className="mt-1 text-xs text-blue-600">助教 {c.assistantTeacher.name}</div>}
                         </div>
                         <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
                       </div>
@@ -200,7 +202,8 @@ export default function SchedulePage() {
                                 <div className="font-semibold">{courseLabel(c.courseType)}</div>
                                 {courseLabel(c.courseType) !== c.courseType && <div className="text-[10px] opacity-60">{c.courseType}</div>}
                                 <div className="text-[11px] opacity-75">{c.school}</div>
-                                <div className="text-[11px] opacity-75">{c.teacher.name}</div>
+                                <div className="text-[11px] opacity-75">主教：{c.teacher.name}</div>
+                                {c.assistantTeacher && <div className="text-[11px] font-medium text-blue-700">助教：{c.assistantTeacher.name}</div>}
                                 {c.time && <div className="text-[11px] opacity-80 whitespace-nowrap">{c.time}</div>}
                                 {c.address && <div className="text-[11px] opacity-60 break-words">{c.address}</div>}
                                 {c.enrollCount && <div className="text-[11px] opacity-60">{c.enrollCount}</div>}

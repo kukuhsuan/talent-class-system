@@ -12,7 +12,7 @@ type Teacher = { id: number; name: string };
 type School = { id: number; name: string; type: string; region: string; address: string };
 type CourseOption = { code: string; label: string };
 type Course = {
-  id: number; code: string; region: string; teacher: Teacher; teacherId: number;
+  id: number; code: string; region: string; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string;
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
   scheduledDates?: string[];
@@ -33,7 +33,7 @@ const DATE_MODES = [
 ] as const;
 
 const EMPTY_FORM = {
-  code: "", region: "", teacherId: 0, school: "", schoolId: null as number | null,
+  code: "", region: "", teacherId: 0, assistantTeacherId: null as number | null, school: "", schoolId: null as number | null,
   courseType: "", address: "", dayOfWeek: "星期一", time: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "",
   dateMode: "multiple",
   scheduledDateText: "",
@@ -208,10 +208,20 @@ export default function CoursesPage() {
     if ((form.dateMode === "range" || form.dateMode === "weekly") && scheduledDates.length === 0) return alert("請確認日期區間與星期設定");
     const autoDay = scheduledDates[0] ? weekdayOfIso(scheduledDates[0]) : form.dayOfWeek;
     const targetDays = new Set((scheduledDates.length > 0 ? scheduledDates.map(weekdayOfIso) : [form.dayOfWeek]).filter(Boolean));
+    const assistantId = form.assistantTeacherId ? Number(form.assistantTeacherId) : null;
     const conflicts = courses
       .filter((c) => c.id !== editing && c.time && form.time && c.time.trim() === form.time.trim() && targetDays.has(c.dayOfWeek))
-      .filter((c) => c.teacherId === form.teacherId || (form.schoolId ? c.schoolId === form.schoolId : c.school === form.school))
-      .map((c) => `${c.teacherId === form.teacherId ? "老師撞課" : "園所撞課"}：${describeCourse(c)}`);
+      .filter((c) => {
+        const teacherCrash = c.teacherId === form.teacherId || c.assistantTeacherId === form.teacherId;
+        const assistantCrash = assistantId ? c.teacherId === assistantId || c.assistantTeacherId === assistantId : false;
+        const schoolCrash = form.schoolId ? c.schoolId === form.schoolId : c.school === form.school;
+        return teacherCrash || assistantCrash || schoolCrash;
+      })
+      .map((c) => {
+        const teacherCrash = c.teacherId === form.teacherId || c.assistantTeacherId === form.teacherId;
+        const assistantCrash = assistantId ? c.teacherId === assistantId || c.assistantTeacherId === assistantId : false;
+        return `${teacherCrash ? "主教撞課" : assistantCrash ? "助教撞課" : "園所撞課"}：${describeCourse(c)}`;
+      });
     if (conflicts.length > 0 && !confirm(`偵測到可能排課衝突：\n\n${conflicts.slice(0, 6).join("\n")}\n\n仍要儲存嗎？`)) return;
     const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), category: normalizeCategory(form.category), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
@@ -252,7 +262,7 @@ export default function CoursesPage() {
   const edit = (c: Course) => {
     const existingDates = uniqueSortedDates(c.scheduledDates ?? []);
     const weekly = inferWeeklyDates(existingDates);
-    setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, school: c.school, schoolId: c.schoolId,
+    setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, assistantTeacherId: c.assistantTeacherId ?? null, school: c.school, schoolId: c.schoolId,
       courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, category: normalizeCategory(c.category),
       department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
       dateMode: weekly ? "weekly" : "multiple", scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: weekly ? [] : existingDates,
@@ -338,6 +348,20 @@ export default function CoursesPage() {
                 <option value={0}>-- 選擇老師 --</option>
                 {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
+            </div>
+            <div>
+              <label>助教老師（選填）</label>
+              <select
+                value={form.assistantTeacherId ?? ""}
+                onChange={(e) => setForm({ ...form, assistantTeacherId: e.target.value ? Number(e.target.value) : null })}
+                className="bg-blue-50/40"
+              >
+                <option value="">-- 無助教 --</option>
+                {teachers
+                  .filter((t) => t.id !== form.teacherId)
+                  .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-blue-500">選填，會同步到出勤與助教薪資。</p>
             </div>
             <div>
               <label>課程項目</label>
@@ -534,7 +558,8 @@ export default function CoursesPage() {
                     <span className="font-semibold text-slate-900">{c.school}</span>
                     <span className="font-mono text-xs text-slate-400">{c.code}</span>
                   </div>
-                  <div className="mt-1 text-sm text-slate-600">{courseLabel(c.courseType)} · {c.teacher.name}</div>
+                  <div className="mt-1 text-sm text-slate-600">{courseLabel(c.courseType)} · 主教 {c.teacher.name}</div>
+                  {c.assistantTeacher && <div className="mt-1 text-xs text-blue-600">助教 {c.assistantTeacher.name}</div>}
                   <div className="mt-1 text-xs text-slate-500">{c.dayOfWeek}{c.time ? ` · ${c.time}` : ""}</div>
                   {(c.scheduledDates?.length ?? 0) > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -585,7 +610,10 @@ export default function CoursesPage() {
                   <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{c.code}</td>
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{normalizeRegion(c.region)}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{c.school}</td>
-                  <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{c.teacher.name}</td>
+                  <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                    <div>主教：{c.teacher.name}</div>
+                    {c.assistantTeacher && <div className="mt-1 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600">助教：{c.assistantTeacher.name}</div>}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 whitespace-nowrap">
                       <span className="font-medium text-slate-900">{courseLabel(c.courseType)}</span>

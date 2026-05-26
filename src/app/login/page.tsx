@@ -41,8 +41,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">才藝課管理系統</h1>
-        <p className="text-center text-gray-400 text-sm mb-8">請輸入帳號密碼登入</p>
+        <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">WaysLeader AI</h1>
+        <p className="text-center text-blue-600 text-sm font-semibold">幼兒園學習成果平台</p>
+        <p className="text-center text-gray-400 text-sm mb-8 mt-2">登入後查看課程進度、孩子成長與 AI 成果紀錄</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             type="text"

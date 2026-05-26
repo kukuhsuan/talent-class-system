@@ -31,12 +31,55 @@ model CourseProgress {
   @@unique([courseType, lesson])
 }
 
+model LessonTemplate {
+  id                Int      @id @default(autoincrement())
+  courseType        String
+  lesson            Int
+  title             String
+  focus             String   @default("")
+  skills            String   @default("")
+  activityDirection String   @default("")
+  aiStyle           String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([courseType, lesson])
+}
+
 model CourseOption {
   id        Int      @id @default(autoincrement())
   code      String   @unique
   label     String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+}
+
+model SkillCard {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  icon        String   @default("")
+  imageUrl    String   @default("")
+  description String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EquipmentStatus {
+  id        Int      @id @default(autoincrement())
+  schoolId  Int?
+  school    String   @default("")
+  name      String
+  quantity  String   @default("")
+  status    String   @default("正常")
+  notes     String   @default("")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([school])
 }
 
 model UserAccount {
@@ -51,101 +94,107 @@ model UserAccount {
 }
 
 model Teacher {
-  id              Int          @id @default(autoincrement())
-  name            String       @unique
-  rateAfterSchool Int          @default(500)
-  rateInSchool    Int          @default(500)
-  rateDemo        Int          @default(200)
-  travelFee       Int          @default(0)
-  isAssistant     Boolean      @default(false)
-  assistantFee    Int          @default(0)
-  notes           String       @default("")
-  email           String       @default("")
-  phone           String       @default("")
-  lineUserId      String?      @unique
-  lineBindCode    String?      @unique
-  lineRegion      String       @default("")
-  createdAt       DateTime     @default(now())
-  courses         Course[]
-  attendances     Attendance[] @relation("ActualTeacher")
-  substitutions   Substitute[] @relation("SubstituteTeacher")
-  absences        Substitute[] @relation("OriginalTeacher")
+  id                   Int          @id @default(autoincrement())
+  name                 String       @unique
+  rateAfterSchool      Int          @default(500)
+  rateInSchool         Int          @default(500)
+  rateDemo             Int          @default(200)
+  travelFee            Int          @default(0)
+  isAssistant          Boolean      @default(false)
+  assistantFee         Int          @default(0)
+  notes                String       @default("")
+  email                String       @default("")
+  phone                String       @default("")
+  lineUserId           String?      @unique
+  lineBindCode         String?      @unique
+  lineRegion           String       @default("")
+  createdAt            DateTime     @default(now())
+  courses              Course[]
+  assistantCourses     Course[]     @relation("AssistantTeacher")
+  attendances          Attendance[] @relation("ActualTeacher")
+  assistantAttendances Attendance[] @relation("AssistantAttendance")
+  substitutions        Substitute[] @relation("SubstituteTeacher")
+  absences             Substitute[] @relation("OriginalTeacher")
 }
 
 model Course {
-  id          Int          @id @default(autoincrement())
-  code        String       @unique
-  region      String       @default("")
-  teacher     Teacher      @relation(fields: [teacherId], references: [id])
-  teacherId   Int
-  school      String
-  schoolId    Int?
-  schoolRel   School?      @relation(fields: [schoolId], references: [id])
-  courseType  String
-  address     String       @default("")
-  dayOfWeek   String       @default("")
-  time        String       @default("")
-  category    String       @default("課後")
-  department  String       @default("幼兒園")
-  enrollCount String       @default("")
-  isActive    Boolean      @default(true)
-  notes       String       @default("")
-  createdAt   DateTime     @default(now())
-  attendances Attendance[]
+  id                 Int          @id @default(autoincrement())
+  code               String       @unique
+  region             String       @default("")
+  teacher            Teacher      @relation(fields: [teacherId], references: [id])
+  teacherId          Int
+  assistantTeacher   Teacher?     @relation("AssistantTeacher", fields: [assistantTeacherId], references: [id])
+  assistantTeacherId Int?
+  school             String
+  schoolId           Int?
+  schoolRel          School?      @relation(fields: [schoolId], references: [id])
+  courseType         String
+  address            String       @default("")
+  dayOfWeek          String       @default("")
+  time               String       @default("")
+  category           String       @default("課後")
+  department         String       @default("幼兒園")
+  enrollCount        String       @default("")
+  isActive           Boolean      @default(true)
+  notes              String       @default("")
+  createdAt          DateTime     @default(now())
+  attendances        Attendance[]
 }
 
 model Attendance {
-  id              Int       @id @default(autoincrement())
-  date            DateTime
-  course          Course    @relation(fields: [courseId], references: [id])
-  courseId        Int
-  actualTeacher   Teacher   @relation("ActualTeacher", fields: [actualTeacherId], references: [id])
-  actualTeacherId Int
-  studentCount    Int?
-  studentCountA   Int?
-  studentCountB   Int?
-  cancelled       Boolean   @default(false)
-  cancelReason    String    @default("")
-  makeupDate      DateTime?
-  makeupDone      Boolean   @default(false)
-  category        String    @default("課後")
-  hours           Float     @default(1)
-  notes           String    @default("")
-  reportContent   String    @default("")
-  reportSentAt    DateTime?
-  schoolNotifyStatus String @default("未通知")
-  schoolNotifyError String @default("")
-  schoolNotifiedAt DateTime?
-  skillFocus      String    @default("")
-  classStatus     String    @default("")
-  incident        Boolean   @default(false)
-  incidentChild   String    @default("")
-  incidentProcess String    @default("")
-  incidentAction  String    @default("")
-  incidentNotified String   @default("")
-  reportPhotos    String    @default("")
-  aiSummary       String    @default("")
-  aiSkillFocus    String    @default("")
-  aiTeachingNote  String    @default("")
-  createdAt       DateTime  @default(now())
-  assessments     KindergartenAssessment[]
+  id                 Int                      @id @default(autoincrement())
+  date               DateTime
+  course             Course                   @relation(fields: [courseId], references: [id])
+  courseId           Int
+  actualTeacher      Teacher                  @relation("ActualTeacher", fields: [actualTeacherId], references: [id])
+  actualTeacherId    Int
+  assistantTeacher   Teacher?                 @relation("AssistantAttendance", fields: [assistantTeacherId], references: [id])
+  assistantTeacherId Int?
+  studentCount       Int?
+  studentCountA      Int?
+  studentCountB      Int?
+  cancelled          Boolean                  @default(false)
+  cancelReason       String                   @default("")
+  makeupDate         DateTime?
+  makeupDone         Boolean                  @default(false)
+  category           String                   @default("課後")
+  hours              Float                    @default(1)
+  notes              String                   @default("")
+  reportContent      String                   @default("")
+  reportSentAt       DateTime?
+  schoolNotifyStatus String                   @default("未通知")
+  schoolNotifyError  String                   @default("")
+  schoolNotifiedAt   DateTime?
+  skillFocus         String                   @default("")
+  classStatus        String                   @default("")
+  incident           Boolean                  @default(false)
+  incidentChild      String                   @default("")
+  incidentProcess    String                   @default("")
+  incidentAction     String                   @default("")
+  incidentNotified   String                   @default("")
+  reportPhotos       String                   @default("")
+  aiSummary          String                   @default("")
+  aiSkillFocus       String                   @default("")
+  aiTeachingNote     String                   @default("")
+  createdAt          DateTime                 @default(now())
+  assessments        KindergartenAssessment[]
 
   @@unique([courseId, date])
 }
 
 model KindergartenAssessment {
-  id                Int      @id @default(autoincrement())
-  attendance        Attendance @relation(fields: [attendanceId], references: [id])
-  attendanceId      Int
-  childName         String
-  semester          String   @default("")
-  courseName        String   @default("")
-  scores            String   @default("")
-  comment           String   @default("")
-  title             String   @default("")
-  certificatePayload String  @default("")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 Int        @id @default(autoincrement())
+  attendance         Attendance @relation(fields: [attendanceId], references: [id])
+  attendanceId       Int
+  childName          String
+  semester           String     @default("")
+  courseName         String     @default("")
+  scores             String     @default("")
+  comment            String     @default("")
+  title              String     @default("")
+  certificatePayload String     @default("")
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   @@index([attendanceId])
 }

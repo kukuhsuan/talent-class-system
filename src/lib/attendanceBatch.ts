@@ -14,6 +14,7 @@ function dayKey(d: Date): string {
 export type AttendanceCreateFields = {
   courseId: number;
   actualTeacherId: number;
+  assistantTeacherId?: number | null;
   studentCount?: number | null;
   cancelled?: boolean;
   cancelReason?: string;
@@ -61,6 +62,7 @@ export async function createAttendancesForUniqueDays(
         date: parseAttendanceDay(dateStr),
         courseId: fields.courseId,
         actualTeacherId: fields.actualTeacherId,
+        assistantTeacherId: fields.assistantTeacherId ?? null,
         studentCount: fields.studentCount ?? null,
         cancelled: fields.cancelled ?? false,
         cancelReason: fields.cancelReason ?? "",
@@ -70,7 +72,7 @@ export async function createAttendancesForUniqueDays(
         hours: fields.hours ?? 1,
         notes: fields.notes ?? "",
       },
-      include: { course: true, actualTeacher: true },
+      include: { course: true, actualTeacher: true, assistantTeacher: true },
     });
     records.push(rec);
     existingKeys.add(dateStr);

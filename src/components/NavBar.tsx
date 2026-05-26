@@ -28,6 +28,7 @@ const GROUPS = [
       { href: "/courses", label: "課程排班" },
       { href: "/progress", label: "課程進度" },
       { href: "/substitutes", label: "代課紀錄" },
+      { href: "/equipment", label: "器材管理" },
     ],
   },
   {
@@ -84,7 +85,10 @@ export default function NavBar() {
   return (
     <header className="sticky top-0 z-50 bg-blue-900 text-white shadow-lg">
       <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-2 md:px-4 md:py-3">
-        <Link href="/" className="mr-1 whitespace-nowrap text-base font-bold md:mr-3">才藝課管理</Link>
+        <Link href="/" className="mr-1 whitespace-nowrap md:mr-3">
+          <span className="block text-base font-bold leading-tight">WaysLeader AI</span>
+          <span className="hidden text-[11px] font-medium leading-tight text-blue-200 lg:block">幼兒園學習成果平台</span>
+        </Link>
         <button
           onClick={() => setMobileOpen((v) => !v)}
           className="ml-auto rounded-lg border border-blue-700 px-3 py-2 text-sm font-medium text-blue-100 md:hidden"

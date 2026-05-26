@@ -12,6 +12,29 @@ function dateText(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function firstPhotoUrl(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return String(parsed[0] ?? "").trim();
+  } catch {
+    // Existing rows may contain a plain URL.
+  }
+  return raw;
+}
+
+async function getSkillCards() {
+  try {
+    return await prisma.skillCard.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    }) as unknown as Array<{ name: string; icon: string; imageUrl: string; description: string }>;
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
@@ -22,7 +45,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 1);
 
-    const school = await prisma.school.findUnique({ where: { id: schoolId } });
+    const [school, skillCards] = await Promise.all([
+      prisma.school.findUnique({ where: { id: schoolId } }),
+      getSkillCards(),
+    ]);
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
 
     const records = await prisma.attendance.findMany({
@@ -54,6 +80,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       aiSummary: string;
       aiSkillFocus: string;
       aiTeachingNote: string;
+      reportPhotos: string;
       schoolNotifyStatus: string;
       actualTeacher: { name: string };
       course: { id: number; school: string; courseType: string; department: string; category: string; time: string };
@@ -86,6 +113,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       aiSummary: r.aiSummary,
       aiSkillFocus: r.aiSkillFocus,
       aiTeachingNote: r.aiTeachingNote,
+      representativePhotoUrl: firstPhotoUrl(r.reportPhotos),
       schoolNotifyStatus: r.schoolNotifyStatus,
     }));
 
@@ -111,6 +139,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       certificateUrl: `/school-portal/${encodeURIComponent(token)}/certificate/${a.id}`,
     })));
 
+    const courseTypes = Array.from(new Set(records.map((r) => courseLabel(r.course.courseType)).filter(Boolean)));
+    const progressRows = courseTypes.length > 0
+      ? await prisma.courseProgress.findMany({
+          where: { courseType: { in: courseTypes } },
+          orderBy: [{ courseType: "asc" }, { lesson: "asc" }],
+        })
+      : [];
+    const curriculum = courseTypes.map((courseType) => ({
+      courseType,
+      courseName: courseLabel(courseType),
+      items: progressRows
+        .filter((row) => row.courseType === courseType)
+        .map((row) => ({ lesson: row.lesson, title: row.title })),
+    })).filter((row) => row.items.length > 0);
+
     const totalPeople = monthlyRows.reduce((sum, row) => sum + row.studentCount, 0);
 
     return NextResponse.json({
@@ -133,7 +176,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       },
       reports,
       monthlyRows,
+      curriculum,
       assessments,
+      skillCards,
     });
   } catch {
     return NextResponse.json({ error: "園所連結無效或已過期" }, { status: 401 });

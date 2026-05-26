@@ -5,7 +5,7 @@ import { normalizeCategory } from "@/lib/courseMeta";
 
 type DetailRow = {
   date: string; school: string; courseType: string; category: string;
-  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean;
+  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
 };
 
 function buildTeachingFeeMessage(teacherName: string, year: number, month: number, details: DetailRow[], total: number): object {
@@ -24,7 +24,7 @@ function buildTeachingFeeMessage(teacherName: string, year: number, month: numbe
     contents: [
       {
         type: "text",
-        text: `${fmtDate(r.date)} ${r.school}｜${courseLabel(r.courseType)}${r.isSub ? "（代課）" : ""}`,
+        text: `${fmtDate(r.date)} ${r.school}｜${courseLabel(r.courseType)}${r.isSub ? "（代課）" : ""}${r.role === "助教" ? "（助教）" : ""}`,
         size: "sm",
         color: "#2E2B27",
         weight: "bold",
@@ -94,19 +94,20 @@ export async function POST(req: NextRequest) {
   if (!teacher.lineUserId) return NextResponse.json({ error: "老師尚未綁定 LINE" }, { status: 400 });
 
   const attendances = await prisma.attendance.findMany({
-    where: { actualTeacherId: teacher.id, cancelled: false, date: { gte: start, lt: end } },
+    where: { OR: [{ actualTeacherId: teacher.id }, { assistantTeacherId: teacher.id }], cancelled: false, date: { gte: start, lt: end } },
     include: { course: true },
     orderBy: { date: "asc" },
   }) as unknown as Array<{
-    id: number; date: Date; hours: number; category: string; notes: string;
+    id: number; date: Date; hours: number; category: string; notes: string; actualTeacherId: number; assistantTeacherId?: number | null;
     course: { school: string; courseType: string; teacherId: number };
   }>;
 
   const details: DetailRow[] = attendances.map((a) => {
     const category = normalizeCategory(a.category);
     const isDemo = category === "Demo";
-    const rate = teacher.isAssistant ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
-    const travelFee = teacher.isAssistant || isDemo ? 0 : teacher.travelFee;
+    const role = a.assistantTeacherId === teacher.id ? "助教" : "主教";
+    const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
+    const travelFee = role === "助教" || isDemo ? 0 : teacher.travelFee;
     const amount = a.hours * rate + travelFee;
     return {
       date: a.date.toISOString(),
@@ -117,7 +118,8 @@ export async function POST(req: NextRequest) {
       rate,
       travelFee,
       amount,
-      isSub: a.course.teacherId !== teacher.id,
+      isSub: role === "主教" && a.course.teacherId !== teacher.id,
+      role,
     };
   });
 

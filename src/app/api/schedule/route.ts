@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
         ...(dept ? { department: { in: departmentQueryValues(dept) } } : {}),
       },
     },
-    include: { course: { include: { teacher: true, schoolRel: true } } },
+    include: { course: { include: { teacher: true, assistantTeacher: true, schoolRel: true } } },
     orderBy: { date: "asc" },
   }) as unknown as Array<{
     id: number;
@@ -33,6 +33,8 @@ export async function GET(req: NextRequest) {
       id: number; code: string; region: string; school: string; courseType: string; address?: string;
       dayOfWeek: string; time: string; category: string; enrollCount: string; teacherId: number;
       teacher: { id: number; name: string };
+      assistantTeacher?: { id: number; name: string } | null;
+      assistantTeacherId?: number | null;
       schoolRel?: { address?: string } | null;
     };
   }>;
@@ -56,6 +58,8 @@ export async function GET(req: NextRequest) {
         enrollCount: a.course.enrollCount,
         teacherId: a.course.teacherId,
         teacher: a.course.teacher,
+        assistantTeacherId: a.course.assistantTeacherId ?? null,
+        assistantTeacher: a.course.assistantTeacher ?? null,
       };
     }));
   }
@@ -66,12 +70,14 @@ export async function GET(req: NextRequest) {
       ...(regionValues.length > 0 ? { region: { in: regionValues } } : {}),
       ...(dept ? { department: { in: departmentQueryValues(dept) } } : {}),
     },
-    include: { teacher: true, schoolRel: true },
+    include: { teacher: true, assistantTeacher: true, schoolRel: true },
     orderBy: [{ region: "asc" }, { school: "asc" }, { dayOfWeek: "asc" }],
   }) as unknown as Array<{
     id: number; code: string; region: string; school: string; courseType: string; address?: string;
     dayOfWeek: string; time: string; category: string; enrollCount: string; teacherId: number;
     teacher: { id: number; name: string };
+    assistantTeacher?: { id: number; name: string } | null;
+    assistantTeacherId?: number | null;
     schoolRel?: { address?: string } | null;
   }>;
 

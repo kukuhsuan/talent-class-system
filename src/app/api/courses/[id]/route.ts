@@ -7,8 +7,8 @@ import { normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/c
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { schoolRel, teacher, scheduledDates, ...data } = await req.json();
-    void schoolRel; void teacher;
+    const { schoolRel, teacher, assistantTeacher, scheduledDates, ...data } = await req.json();
+    void schoolRel; void teacher; void assistantTeacher;
     const courseId = Number(id);
     const code = String(data.code ?? "").trim();
 
@@ -44,6 +44,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         code,
         region: normalizeRegion(data.region),
         teacherId: Number(data.teacherId),
+        assistantTeacherId: data.assistantTeacherId ? Number(data.assistantTeacherId) : null,
         school: data.school,
         schoolId: data.schoolId ? Number(data.schoolId) : null,
         courseType: data.courseType ?? "",
@@ -56,13 +57,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         isActive: data.isActive ?? true,
         notes: data.notes ?? "",
       },
-      include: { teacher: true },
+      include: { teacher: true, assistantTeacher: true },
+    });
+
+    await prisma.attendance.updateMany({
+      where: { courseId: course.id },
+      data: { assistantTeacherId: course.assistantTeacherId ?? null },
     });
 
     if (allScheduled.length > 0) {
       await createAttendancesForUniqueDays(allScheduled, {
         courseId: course.id,
         actualTeacherId: course.teacherId,
+        assistantTeacherId: course.assistantTeacherId ?? null,
         category: normalizeCategory(course.category),
         hours: 1,
         notes: "",

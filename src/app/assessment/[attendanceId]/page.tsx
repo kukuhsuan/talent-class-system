@@ -86,7 +86,7 @@ export default function KindergartenAssessmentForm() {
   return (
     <div className="mx-auto max-w-md pb-10">
       <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#F5EBDD] via-[#F9F6EF] to-[#DCE8DD] px-5 pb-6 pt-5 shadow-sm">
-        <div className="text-xs font-semibold tracking-[0.2em] text-[#7B9E87]">UPBEAR GROWTH ASSESSMENT</div>
+        <div className="text-xs font-semibold tracking-[0.2em] text-[#7B9E87]">WAYSLEADER AI GROWTH ASSESSMENT</div>
         <h1 className="mt-2 text-2xl font-bold text-[#2E2B27]">幼兒運動評量</h1>
         <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-slate-700 shadow-sm">
           <div className="font-semibold text-slate-900">{info.school}</div>

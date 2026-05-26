@@ -5,7 +5,7 @@ import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 
 type DetailRow = {
   date: Date; school: string; courseType: string; category: string;
-  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean;
+  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
 };
 
 function buildHtml(teacherName: string, year: number, month: number, details: DetailRow[], total: number): string {
@@ -15,7 +15,7 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
   const rows = details.map((r) => `
     <tr>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${fmtDate(r.date)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:500;">${r.school}${r.isSub ? ' <span style="color:#f97316;font-size:12px">代</span>' : ""}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:500;">${r.school}${r.isSub ? ' <span style="color:#f97316;font-size:12px">代</span>' : ""}${r.role === "助教" ? ' <span style="color:#2563eb;font-size:12px">助教</span>' : ""}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${courseLabel(r.courseType)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.category}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.hours}</td>
@@ -32,7 +32,7 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
   <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.1);">
     <div style="background:#1e3a8a;padding:24px 28px;">
       <h1 style="color:#fff;margin:0;font-size:20px;">【${teacherName}】${year}年${month}月薪資明細單</h1>
-      <p style="color:#93c5fd;margin:6px 0 0;font-size:14px;">才藝課管理系統自動寄送</p>
+      <p style="color:#93c5fd;margin:6px 0 0;font-size:14px;">WaysLeader AI 幼兒園學習成果平台</p>
     </div>
     <div style="padding:24px 28px;">
       <table style="width:100%;border-collapse:collapse;font-size:14px;">
@@ -58,7 +58,7 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
       </table>
     </div>
     <div style="padding:16px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;">
-      <p style="margin:0;font-size:12px;color:#94a3b8;">此信件由才藝課管理系統自動寄送，如有疑問請聯絡管理員。</p>
+      <p style="margin:0;font-size:12px;color:#94a3b8;">此信件由 WaysLeader AI 自動寄送，如有疑問請聯絡平台窗口。</p>
     </div>
   </div>
 </body>
@@ -80,19 +80,20 @@ export async function POST(req: NextRequest) {
   if (!teacher.email) return NextResponse.json({ error: "老師尚未設定 Email" }, { status: 400 });
 
   const attendances = await prisma.attendance.findMany({
-    where: { actualTeacherId: teacher.id, cancelled: false, date: { gte: start, lt: end } },
+    where: { OR: [{ actualTeacherId: teacher.id }, { assistantTeacherId: teacher.id }], cancelled: false, date: { gte: start, lt: end } },
     include: { course: true },
     orderBy: { date: "asc" },
   }) as unknown as Array<{
-    id: number; date: Date; hours: number; category: string;
+    id: number; date: Date; hours: number; category: string; actualTeacherId: number; assistantTeacherId?: number | null;
     course: { school: string; courseType: string; teacherId: number };
   }>;
 
   const details: DetailRow[] = attendances.map((a) => {
     const category = normalizeCategory(a.category);
     const isDemo = category === "Demo";
-    const rate = teacher.isAssistant ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
-    const travelFee = teacher.isAssistant || isDemo ? 0 : teacher.travelFee;
+    const role = a.assistantTeacherId === teacher.id ? "助教" : "主教";
+    const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
+    const travelFee = role === "助教" || isDemo ? 0 : teacher.travelFee;
     return {
       date: a.date,
       school: a.course.school,
@@ -102,7 +103,8 @@ export async function POST(req: NextRequest) {
       rate,
       travelFee,
       amount: a.hours * rate + travelFee,
-      isSub: a.course.teacherId !== teacher.id,
+      isSub: role === "主教" && a.course.teacherId !== teacher.id,
+      role,
     };
   });
 

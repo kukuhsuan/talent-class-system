@@ -9,16 +9,16 @@ import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
-type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category: string };
+type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null; category: string };
 type Attendance = {
-  id: number; date: string; course: Course; actualTeacher: Teacher;
+  id: number; date: string; course: Course; actualTeacher: Teacher; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   studentCount: number | null; cancelled: boolean; cancelReason: string; makeupDate: string | null; makeupDone: boolean;
   category: string; hours: number; notes: string;
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const EMPTY_FORM = {
-  date: today(), courseId: 0, actualTeacherId: 0,
+  date: today(), courseId: 0, actualTeacherId: 0, assistantTeacherId: null as number | null,
   studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 1, notes: "",
   extraDates: [] as string[],
 };
@@ -59,7 +59,7 @@ export default function AttendancePage() {
 
   const onCourseChange = (courseId: number) => {
     const c = courses.find((x) => x.id === courseId);
-    setForm((f) => ({ ...f, courseId, actualTeacherId: c?.teacherId ?? 0, category: normalizeCategory(c?.category) }));
+    setForm((f) => ({ ...f, courseId, actualTeacherId: c?.teacherId ?? 0, assistantTeacherId: c?.assistantTeacherId ?? null, category: normalizeCategory(c?.category) }));
   };
 
   const save = async () => {
@@ -110,7 +110,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, extraDates: [] });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, extraDates: [] });
     setEditing(r.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -232,6 +232,15 @@ export default function AttendancePage() {
               <select value={form.actualTeacherId} onChange={(e) => setForm({ ...form, actualTeacherId: Number(e.target.value) })}>
                 <option value={0}>-- 選擇老師 --</option>
                 {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>助教老師（選填）</label>
+              <select value={form.assistantTeacherId ?? ""} onChange={(e) => setForm({ ...form, assistantTeacherId: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">-- 無助教 --</option>
+                {teachers
+                  .filter((t) => t.id !== form.actualTeacherId)
+                  .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
             <div>
@@ -376,7 +385,8 @@ export default function AttendancePage() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="font-semibold text-slate-900">{fmtShort(r.date)}</div>
-                              <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜{r.actualTeacher.name}</div>
+                              <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜主教 {r.actualTeacher.name}</div>
+                              {(r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                             </div>
                             {r.cancelled ? <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-600">停課</span> : <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-600">出課</span>}
                           </div>
@@ -421,6 +431,7 @@ export default function AttendancePage() {
                               </td>
                               <td className="px-4 py-4">
                                 <div className={substitute ? "font-medium text-orange-700" : "text-slate-700"}>{r.actualTeacher.name}</div>
+                                {(r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教：{(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                                 {substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                               </td>
                               <td className="px-4 py-4 text-center">{r.studentCount ?? <span className="text-amber-600">待回報</span>}</td>

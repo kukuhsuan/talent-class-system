@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import { normalizeCategory } from "@/lib/courseMeta";
 
 type TeacherRow = { id: number; name: string; rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number };
-type AttendanceRow = { id: number; actualTeacherId: number; cancelled: boolean; category: string; hours: number; course: { teacherId: number } };
+type AttendanceRow = { id: number; actualTeacherId: number; assistantTeacherId?: number | null; cancelled: boolean; category: string; hours: number; course: { teacherId: number } };
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -35,8 +35,10 @@ export async function GET(req: NextRequest) {
     { header: "老師姓名", key: "name", width: 14 },
     { header: "正課時數", key: "regularHours", width: 12 },
     { header: "代課時數", key: "subHours", width: 12 },
+    { header: "助教時數", key: "assistantHours", width: 12 },
     { header: "Demo時數", key: "demoHours", width: 12 },
     { header: "課程薪資", key: "regularPay", width: 14 },
+    { header: "助教薪資", key: "assistantPay", width: 14 },
     { header: "Demo薪資", key: "demoPay", width: 14 },
     { header: "交通費", key: "travelPay", width: 12 },
     { header: "合計", key: "total", width: 14 },
@@ -54,25 +56,26 @@ export async function GET(req: NextRequest) {
 
   (teachers as unknown as TeacherRow[]).forEach((teacher) => {
     const myRecords = attendances.filter((a) => a.actualTeacherId === teacher.id && !a.cancelled);
+    const assistantRecords = attendances.filter((a) => a.assistantTeacherId === teacher.id && !a.cancelled);
     const regularRecords = myRecords.filter((a) => normalizeCategory(a.category) !== "Demo");
     const demoRecords = myRecords.filter((a) => normalizeCategory(a.category) === "Demo");
     const subRecords = regularRecords.filter((a) => a.course.teacherId !== teacher.id);
 
-    if (myRecords.length === 0) return;
+    if (myRecords.length + assistantRecords.length === 0) return;
 
     const regularHours = regularRecords.reduce((s, a) => s + a.hours, 0);
+    const assistantHours = assistantRecords.reduce((s, a) => s + a.hours, 0);
     const demoHours = demoRecords.reduce((s, a) => s + a.hours, 0);
     const subHours = subRecords.reduce((s, a) => s + a.hours, 0);
-    const regularPay = teacher.isAssistant
-      ? myRecords.reduce((s, a) => s + a.hours * teacher.assistantFee, 0)
-      : regularRecords.reduce((s, a) => s + a.hours * (normalizeCategory(a.category) === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool), 0);
-    const demoPay = teacher.isAssistant ? 0 : demoHours * teacher.rateDemo;
-    const travelPay = teacher.isAssistant ? 0 : regularHours * teacher.travelFee;
-    const total = regularPay + demoPay + travelPay;
+    const regularPay = regularRecords.reduce((s, a) => s + a.hours * (normalizeCategory(a.category) === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool), 0);
+    const assistantPay = assistantRecords.reduce((s, a) => s + a.hours * teacher.assistantFee, 0);
+    const demoPay = demoHours * teacher.rateDemo;
+    const travelPay = regularHours * teacher.travelFee;
+    const total = regularPay + assistantPay + demoPay + travelPay;
 
     grandTotal += total;
 
-    const row = ws.addRow({ name: teacher.name, regularHours, subHours, demoHours, regularPay, demoPay, travelPay, total });
+    const row = ws.addRow({ name: teacher.name, regularHours, subHours, assistantHours, demoHours, regularPay, assistantPay, demoPay, travelPay, total });
     row.eachCell((cell) => { cell.border = borderStyle; cell.font = { name: "Arial", size: 10 }; });
     row.getCell("total").font = { bold: true, name: "Arial", size: 10 };
   });

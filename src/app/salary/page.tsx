@@ -5,12 +5,12 @@ import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 type Teacher = { id: number; name: string; rateAfterSchool: number; travelFee: number };
 type Detail = {
   id: number; date: string; school: string; courseType: string; category: string;
-  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean; department: string; notes: string;
+  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean; role?: string; department: string; notes: string;
 };
 type SalaryRow = {
   teacher: Teacher;
-  regularHours: number; subHours: number; demoHours: number;
-  regularPay: number; demoPay: number; travelPay: number; total: number;
+  regularHours: number; subHours: number; demoHours: number; assistantHours?: number;
+  regularPay: number; demoPay: number; assistantPay?: number; travelPay: number; total: number;
   hasActivity: boolean; details: Detail[];
 };
 
@@ -163,7 +163,7 @@ export default function SalaryPage() {
             <div className="bg-green-50 rounded-xl border border-green-200 p-4">
               <p className="text-sm text-green-600 font-medium">本月總節數</p>
               <p className="text-2xl font-bold text-green-800">
-                {active.reduce((s, r) => s + r.regularHours + r.demoHours, 0)} 節
+                {active.reduce((s, r) => s + r.regularHours + r.demoHours + (r.assistantHours ?? 0), 0)} 節
               </p>
             </div>
             <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
@@ -202,10 +202,12 @@ export default function SalaryPage() {
                     onClick={() => r.hasActivity && toggleExpand(r.teacher.id)}>
                     <div className="flex-1 flex items-center gap-4 flex-wrap">
                       <span className="font-semibold text-slate-800 w-20">{r.teacher.name}</span>
-                      <span className="text-sm text-slate-500">{r.regularHours > 0 ? `正課 ${r.regularHours}h` : ""}</span>
-                      {r.subHours > 0 && <span className="text-sm text-orange-500">代課 {r.subHours}h</span>}
-                      {r.demoHours > 0 && <span className="text-sm text-purple-500">Demo {r.demoHours}h</span>}
-                      {r.travelPay > 0 && <span className="text-sm text-slate-400">車費 ${fmt(r.travelPay)}</span>}
+                      {(r.regularHours + r.demoHours) > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">主教堂數 {r.regularHours + r.demoHours}h</span>}
+                      {(r.regularPay + r.demoPay) > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">主教薪資 ${fmt(r.regularPay + r.demoPay)}</span>}
+                      {r.subHours > 0 && <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-600">代課 {r.subHours}h</span>}
+                      {(r.assistantHours ?? 0) > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">助教堂數 {r.assistantHours}h</span>}
+                      {(r.assistantPay ?? 0) > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">助教薪資 ${fmt(r.assistantPay ?? 0)}</span>}
+                      {r.travelPay > 0 && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">車費 ${fmt(r.travelPay)}</span>}
                       <span className="font-bold text-blue-700 ml-auto">{r.total > 0 ? `$${fmt(r.total)}` : "—"}</span>
                     </div>
                     <div className="flex items-center gap-2 ml-2" onClick={(e) => e.stopPropagation()}>
@@ -238,6 +240,7 @@ export default function SalaryPage() {
                             <th className="text-left py-2 font-medium">學校</th>
                             <th className="text-left py-2 font-medium">項目</th>
                             <th className="text-center py-2 font-medium">類別</th>
+                            <th className="text-center py-2 font-medium">身份</th>
                             <th className="text-center py-2 font-medium">時數</th>
                             <th className="text-right py-2 font-medium">時薪</th>
                             <th className="text-right py-2 font-medium">車費</th>
@@ -256,6 +259,9 @@ export default function SalaryPage() {
                               <td className="py-1.5 text-center">
                                 <span className={`text-xs font-medium ${catColor[normalizeCategory(d.category)] ?? "text-slate-500"}`}>{normalizeCategory(d.category)}</span>
                               </td>
+                              <td className="py-1.5 text-center">
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${d.role === "助教" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>{d.role ?? "主教"}</span>
+                              </td>
                               <td className="py-1.5 text-center">{d.hours}</td>
                               <td className="py-1.5 text-right text-slate-500">${d.rate}</td>
                               <td className="py-1.5 text-right text-slate-400">{d.travelFee > 0 ? `$${d.travelFee}` : "—"}</td>
@@ -265,7 +271,7 @@ export default function SalaryPage() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 border-slate-300 font-bold">
-                            <td colSpan={7} className="pt-2 text-right text-slate-700">本月合計</td>
+                            <td colSpan={8} className="pt-2 text-right text-slate-700">本月合計</td>
                             <td className="pt-2 text-right text-blue-700">${fmt(r.total)}</td>
                           </tr>
                         </tfoot>

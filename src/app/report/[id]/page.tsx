@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useParams } from "next/navigation";
-import { CLASS_STATUS_OPTIONS, SKILL_FOCUS_OPTIONS } from "@/lib/teachingReport";
+import { CLASS_STATUS_META, CLASS_STATUS_OPTIONS, SKILL_FOCUS_OPTIONS, normalizeClassStatus } from "@/lib/teachingReport";
 
 type ReportInfo = {
   id: number;
@@ -25,6 +25,7 @@ type ReportInfo = {
   aiSummary: string;
   aiSkillFocus: string;
   aiTeachingNote: string;
+  representativePhotoUrl?: string;
   shouldAskAssessment?: boolean;
   assessmentCount?: number;
   schoolNotifyStatus?: string;
@@ -35,13 +36,61 @@ const EMPTY = {
   studentCount: "",
   progress: "",
   skillFocus: [] as string[],
-  classStatus: "很順利",
+  classStatus: "積極參與",
+  representativePhotoUrl: "",
   incident: false,
   incidentChild: "",
   incidentProcess: "",
   incidentAction: "",
   incidentNotified: "否",
 };
+
+function loadLocalImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("圖片讀取失敗"));
+    };
+    img.src = url;
+  });
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) reject(new Error("圖片壓縮失敗"));
+      else resolve(blob);
+    }, "image/jpeg", quality);
+  });
+}
+
+async function compressReportPhoto(file: File) {
+  const img = await loadLocalImage(file);
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const width = Math.max(1, Math.round(img.width * scale));
+  const height = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("手機瀏覽器不支援圖片壓縮");
+  ctx.drawImage(img, 0, 0, width, height);
+
+  let result = await canvasToBlob(canvas, 0.76);
+  for (const quality of [0.66, 0.56, 0.46]) {
+    if (result.size <= 520 * 1024) break;
+    result = await canvasToBlob(canvas, quality);
+  }
+
+  return new File([result], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
 
 export default function TeacherReportPage() {
   const params = useParams<{ id: string }>();
@@ -55,6 +104,9 @@ export default function TeacherReportPage() {
   const [assessmentUrl, setAssessmentUrl] = useState("");
   const [notifyStatus, setNotifyStatus] = useState("");
   const [notifyError, setNotifyError] = useState("");
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -68,11 +120,13 @@ export default function TeacherReportPage() {
         setInfo(data);
         setNotifyStatus(data.schoolNotifyStatus || "");
         setNotifyError(data.schoolNotifyError || "");
+        setPhotoPreview(data.representativePhotoUrl ?? "");
         setForm({
           studentCount: data.studentCount?.toString() ?? "",
           progress: savedProgress,
           skillFocus: data.skillFocus ?? [],
-          classStatus: data.classStatus || "很順利",
+          classStatus: normalizeClassStatus(data.classStatus),
+          representativePhotoUrl: data.representativePhotoUrl ?? "",
           incident: Boolean(data.incident),
           incidentChild: data.incidentChild ?? "",
           incidentProcess: data.incidentProcess ?? "",
@@ -90,6 +144,40 @@ export default function TeacherReportPage() {
       ...f,
       skillFocus: f.skillFocus.includes(skill) ? f.skillFocus.filter((item) => item !== skill) : [...f.skillFocus, skill],
     }));
+  }
+
+  async function uploadPhoto(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || photoUploading) return;
+
+    setPhotoError("");
+    setPhotoUploading(true);
+    try {
+      const compressed = await compressReportPhoto(file);
+      if (compressed.size > 900 * 1024) {
+        throw new Error("圖片壓縮後仍太大，請換一張照片再試");
+      }
+
+      const body = new FormData();
+      body.append("photo", compressed);
+      const res = await fetch(`/api/report/${params.id}/photo`, { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "照片上傳失敗，請稍後再試");
+
+      setPhotoPreview(data.url);
+      setForm((current) => ({ ...current, representativePhotoUrl: data.url }));
+    } catch (err) {
+      setPhotoError((err as Error).message || "照片上傳失敗，請稍後再試");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
+  function removePhoto() {
+    setPhotoPreview("");
+    setPhotoError("");
+    setForm((current) => ({ ...current, representativePhotoUrl: "" }));
   }
 
   async function submit() {
@@ -143,7 +231,7 @@ export default function TeacherReportPage() {
   return (
     <div className="mx-auto max-w-md pb-10">
       <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#F5EBDD] via-[#F9F6EF] to-[#DCE8DD] px-5 pb-6 pt-5 shadow-sm">
-        <div className="text-xs font-semibold tracking-[0.2em] text-[#7B9E87]">UPBEAR CLASS REPORT</div>
+        <div className="text-xs font-semibold tracking-[0.2em] text-[#7B9E87]">WAYSLEADER AI LEARNING REPORT</div>
         <h1 className="mt-2 text-2xl font-bold text-[#2E2B27]">課後回報</h1>
         <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-slate-700 shadow-sm">
           <div className="font-semibold text-slate-900">{info.school}</div>
@@ -154,7 +242,7 @@ export default function TeacherReportPage() {
 
       {done && (
         <div className="mb-4 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
-          <div className="font-semibold">已送出回報，教學紀錄已自動整理完成。</div>
+          <div className="font-semibold">已送出回報，教學紀錄已整理完成。</div>
           {notifyStatus && (
             <div className={`mt-2 rounded-xl px-3 py-2 text-xs ${notifyStatus === "通知成功" ? "bg-white text-green-700" : "bg-white text-amber-700"}`}>
               園所通知狀態：{notifyStatus}
@@ -233,17 +321,58 @@ export default function TeacherReportPage() {
 
         {isKindergarten && (
           <section className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-slate-800">課堂狀況</div>
-            <div className="mt-3 space-y-2">
+            <div className="text-sm font-semibold text-slate-800">🌟 課堂狀況</div>
+            <div className="mt-3 space-y-3">
               {CLASS_STATUS_OPTIONS.map((status) => (
-                <label key={status} className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${form.classStatus === status ? "border-[#7B9E87] bg-[#F1F7F2]" : "border-slate-200"}`}>
+                <label key={status} className={`flex items-start gap-3 rounded-2xl border px-4 py-4 ${form.classStatus === status ? "border-[#7B9E87] bg-[#F1F7F2]" : "border-slate-200"}`}>
                   <input type="radio" checked={form.classStatus === status} onChange={() => setForm({ ...form, classStatus: status })} />
-                  <span className="text-sm font-medium text-slate-700">{status}</span>
+                  <span>
+                    <span className="block text-base font-bold text-slate-800">{CLASS_STATUS_META[status].color} {status}</span>
+                    <span className="mt-1 block text-sm leading-6 text-slate-500">{CLASS_STATUS_META[status].description}</span>
+                  </span>
                 </label>
               ))}
             </div>
           </section>
         )}
+
+        <section className="rounded-2xl bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-slate-800">代表照片（選填）</div>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            每堂課最多 1 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
+          </p>
+          <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
+            {photoUploading ? "照片上傳中..." : "選擇或拍攝代表照片"}
+            <input type="file" accept="image/*" className="hidden" disabled={photoUploading} onChange={uploadPhoto} />
+          </label>
+          {photoError && (
+            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+              {photoError}
+            </div>
+          )}
+          {photoPreview && (
+            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50">
+              <img src={photoPreview} alt="代表照片預覽" className="h-44 w-full object-cover" />
+              <button type="button" onClick={removePhoto} className="w-full bg-white px-4 py-3 text-sm font-semibold text-red-500">
+                移除照片
+              </button>
+            </div>
+          )}
+          <details className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-semibold text-slate-500">已有公開圖片連結？</summary>
+            <input
+              type="url"
+              inputMode="url"
+              value={form.representativePhotoUrl}
+              onChange={(e) => {
+                setForm({ ...form, representativePhotoUrl: e.target.value });
+                setPhotoPreview(e.target.value);
+              }}
+              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
+              placeholder="https://..."
+            />
+          </details>
+        </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">今天是否有特殊事件？</div>

@@ -15,7 +15,7 @@ export function createTransport() {
 export async function sendMail(to: string, subject: string, html: string) {
   const transporter = createTransport();
   await transporter.sendMail({
-    from: `才藝課管理 <${process.env.GMAIL_USER}>`,
+    from: `WaysLeader AI <${process.env.GMAIL_USER}>`,
     to,
     subject,
     html,

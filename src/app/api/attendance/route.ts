@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const records = await prisma.attendance.findMany({
     where,
-    include: { course: true, actualTeacher: true },
+    include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
     orderBy: { date: "desc" },
   });
   const unique = new Map<string, (typeof records)[number]>();
@@ -35,6 +35,7 @@ function buildFields(data: Record<string, unknown>) {
   return {
     courseId: Number(data.courseId),
     actualTeacherId: Number(data.actualTeacherId),
+    assistantTeacherId: data.assistantTeacherId === "" || data.assistantTeacherId === undefined || data.assistantTeacherId === null ? null : Number(data.assistantTeacherId),
     studentCount: data.studentCount === "" || data.studentCount === undefined ? null : Number(data.studentCount),
     cancelled: Boolean(data.cancelled),
     cancelReason: (data.cancelReason as string) ?? "",

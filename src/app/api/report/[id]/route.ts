@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
-import { generateTeachingReport, safeJsonArray } from "@/lib/teachingReport";
+import { generateTeachingReport, normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { COURSE_CURRICULUM } from "@/lib/line";
 import { notifySchoolReport } from "@/lib/schoolNotification";
+import { getLessonTemplateForReport } from "@/lib/lessonTemplates";
 
 type ReportPayload = {
   studentCount?: number | null;
   progress?: string;
   skillFocus?: string[];
   classStatus?: string;
+  representativePhotoUrl?: string;
+  reportPhotos?: string;
   incident?: boolean;
   incidentChild?: string;
   incidentProcess?: string;
@@ -23,6 +26,29 @@ function progressText(item: { lesson: number; title: string }) {
 
 function isKindergarten(department: string | null | undefined) {
   return (department ?? "").includes("幼兒園");
+}
+
+function firstPhotoUrl(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return String(parsed[0] ?? "").trim();
+  } catch {
+    // Older data can be a plain URL string.
+  }
+  return raw;
+}
+
+function sanitizePhotoUrl(value: string) {
+  const raw = value.trim();
+  if (!raw || raw.startsWith("data:")) return "";
+  try {
+    const url = new URL(raw);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 async function isFinalKindergartenAttendance(attendance: { id: number; date: Date; courseId: number; course: { department: string } }) {
@@ -102,6 +128,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSummary: attendance.aiSummary,
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
+      representativePhotoUrl: firstPhotoUrl(attendance.reportPhotos),
       shouldAskAssessment: await isFinalKindergartenAttendance(attendance),
       assessmentCount: await assessmentCount(attendance.id),
       schoolNotifyStatus: (attendance as unknown as { schoolNotifyStatus?: string }).schoolNotifyStatus ?? "未通知",
@@ -129,13 +156,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const skillFocus = safeJsonArray(data.skillFocus);
     const progress = String(data.progress ?? "").trim();
     const kindergarten = isKindergarten(attendance.course.department);
-    const classStatus = kindergarten ? String(data.classStatus ?? "普通").trim() : "";
+    const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
+    const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());
     const incident = Boolean(data.incident);
 
     const incidentChild = String(data.incidentChild ?? "").trim();
     const incidentProcess = String(data.incidentProcess ?? "").trim();
     const incidentAction = String(data.incidentAction ?? "").trim();
     const incidentNotified = String(data.incidentNotified ?? "").trim();
+    const lessonTemplate = kindergarten
+      ? await getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
+      : null;
     const generated = kindergarten
       ? generateTeachingReport({
         school: attendance.course.school,
@@ -148,6 +179,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         incidentProcess,
         incidentAction,
         incidentNotified,
+        lessonTemplate,
       })
       : {
         aiSummary: `今日訓練內容：${progress || "老師已完成現場訓練回報"}。`,
@@ -177,6 +209,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         incidentProcess: incident ? incidentProcess : "",
         incidentAction: incident ? incidentAction : "",
         incidentNotified: incident ? incidentNotified : "",
+        ...(representativePhotoUrl ? { reportPhotos: JSON.stringify([representativePhotoUrl]) } : {}),
         ...generated,
       },
     });

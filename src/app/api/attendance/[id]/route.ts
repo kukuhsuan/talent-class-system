@@ -6,16 +6,17 @@ import { normalizeCategory } from "@/lib/courseMeta";
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await req.json();
-  const { makeupDate, ...rest } = data;
+  const { makeupDate, assistantTeacherId, ...rest } = data;
   const record = await prisma.attendance.update({
     where: { id: Number(id) },
     data: {
       ...rest,
+      assistantTeacherId: assistantTeacherId === "" || assistantTeacherId === undefined || assistantTeacherId === null ? null : Number(assistantTeacherId),
       date: data.date ? parseAttendanceDay(String(data.date).slice(0, 10)) : undefined,
       category: rest.category ? normalizeCategory(rest.category) : undefined,
       makeupDate: makeupDate ? parseAttendanceDay(String(makeupDate).slice(0, 10)) : null,
     },
-    include: { course: true, actualTeacher: true },
+    include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
   });
   return NextResponse.json(record);
 }

@@ -63,7 +63,7 @@ function Sheet({ detail }: { detail: Detail }) {
       <div className="flex h-[45mm] items-center gap-[12mm] bg-[#0756B7] px-[9mm] text-white">
         <img src="/upbear-logo.png" alt="優比熊 Logo" className="h-[36mm] w-[36mm] shrink-0 object-contain" />
         <div>
-          <div className="text-[9pt] font-semibold tracking-[0.25em] text-blue-100">PROFESSIONAL ATHLETIC GROWTH REPORT</div>
+          <div className="text-[9pt] font-semibold tracking-[0.25em] text-blue-100">WAYSLEADER AI LEARNING OUTCOME REPORT</div>
           <h1 className="mt-[3mm] text-[27pt] font-black tracking-wide">專業運動素養發展報告</h1>
         </div>
       </div>
@@ -85,7 +85,7 @@ function Sheet({ detail }: { detail: Detail }) {
       </section>
       <div className="mt-[5mm] flex items-end justify-between px-[8mm] text-[10pt] text-slate-500">
         <div><div>園所：{detail.school}</div><div>授課老師：{detail.teacherName}</div><div>日期：{dateText}</div></div>
-        <div className="text-[24pt] italic text-[#6E4C1E]">*Ways Leader.</div>
+        <div className="text-[22pt] font-black text-[#0756B7]">WaysLeader AI</div>
       </div>
     </article>
   );
