@@ -7,8 +7,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const year = searchParams.get("year");
   const month = searchParams.get("month");
+  const page = Math.max(1, Number(searchParams.get("page") ?? "0") || 0);
+  const pageSizeRaw = Number(searchParams.get("pageSize") ?? "0") || 0;
+  const pageSize = pageSizeRaw ? Math.min(50, Math.max(20, pageSizeRaw)) : 0;
 
   const dept = searchParams.get("dept") ?? "";
+  const school = searchParams.get("school") ?? "";
+  const teacherId = searchParams.get("teacherId") ?? "";
+  const date = searchParams.get("date") ?? "";
+  const category = searchParams.get("category") ?? "";
+  const status = searchParams.get("status") ?? "";
 
   const where: Record<string, unknown> = {};
   if (year && month) {
@@ -16,19 +24,45 @@ export async function GET(req: NextRequest) {
     const end = new Date(Number(year), Number(month), 1);
     where.date = { gte: start, lt: end };
   }
-  if (dept) where.course = { department: dept };
+  const courseFilter: Record<string, unknown> = {};
+  if (dept) courseFilter.department = dept;
+  if (school) courseFilter.school = school;
+  if (category) where.category = normalizeCategory(category);
+  if (teacherId) where.actualTeacherId = Number(teacherId);
+  if (date) {
+    const start = parseAttendanceDay(date.slice(0, 10));
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    where.date = { gte: start, lt: end };
+  }
+  if (status === "missing") {
+    where.cancelled = false;
+    where.studentCount = null;
+  } else if (status === "done") {
+    where.cancelled = false;
+    where.studentCount = { not: null };
+  } else if (status === "cancelled") {
+    where.cancelled = true;
+  }
+  if (Object.keys(courseFilter).length) where.course = courseFilter;
 
-  const records = await prisma.attendance.findMany({
+  const query = {
     where,
     include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
     orderBy: { date: "desc" },
-  });
+  } as const;
+  const [records, total] = await Promise.all([
+    prisma.attendance.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
+    pageSize ? prisma.attendance.count({ where }) : Promise.resolve(0),
+  ]);
   const unique = new Map<string, (typeof records)[number]>();
   for (const record of records) {
     const key = `${record.course.code || record.courseId}|${record.date.toISOString().slice(0, 10)}`;
     if (!unique.has(key)) unique.set(key, record);
   }
-  return NextResponse.json([...unique.values()]);
+  const items = [...unique.values()];
+  if (pageSize) return NextResponse.json({ items, total, page, pageSize });
+  return NextResponse.json(items);
 }
 
 function buildFields(data: Record<string, unknown>) {

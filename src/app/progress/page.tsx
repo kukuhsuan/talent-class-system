@@ -15,10 +15,9 @@ type ProgressRecord = {
   id: number; date: string; course: CourseInfo; actualTeacher: Teacher;
   studentCount: number | null; cancelled: boolean; reportContent: string; reportSentAt: string | null;
   skillFocus?: string; classStatus?: string; incident?: boolean; incidentChild?: string; incidentProcess?: string;
-  incidentAction?: string; incidentNotified?: string; aiSummary?: string; aiSkillFocus?: string; aiTeachingNote?: string;
+  incidentAction?: string; incidentNotified?: string;
   schoolNotifyStatus?: string; schoolNotifyError?: string; schoolNotifiedAt?: string | null;
 };
-type CourseProgress = { id: number; courseType: string; lesson: number; title: string };
 type LessonTemplate = {
   id: number;
   courseType: string;
@@ -29,7 +28,7 @@ type LessonTemplate = {
   activityDirection: string;
   aiStyle: string;
 };
-type SkillCard = { id: number; name: string; icon: string; imageUrl: string; description: string; isActive: boolean };
+type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 export default function ProgressPage() {
   const { dept, setDept } = useDepartment();
@@ -40,12 +39,12 @@ export default function ProgressPage() {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterSchool, setFilterSchool] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [manageCourse, setManageCourse] = useState("足球");
   const [courseOptions, setCourseOptions] = useState<CourseOption[]>(COURSE_OPTIONS.map((option) => ({ ...option })));
-  const [progressRows, setProgressRows] = useState<CourseProgress[]>([]);
-  const [progressForm, setProgressForm] = useState({ id: 0, lesson: "", title: "" });
-  const [savingProgress, setSavingProgress] = useState(false);
   const [templateRows, setTemplateRows] = useState<LessonTemplate[]>([]);
   const [templateForm, setTemplateForm] = useState({
     id: 0,
@@ -57,9 +56,6 @@ export default function ProgressPage() {
     aiStyle: "",
   });
   const [savingTemplate, setSavingTemplate] = useState(false);
-  const [skillCards, setSkillCards] = useState<SkillCard[]>([]);
-  const [skillForm, setSkillForm] = useState({ id: 0, name: "", icon: "", imageUrl: "", description: "", isActive: true });
-  const [savingSkill, setSavingSkill] = useState(false);
   const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
@@ -68,45 +64,13 @@ export default function ProgressPage() {
   useEffect(() => {
     fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
     fetch("/api/course-options").then((r) => r.json()).then(setCourseOptions);
-    fetch("/api/skill-cards").then((r) => r.json()).then(setSkillCards);
   }, []);
 
   useEffect(() => {
-    fetch(`/api/course-progress?courseType=${encodeURIComponent(manageCourse)}`)
-      .then((r) => r.json())
-      .then(setProgressRows);
     fetch(`/api/lesson-templates?courseType=${encodeURIComponent(manageCourse)}`)
       .then((r) => r.json())
       .then(setTemplateRows);
-    setProgressForm({ id: 0, lesson: "", title: "" });
-    setTemplateForm({ id: 0, lesson: "", title: "", focus: "", skills: "", activityDirection: "", aiStyle: "" });
   }, [manageCourse]);
-
-  async function saveProgress() {
-    const payload = { courseType: manageCourse, lesson: Number(progressForm.lesson), title: progressForm.title };
-    if (!payload.lesson || !payload.title.trim()) return alert("請填寫第幾堂與課程內容");
-    if (savingProgress) return;
-    const url = progressForm.id ? `/api/course-progress/${progressForm.id}` : "/api/course-progress";
-    setSavingProgress(true);
-    try {
-      const res = await fetch(url, { method: progressForm.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      await ensureOk(res, "課程進度儲存失敗");
-      const rows = await fetch(`/api/course-progress?courseType=${encodeURIComponent(manageCourse)}`).then((r) => r.json());
-      setProgressRows(rows);
-      setProgressForm({ id: 0, lesson: "", title: "" });
-      showToast("success", "課程進度已儲存");
-    } catch (e) {
-      showToast("error", (e as Error).message || "課程進度儲存失敗", 3000);
-    } finally {
-      setSavingProgress(false);
-    }
-  }
-
-  async function deleteProgress(id: number) {
-    if (!confirm("確定刪除此課程進度？")) return;
-    await fetch(`/api/course-progress/${id}`, { method: "DELETE" });
-    setProgressRows((rows) => rows.filter((r) => r.id !== id));
-  }
 
   async function reloadTemplates() {
     const rows = await fetch(`/api/lesson-templates?courseType=${encodeURIComponent(manageCourse)}`).then((r) => r.json());
@@ -164,57 +128,28 @@ export default function ProgressPage() {
     scrollToFormOnEdit();
   }
 
-  async function saveSkillCard() {
-    if (!skillForm.name.trim()) return alert("請填寫能力名稱");
-    if (savingSkill) return;
-    setSavingSkill(true);
-    const url = skillForm.id ? `/api/skill-cards/${skillForm.id}` : "/api/skill-cards";
-    try {
-      const res = await fetch(url, {
-        method: skillForm.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(skillForm),
-      });
-      await ensureOk(res, "能力圖卡儲存失敗");
-      const rows = await fetch("/api/skill-cards").then((r) => r.json());
-      setSkillCards(rows);
-      setSkillForm({ id: 0, name: "", icon: "", imageUrl: "", description: "", isActive: true });
-      showToast("success", "能力圖卡已儲存");
-    } catch (e) {
-      showToast("error", (e as Error).message || "能力圖卡儲存失敗", 3000);
-    } finally {
-      setSavingSkill(false);
-    }
-  }
-
-  async function deleteSkillCard(id: number) {
-    if (!confirm("確定刪除此能力圖卡？")) return;
-    await fetch(`/api/skill-cards/${id}`, { method: "DELETE" });
-    setSkillCards((rows) => rows.filter((r) => r.id !== id));
-    showToast("success", "能力圖卡已刪除");
-  }
-
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await Promise.resolve();
       setLoading(true);
-      const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
+      const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth), page: String(page), pageSize: String(pageSize) });
       if (dept) params.set("dept", dept);
       if (filterTeacher) params.set("teacherId", filterTeacher);
       if (filterSchool) params.set("school", filterSchool);
       const r = await fetch(`/api/progress?${params}`);
-      const data: ProgressRecord[] = await r.json();
+      const data: PageResult<ProgressRecord> = await r.json();
       if (cancelled) return;
-      setRecords(data);
-      const schoolSet = [...new Set(data.map((rec) => rec.course.school))].sort();
+      setRecords(data.items);
+      setTotal(data.total);
+      const schoolSet = [...new Set(data.items.map((rec) => rec.course.school))].sort();
       setSchools(schoolSet);
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [filterYear, filterMonth, dept, filterTeacher, filterSchool]);
+  }, [filterYear, filterMonth, dept, filterTeacher, filterSchool, page]);
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = [2024, 2025, 2026];
@@ -225,6 +160,7 @@ export default function ProgressPage() {
     acc[key].push(r);
     return acc;
   }, {});
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   function parseList(value: string | undefined) {
     if (!value) return [];
@@ -261,71 +197,34 @@ export default function ProgressPage() {
       <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">課程進度記錄</h1>
-          <p className="text-sm text-slate-500">老師 LINE 回傳的課程進度內容</p>
+          <h1 className="text-xl font-bold text-slate-800">課程內容與成果</h1>
+          <p className="text-sm text-slate-500">統一管理每堂課內容，教練回報與園所成果都使用這裡的資料。</p>
         </div>
       </div>
 
-      <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-4 mb-6 ${progressForm.id ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
-        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-          <div>
-            <h2 className="font-semibold text-slate-800">{progressForm.id ? "正在編輯課程進度" : "課程進度管理"}</h2>
-            <p className="text-xs text-slate-500">管理老師 LINE 回報時可選擇的第幾堂課程內容</p>
-          </div>
-          <select value={manageCourse} onChange={(e) => setManageCourse(e.target.value)}
-            className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
-            {courseOptions.map((c) => <option key={c.code} value={c.label}>{c.label}</option>)}
-          </select>
-        </div>
-
-        <div className="grid md:grid-cols-[120px_1fr_auto] gap-3 mb-4">
-          <input ref={firstInputRef} value={progressForm.lesson} onChange={(e) => setProgressForm({ ...progressForm, lesson: e.target.value })}
-            type="number" min="1" placeholder="第幾堂" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <input value={progressForm.title} onChange={(e) => setProgressForm({ ...progressForm, title: e.target.value })}
-            placeholder="課程內容名稱" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <SaveButton saving={savingProgress} onClick={saveProgress} idleText={progressForm.id ? "更新" : "新增"} savingText="儲存中…" />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left w-24">堂數</th>
-                <th className="px-3 py-2 text-left">課程內容</th>
-                <th className="px-3 py-2 text-right w-32">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {progressRows.map((row) => (
-                <tr key={row.id}>
-                  <td className="px-3 py-2">第 {row.lesson} 堂</td>
-                  <td className="px-3 py-2">{row.title}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button onClick={() => { setProgressForm({ id: row.id, lesson: String(row.lesson), title: row.title }); scrollToFormOnEdit(); }} className="text-blue-600 text-sm mr-3">編輯</button>
-                    <button onClick={() => deleteProgress(row.id)} className="text-red-500 text-sm">刪除</button>
-                  </td>
-                </tr>
-              ))}
-              {progressRows.length === 0 && <tr><td colSpan={3} className="text-center py-6 text-slate-400">尚無課程進度，可新增第一筆</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className={`bg-white rounded-xl border shadow-sm p-4 mb-6 ${templateForm.id ? "border-amber-200 ring-2 ring-amber-50" : "border-slate-200"}`}>
+      <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-4 mb-6 ${templateForm.id ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-slate-800">{templateForm.id ? "正在編輯課程內容庫" : "課程內容庫"}</h2>
-            <p className="text-xs text-slate-500">每一堂課固定放自己的重點與說明，園所成果與回報會直接使用這裡的內容，不靠 AI 自動亂寫。</p>
+            <h2 className="font-semibold text-slate-800">{templateForm.id ? "正在編輯每堂課內容" : "每堂課內容"}</h2>
+            <p className="text-xs text-slate-500">只維護一份資料：教練選堂、成果回報與園所成果都使用這裡。</p>
           </div>
-          {templateForm.id > 0 && (
-            <button
-              onClick={() => setTemplateForm({ id: 0, lesson: "", title: "", focus: "", skills: "", activityDirection: "", aiStyle: "" })}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600"
-            >
-              取消編輯
-            </button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            <select value={manageCourse} onChange={(e) => {
+              setManageCourse(e.target.value);
+              setTemplateForm({ id: 0, lesson: "", title: "", focus: "", skills: "", activityDirection: "", aiStyle: "" });
+            }}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              {courseOptions.map((c) => <option key={c.code} value={c.label}>{c.label}</option>)}
+            </select>
+            {templateForm.id > 0 && (
+              <button
+                onClick={() => setTemplateForm({ id: 0, lesson: "", title: "", focus: "", skills: "", activityDirection: "", aiStyle: "" })}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600"
+              >
+                取消編輯
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-[110px_1fr]">
@@ -334,16 +233,13 @@ export default function ProgressPage() {
           <input value={templateForm.title} onChange={(e) => setTemplateForm({ ...templateForm, title: e.target.value })}
             placeholder="課程名稱，例如：切滾球練習" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
           <textarea value={templateForm.focus} onChange={(e) => setTemplateForm({ ...templateForm, focus: e.target.value })}
-            placeholder={"今天孩子學習，請一行一個重點，例如：\n控制擊球方向與力道\n練習專注與身體穩定\n培養耐心與動作控制"}
+            placeholder={"本堂重點，建議 1～3 行，例如：\n控制擊球方向與力道\n練習專注與身體穩定"}
             className="min-h-28 border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
           <input value={templateForm.skills} onChange={(e) => setTemplateForm({ ...templateForm, skills: e.target.value })}
             placeholder="能力培養，用頓號分隔，例如：手眼協調、專注力、肢體協調" className="border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
           <textarea value={templateForm.activityDirection} onChange={(e) => setTemplateForm({ ...templateForm, activityDirection: e.target.value })}
-            placeholder="家長/園所看的短說明，建議 2～3 行，不要寫太長。"
+            placeholder="成果回報短文，建議 2～3 行，不要寫太長。"
             className="min-h-24 border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
-          <textarea value={templateForm.aiStyle} onChange={(e) => setTemplateForm({ ...templateForm, aiStyle: e.target.value })}
-            placeholder="補充回饋文字（選填），例如：孩子們今天整體參與良好，能跟著老師完成挑戰。"
-            className="min-h-20 border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
           <div className="md:col-span-2">
             <SaveButton saving={savingTemplate} onClick={saveTemplate} idleText={templateForm.id ? "更新內容" : "新增內容"} savingText="儲存中…" />
           </div>
@@ -355,75 +251,30 @@ export default function ProgressPage() {
               <tr>
                 <th className="px-3 py-2 text-left w-24">堂數</th>
                 <th className="px-3 py-2 text-left w-48">課程名稱</th>
-                <th className="px-3 py-2 text-left">內容狀態</th>
+                <th className="px-3 py-2 text-left">本堂重點 / 成果短文</th>
+                <th className="px-3 py-2 text-left w-44">能力培養</th>
                 <th className="px-3 py-2 text-right w-32">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {templateRows.map((row) => {
-                const filled = [row.focus, row.skills.join("、"), row.activityDirection].filter(Boolean).length;
-                return (
-                  <tr key={row.id}>
-                    <td className="px-3 py-2">第 {row.lesson} 堂</td>
-                    <td className="px-3 py-2 font-medium text-slate-700">{row.title}</td>
-                    <td className="px-3 py-2 text-slate-500">
-                      {filled >= 3 ? "已完整填寫" : filled > 0 ? "尚可再補內容" : "尚未填寫重點"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button onClick={() => editTemplate(row)} className="text-blue-600 text-sm mr-3">編輯</button>
-                      <button onClick={() => deleteTemplate(row.id)} className="text-red-500 text-sm">刪除</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {templateRows.length === 0 && <tr><td colSpan={4} className="text-center py-6 text-slate-400">尚無內容庫，請新增第一筆</td></tr>}
+              {templateRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="px-3 py-2 whitespace-nowrap">第 {row.lesson} 堂</td>
+                  <td className="px-3 py-2 font-medium text-slate-700">{row.title}</td>
+                  <td className="px-3 py-2 text-xs leading-5 text-slate-500">
+                    <div className="line-clamp-2">{row.focus || "尚未填寫本堂重點"}</div>
+                    {row.activityDirection && <div className="mt-1 rounded bg-slate-50 px-2 py-1 text-slate-600">{row.activityDirection}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-600">{row.skills.length ? row.skills.join("、") : "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button onClick={() => editTemplate(row)} className="text-blue-600 text-sm mr-3">編輯</button>
+                    <button onClick={() => deleteTemplate(row.id)} className="text-red-500 text-sm">刪除</button>
+                  </td>
+                </tr>
+              ))}
+              {templateRows.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-slate-400">尚無內容，請新增第一筆</td></tr>}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
-        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-          <div>
-            <h2 className="font-semibold text-slate-800">{skillForm.id ? "正在編輯能力圖卡" : "能力圖卡管理"}</h2>
-            <p className="text-xs text-slate-500">園所成果頁會依照能力名稱自動顯示對應圖片。圖片可填 `/skill-cards/reaction.png` 或完整網址。</p>
-          </div>
-          {skillForm.id > 0 && (
-            <button onClick={() => setSkillForm({ id: 0, name: "", icon: "", imageUrl: "", description: "", isActive: true })} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600">
-              取消編輯
-            </button>
-          )}
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-[1fr_100px_1.5fr_1.5fr_auto]">
-          <input value={skillForm.name} onChange={(e) => setSkillForm({ ...skillForm, name: e.target.value })}
-            placeholder="能力名稱，例如：反應力" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <input value={skillForm.icon} onChange={(e) => setSkillForm({ ...skillForm, icon: e.target.value })}
-            placeholder="icon" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <input value={skillForm.imageUrl} onChange={(e) => setSkillForm({ ...skillForm, imageUrl: e.target.value })}
-            placeholder="圖片路徑，例如 /skill-cards/reaction.png" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <input value={skillForm.description} onChange={(e) => setSkillForm({ ...skillForm, description: e.target.value })}
-            placeholder="簡短說明（選填）" className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-          <SaveButton saving={savingSkill} onClick={saveSkillCard} idleText={skillForm.id ? "更新" : "新增"} savingText="儲存中…" />
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {skillCards.map((card) => (
-            <div key={card.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white text-2xl ring-1 ring-slate-200">
-                {card.imageUrl ? <img src={card.imageUrl} alt={card.name} className="h-full w-full object-cover" /> : (card.icon || "•")}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-slate-800">{card.name}</div>
-                <div className="truncate text-xs text-slate-500">{card.imageUrl || card.description || "尚未設定圖片"}</div>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <button onClick={() => setSkillForm(card)} className="text-sm font-medium text-blue-600">編輯</button>
-                <button onClick={() => deleteSkillCard(card.id)} className="text-sm font-medium text-red-500">刪除</button>
-              </div>
-            </div>
-          ))}
-          {skillCards.length === 0 && <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400 md:col-span-2 xl:col-span-3">尚無能力圖卡，可新增第一筆</div>}
         </div>
       </div>
 
@@ -431,7 +282,7 @@ export default function ProgressPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600 whitespace-nowrap">部門</label>
-            <select value={dept} onChange={(e) => setDept(e.target.value as never)}
+            <select value={dept} onChange={(e) => { setDept(e.target.value as never); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               <option value="">全部</option>
               {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
@@ -439,21 +290,21 @@ export default function ProgressPage() {
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">年份</label>
-            <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))}
+            <select value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               {years.map((y) => <option key={y}>{y}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">月份</label>
-            <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))}
+            <select value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               {months.map((m) => <option key={m} value={m}>{m}月</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">老師</label>
-            <select value={filterTeacher} onChange={(e) => setFilterTeacher(e.target.value)}
+            <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               <option value="">全部</option>
               {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -462,14 +313,18 @@ export default function ProgressPage() {
           {schools.length > 0 && (
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">園所</label>
-              <select value={filterSchool} onChange={(e) => setFilterSchool(e.target.value)}
+              <select value={filterSchool} onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}
                 className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
                 <option value="">全部</option>
                 {schools.map((s) => <option key={s}>{s}</option>)}
               </select>
             </div>
           )}
-          <span className="text-sm text-slate-400 ml-auto">共 {records.length} 筆</span>
+          <div className="ml-auto flex items-center gap-2 text-xs text-slate-500">
+            <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-40">上一頁</button>
+            <span>共 {total} 筆，第 {page} / {totalPages} 頁</span>
+            <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-40">下一頁</button>
+          </div>
         </div>
       </div>
 
@@ -553,14 +408,6 @@ export default function ProgressPage() {
                                 <div className="mt-1">{r.incidentChild || "未填姓名"}｜{r.incidentNotified === "是" ? `已通知${r.course.department.includes("幼兒園") ? "園所" : "現場老師或窗口"}` : `未通知${r.course.department.includes("幼兒園") ? "園所" : "現場老師或窗口"}`}</div>
                               </div>
                             )}
-                          </div>
-                        )}
-                        {(r.aiSummary || r.aiSkillFocus || r.aiTeachingNote) && (
-                          <div className="mt-3 rounded-lg border border-green-100 bg-[#F8FBF8] px-3 py-2 text-sm leading-6 text-slate-700">
-                            <div className="mb-1 text-xs font-semibold text-green-700">AI 教學紀錄</div>
-                            {r.aiSummary && <p>{r.aiSummary}</p>}
-                            {r.aiSkillFocus && <p>{r.aiSkillFocus}</p>}
-                            {r.aiTeachingNote && <p>{r.aiTeachingNote}</p>}
                           </div>
                         )}
                         {r.incident && (r.incidentProcess || r.incidentAction) && (

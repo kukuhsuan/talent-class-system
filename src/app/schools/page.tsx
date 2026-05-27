@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
 import { Toast } from "@/components/Toast";
 import { ensureOk } from "@/lib/clientApi";
@@ -8,6 +8,7 @@ import { useToast } from "@/lib/useToast";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string };
+type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 const empty: Omit<School, "id"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "" };
 
@@ -17,6 +18,10 @@ export default function SchoolsPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [filterRegion, setFilterRegion] = useState("");
   const [filterType, setFilterType] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
@@ -24,12 +29,20 @@ export default function SchoolsPage() {
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, nameInputRef);
 
-  useEffect(() => { fetchSchools(); }, []);
+  const fetchSchools = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (filterRegion) params.set("region", filterRegion);
+    if (filterType) params.set("type", filterType);
+    if (search.trim()) params.set("search", search.trim());
+    const res = await fetch(`/api/schools?${params}`);
+    const data = await res.json() as PageResult<School>;
+    setSchools(data.items);
+    setTotal(data.total);
+  }, [filterRegion, filterType, page, search]);
 
-  async function fetchSchools() {
-    const res = await fetch("/api/schools");
-    setSchools(await res.json());
-  }
+  useEffect(() => {
+    void Promise.resolve().then(fetchSchools);
+  }, [fetchSchools]);
 
   async function save() {
     if (!form.name) return;
@@ -80,17 +93,18 @@ export default function SchoolsPage() {
     scrollToFormOnEdit();
   }
 
-  const filtered = schools.filter((s) =>
-    (!filterRegion || normalizeRegion(s.region) === filterRegion) &&
-    (!filterType || (s.type ? normalizeDepartment(s.type) : "未分類") === filterType)
-  );
+  const filtered = schools;
   const regionGroups = [...new Set(schools.map((s) => normalizeRegion(s.region)).filter(Boolean))].sort();
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
       <Toast toast={toast} />
       <div className="flex items-center justify-between gap-3 mb-6">
-        <h1 className="text-xl md:text-2xl font-bold text-gray-800">園所管理</h1>
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-800">園所管理</h1>
+          <p className="mt-1 text-sm text-slate-500">共 {total} 間，目前顯示 {filtered.length} 間</p>
+        </div>
         <button onClick={() => { setForm(empty); setEditing(null); setShowForm(true); }} className="bg-blue-600 text-white px-4 py-3 md:py-2 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">+ 新增園所</button>
       </div>
 
@@ -140,16 +154,25 @@ export default function SchoolsPage() {
         </div>
       )}
 
+      <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[1fr_auto]">
+        <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜尋園所、地址、電話或聯絡人" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-40">上一頁</button>
+          <span>第 {page} / {totalPages} 頁</span>
+          <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-40">下一頁</button>
+        </div>
+      </div>
+
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1 md:flex-wrap">
-        <button onClick={() => setFilterType("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${!filterType ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部類型</button>
+        <button onClick={() => { setFilterType(""); setPage(1); }} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${!filterType ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部類型</button>
         {[...DEPARTMENT_OPTIONS, "未分類"].map((t) => (
-          <button key={t} onClick={() => setFilterType(t)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${filterType === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{t}</button>
+          <button key={t} onClick={() => { setFilterType(t); setPage(1); }} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${filterType === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{t}</button>
         ))}
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1 md:flex-wrap">
-        <button onClick={() => setFilterRegion("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部地區</button>
-        {regionGroups.map((r) => (
-          <button key={r} onClick={() => setFilterRegion(r)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>
+        <button onClick={() => { setFilterRegion(""); setPage(1); }} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部地區</button>
+        {[...new Set([...REGION_OPTIONS, ...regionGroups])].map((r) => (
+          <button key={r} onClick={() => { setFilterRegion(r); setPage(1); }} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>
         ))}
       </div>
 
@@ -216,7 +239,7 @@ export default function SchoolsPage() {
         </table>
         </div>
       </div>
-      <p className="text-xs text-gray-400 mt-3">共 {filtered.length} 間園所</p>
+      <p className="text-xs text-gray-400 mt-3">本頁 {filtered.length} 間園所</p>
     </div>
   );
 }

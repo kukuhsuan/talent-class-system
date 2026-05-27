@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useParams } from "next/navigation";
-import { CLASS_STATUS_META, CLASS_STATUS_OPTIONS, SKILL_FOCUS_OPTIONS, normalizeClassStatus } from "@/lib/teachingReport";
+import { SKILL_FOCUS_OPTIONS, normalizeClassStatus } from "@/lib/teachingReport";
 
 type ReportInfo = {
   id: number;
@@ -14,7 +14,7 @@ type ReportInfo = {
   teacherName: string;
   studentCount: number | null;
   reportContent: string;
-  progressOptions: Array<{ id: number; lesson: number; title: string; value: string }>;
+  progressOptions: Array<{ id: number; lesson: number; title: string; value: string; focus?: string; skills?: string[]; outcomeText?: string }>;
   skillFocus: string[];
   classStatus: string;
   incident: boolean;
@@ -35,6 +35,7 @@ type ReportInfo = {
 const EMPTY = {
   studentCount: "",
   progress: "",
+  outcomeText: "",
   skillFocus: [] as string[],
   classStatus: "積極參與",
   representativePhotoUrl: "",
@@ -59,6 +60,11 @@ function loadLocalImage(file: File) {
     };
     img.src = url;
   });
+}
+
+function extractReportField(content: string, label: string) {
+  const line = content.split("\n").find((item) => item.trim().startsWith(`${label}：`));
+  return line?.replace(`${label}：`, "").trim() ?? "";
 }
 
 async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
@@ -124,6 +130,7 @@ export default function TeacherReportPage() {
         setForm({
           studentCount: data.studentCount?.toString() ?? "",
           progress: savedProgress,
+          outcomeText: extractReportField(data.reportContent ?? "", "成果回報") || data.aiTeachingNote || "",
           skillFocus: data.skillFocus ?? [],
           classStatus: normalizeClassStatus(data.classStatus),
           representativePhotoUrl: data.representativePhotoUrl ?? "",
@@ -282,7 +289,12 @@ export default function TeacherReportPage() {
                 <button key={`${item.lesson}-${item.title}`} type="button"
                   onClick={() => {
                     setCustomProgress(false);
-                    setForm({ ...form, progress: item.value });
+                    setForm({
+                      ...form,
+                      progress: item.value,
+                      skillFocus: item.skills?.length ? item.skills : form.skillFocus,
+                      outcomeText: item.outcomeText || form.outcomeText,
+                    });
                   }}
                   className={`rounded-2xl border px-4 py-3 text-left transition-colors ${!customProgress && form.progress === item.value ? "border-[#7B9E87] bg-[#E7F0E9] text-[#2F5D49]" : "border-slate-200 bg-white text-slate-700"}`}>
                   <div className="text-xs font-semibold text-[#7B9E87]">第 {item.lesson} 堂</div>
@@ -319,22 +331,13 @@ export default function TeacherReportPage() {
           </section>
         )}
 
-        {isKindergarten && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-slate-800">🌟 課堂狀況</div>
-            <div className="mt-3 space-y-3">
-              {CLASS_STATUS_OPTIONS.map((status) => (
-                <label key={status} className={`flex items-start gap-3 rounded-2xl border px-4 py-4 ${form.classStatus === status ? "border-[#7B9E87] bg-[#F1F7F2]" : "border-slate-200"}`}>
-                  <input type="radio" checked={form.classStatus === status} onChange={() => setForm({ ...form, classStatus: status })} />
-                  <span>
-                    <span className="block text-base font-bold text-slate-800">{CLASS_STATUS_META[status].color} {status}</span>
-                    <span className="mt-1 block text-sm leading-6 text-slate-500">{CLASS_STATUS_META[status].description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
-        )}
+        <section className="rounded-2xl bg-white p-4 shadow-sm">
+          <label className="text-sm font-semibold text-slate-800">成果回報短文</label>
+          <p className="mt-1 text-xs text-slate-500">簡短 2～3 行即可，系統不會自動生成文案。</p>
+          <textarea value={form.outcomeText} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
+            className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#7B9E87]"
+            placeholder="例：孩子今天能跟著老師完成挑戰，練習控制方向與力道。課堂中大家參與穩定，也願意嘗試不同任務。" />
+        </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">代表照片（選填）</div>
@@ -403,17 +406,6 @@ export default function TeacherReportPage() {
             </div>
           )}
         </section>
-
-        {(info.aiSummary || done) && (
-          <section className="rounded-2xl border border-[#DCE8DD] bg-[#F8FBF8] p-4 shadow-sm">
-            <div className="text-sm font-semibold text-[#3F6B55]">AI 教學紀錄整理</div>
-            <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
-              {info.aiSummary && <p>{info.aiSummary}</p>}
-              {info.aiSkillFocus && <p>{info.aiSkillFocus}</p>}
-              {info.aiTeachingNote && <p>{info.aiTeachingNote}</p>}
-            </div>
-          </section>
-        )}
 
         <button onClick={submit} disabled={saving}
           className="sticky bottom-4 w-full rounded-2xl bg-[#3F6B55] px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-900/15 disabled:cursor-not-allowed disabled:opacity-60">

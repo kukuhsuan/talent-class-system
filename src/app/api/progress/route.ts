@@ -9,6 +9,9 @@ export async function GET(req: NextRequest) {
   const dept = searchParams.get("dept") ?? "";
   const school = searchParams.get("school") ?? "";
   const teacherId = searchParams.get("teacherId") ?? "";
+  const page = Math.max(1, Number(searchParams.get("page") ?? "0") || 0);
+  const pageSizeRaw = Number(searchParams.get("pageSize") ?? "0") || 0;
+  const pageSize = pageSizeRaw ? Math.min(50, Math.max(20, pageSizeRaw)) : 0;
 
   const where: Record<string, unknown> = { reportContent: { not: "" } };
 
@@ -25,11 +28,17 @@ export async function GET(req: NextRequest) {
 
   if (teacherId) where.actualTeacherId = Number(teacherId);
 
-  const records = await prisma.attendance.findMany({
+  const query = {
     where,
     include: { course: true, actualTeacher: true },
     orderBy: [{ date: "desc" }],
-  });
+  } as const;
 
+  const [records, total] = await Promise.all([
+    prisma.attendance.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
+    pageSize ? prisma.attendance.count({ where }) : Promise.resolve(0),
+  ]);
+
+  if (pageSize) return NextResponse.json({ items: records, total, page, pageSize });
   return NextResponse.json(records);
 }

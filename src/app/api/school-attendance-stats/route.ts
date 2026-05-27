@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   const school = searchParams.get("school") ?? "";
   const courseType = searchParams.get("courseType") ?? "";
   const format = searchParams.get("format") ?? "";
+  const detail = searchParams.get("detail") === "1";
 
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
@@ -37,7 +38,6 @@ export async function GET(req: NextRequest) {
     studentCount: number | null;
     studentCountA: number | null;
     studentCountB: number | null;
-    reportContent: string;
     actualTeacher: { name: string };
     course: {
       school: string;
@@ -58,7 +58,6 @@ export async function GET(req: NextRequest) {
         courseName: courseLabel(r.course.courseType),
         date: r.date.toISOString().slice(0, 10),
         studentCount: countOf(r),
-        reportContent: r.reportContent,
         teacherName: r.actualTeacher.name,
       };
     })
@@ -67,22 +66,54 @@ export async function GET(req: NextRequest) {
   const total = rows.reduce((sum, r) => sum + r.studentCount, 0);
   const totalLessons = rows.length;
 
+  if (detail) {
+    return NextResponse.json({
+      year,
+      month,
+      rows: rows.map((row) => ({
+        id: row.id,
+        date: row.date,
+        studentCount: row.studentCount,
+        teacherName: row.teacherName,
+      })),
+    });
+  }
+
   if (format === "xlsx") {
+    const exportRows = rows.length > 0
+      ? rows.map((row) => ({
+          school: row.school,
+          courseName: row.courseName,
+          teacherName: row.teacherName,
+          date: row.date,
+          studentCount: row.studentCount,
+          lessonCount: 1,
+        }))
+      : [{
+          school: school || "全部園所",
+          courseName: courseType ? courseLabel(courseType) : "全部課程",
+          teacherName: "",
+          date: "",
+          studentCount: total,
+          lessonCount: totalLessons,
+        }];
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(`${year}年${month}月園所人數`);
     ws.columns = [
-      { header: "園所名稱", key: "school", width: 20 },
-      { header: "園所類型", key: "schoolType", width: 12 },
-      { header: "課程名稱", key: "courseName", width: 14 },
-      { header: "上課日期", key: "date", width: 14 },
+      { header: "園所名稱", key: "school", width: 22 },
+      { header: "課程名稱", key: "courseName", width: 16 },
+      { header: "老師", key: "teacherName", width: 14 },
+      { header: "日期", key: "date", width: 14 },
       { header: "出席人數", key: "studentCount", width: 10 },
-      { header: "課程進度", key: "reportContent", width: 34 },
-      { header: "老師", key: "teacherName", width: 12 },
+      { header: "堂數", key: "lessonCount", width: 8 },
     ];
-    ws.addRows(rows);
+    ws.addRows(exportRows);
     ws.addRow({});
-    ws.addRow({ school: "本月總堂數", studentCount: totalLessons });
-    ws.addRow({ school: "本月總人數", studentCount: total });
+    ws.addRow({ school: "本月總計", studentCount: total, lessonCount: totalLessons });
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+    ws.getColumn("studentCount").numFmt = "0";
+    ws.getColumn("lessonCount").numFmt = "0";
     const buf = await wb.xlsx.writeBuffer();
     return new NextResponse(buf, {
       headers: {
@@ -92,5 +123,32 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ year, month, total, totalLessons, rows });
+  const groups = Object.values(rows.reduce<Record<string, {
+    school: string;
+    schoolType: string;
+    totalLessons: number;
+    totalPeople: number;
+    courses: Record<string, { courseType: string; courseName: string; lessons: number; people: number; teachers: string[] }>;
+  }>>((acc, row) => {
+    const schoolKey = row.school || "未命名園所";
+    const courseKey = row.courseType || row.courseName;
+    if (!acc[schoolKey]) {
+      acc[schoolKey] = { school: schoolKey, schoolType: row.schoolType, totalLessons: 0, totalPeople: 0, courses: {} };
+    }
+    acc[schoolKey].totalLessons += 1;
+    acc[schoolKey].totalPeople += row.studentCount;
+    if (!acc[schoolKey].courses[courseKey]) {
+      acc[schoolKey].courses[courseKey] = { courseType: row.courseType, courseName: row.courseName, lessons: 0, people: 0, teachers: [] };
+    }
+    const course = acc[schoolKey].courses[courseKey];
+    course.lessons += 1;
+    course.people += row.studentCount;
+    if (row.teacherName && !course.teachers.includes(row.teacherName)) course.teachers.push(row.teacherName);
+    return acc;
+  }, {})).map((group) => ({
+    ...group,
+    courses: Object.values(group.courses).sort((a, b) => b.people - a.people || a.courseName.localeCompare(b.courseName, "zh-Hant")),
+  })).sort((a, b) => b.totalPeople - a.totalPeople || a.school.localeCompare(b.school, "zh-Hant"));
+
+  return NextResponse.json({ year, month, total, totalLessons, groups });
 }

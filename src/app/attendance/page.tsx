@@ -15,6 +15,7 @@ type Attendance = {
   studentCount: number | null; cancelled: boolean; cancelReason: string; makeupDate: string | null; makeupDone: boolean;
   category: string; hours: number; notes: string;
 };
+type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const EMPTY_FORM = {
@@ -38,6 +39,9 @@ export default function AttendancePage() {
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterDate, setFilterDate] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
@@ -46,14 +50,19 @@ export default function AttendancePage() {
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   const load = useCallback(() => {
-    const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
+    const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth), page: String(page), pageSize: String(pageSize) });
     if (dept) params.set("dept", dept);
+    if (filterSchool) params.set("school", filterSchool);
+    if (filterTeacher) params.set("teacherId", filterTeacher);
+    if (filterDate) params.set("date", filterDate);
+    if (filterCategory) params.set("category", filterCategory);
+    if (statusFilter !== "all" && statusFilter !== "substitute") params.set("status", statusFilter);
     Promise.all([
-      fetch(`/api/attendance?${params}`).then((r) => r.json()),
-      fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
+      fetch(`/api/attendance?${params}`).then((r) => r.json() as Promise<PageResult<Attendance>>),
+      fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}&includeDates=0` : "?includeDates=0"}`).then((r) => r.json()),
       fetch("/api/teachers").then((r) => r.json()),
-    ]).then(([a, c, t]) => { setRecords(a); setCourses(c); setTeachers(t); });
-  }, [filterYear, filterMonth, dept]);
+    ]).then(([a, c, t]) => { setRecords(a.items); setTotal(a.total); setCourses(c); setTeachers(t); });
+  }, [filterYear, filterMonth, page, dept, filterSchool, filterTeacher, filterDate, filterCategory, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -124,22 +133,15 @@ export default function AttendancePage() {
   };
   const isMissingReport = (r: Attendance) => !r.cancelled && r.studentCount === null;
   const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
-  const matchesControls = (r: Attendance) => {
-    if (filterSchool && r.course.school !== filterSchool) return false;
-    if (filterTeacher && String(r.actualTeacher.id) !== filterTeacher) return false;
-    if (filterDate && fmt(r.date) !== filterDate) return false;
-    if (filterCategory && normalizeCategory(r.category) !== filterCategory) return false;
-    return true;
-  };
   const filteredRecords = records.filter((r) => {
-    if (!matchesControls(r)) return false;
     if (statusFilter === "missing") return isMissingReport(r);
     if (statusFilter === "done") return !r.cancelled && r.studentCount !== null;
     if (statusFilter === "substitute") return isSubstitute(r);
     if (statusFilter === "cancelled") return r.cancelled;
     return true;
   });
-  const filteredByControls = records.filter(matchesControls);
+  const filteredByControls = records;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const statusTabs = [
     { key: "all", label: "全部", count: filteredByControls.length, className: "bg-blue-50 text-blue-700 border-blue-100" },
     { key: "missing", label: "待回報", count: filteredByControls.filter(isMissingReport).length, className: "bg-amber-50 text-amber-700 border-amber-100" },
@@ -147,7 +149,7 @@ export default function AttendancePage() {
     { key: "substitute", label: "代課", count: filteredByControls.filter(isSubstitute).length, className: "bg-orange-50 text-orange-700 border-orange-100" },
     { key: "cancelled", label: "停課", count: filteredByControls.filter((r) => r.cancelled).length, className: "bg-red-50 text-red-700 border-red-100" },
   ];
-  const schoolOptions = [...new Set(records.map((r) => r.course.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  const schoolOptions = [...new Set(courses.map((r) => r.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
   const summary = {
     todayCourses: records.filter((r) => fmt(r.date) === today()).length,
     missing: records.filter(isMissingReport).length,
@@ -169,7 +171,7 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
-          <p className="text-sm text-slate-500">共 {filteredRecords.length} 筆 / 本月 {records.length} 筆</p>
+          <p className="text-sm text-slate-500">共 {total} 筆，目前顯示 {filteredRecords.length} 筆</p>
         </div>
         <div className="flex gap-2">
           <a href={`/api/export/attendance?year=${filterYear}&month=${filterMonth}`} download
@@ -314,41 +316,48 @@ export default function AttendancePage() {
 
       <div className="sticky top-0 z-20 mb-4 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-          <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))}>
+          <select value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}>
             {[2025, 2026, 2027].map((y) => <option key={y}>{y}</option>)}
           </select>
-          <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))}>
+          <select value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
-          <select value={filterSchool} onChange={(e) => setFilterSchool(e.target.value)}>
+          <select value={filterSchool} onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}>
             <option value="">全部園所</option>
             {schoolOptions.map((school) => <option key={school}>{school}</option>)}
           </select>
-          <select value={filterTeacher} onChange={(e) => setFilterTeacher(e.target.value)}>
+          <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}>
             <option value="">全部老師</option>
             {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
           </select>
-          <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+          <input type="date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setPage(1); }} />
+          <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}>
             <option value="">全部類別</option>
             {CATEGORY_OPTIONS.map((category) => <option key={category}>{category}</option>)}
           </select>
         </div>
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1 md:flex-wrap">
           {statusTabs.map((tab) => (
-            <button key={tab.key} onClick={() => setStatusFilter(tab.key)}
+            <button key={tab.key} onClick={() => { setStatusFilter(tab.key); setPage(1); }}
               className={`shrink-0 rounded-full border px-3 py-2 text-xs font-medium transition-colors ${statusFilter === tab.key ? tab.className : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>
               {tab.label} <span className="ml-1 font-semibold">{tab.count}</span>
             </button>
           ))}
           {(filterSchool || filterTeacher || filterDate || filterCategory || statusFilter !== "all") && (
-            <button onClick={() => { setFilterSchool(""); setFilterTeacher(""); setFilterDate(""); setFilterCategory(""); setStatusFilter("all"); }}
+            <button onClick={() => { setFilterSchool(""); setFilterTeacher(""); setFilterDate(""); setFilterCategory(""); setStatusFilter("all"); setPage(1); }}
               className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100">
               清除篩選
             </button>
           )}
         </div>
-        <div className="mt-2 text-xs text-slate-400">目前顯示 {filteredRecords.length} 筆，依園所收合顯示</div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+          <span>目前顯示 {filteredRecords.length} 筆，依園所收合顯示</span>
+          <div className="flex items-center gap-2">
+            <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-1 disabled:opacity-40">上一頁</button>
+            <span>第 {page} / {totalPages} 頁</span>
+            <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-1 disabled:opacity-40">下一頁</button>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-3">

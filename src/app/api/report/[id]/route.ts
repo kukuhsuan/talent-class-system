@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
-import { generateTeachingReport, normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
+import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { COURSE_CURRICULUM } from "@/lib/line";
 import { notifySchoolReport } from "@/lib/schoolNotification";
-import { getLessonTemplateForReport } from "@/lib/lessonTemplates";
+import { getLessonTemplateForReport, listLessonTemplates } from "@/lib/lessonTemplates";
 
 type ReportPayload = {
   studentCount?: number | null;
   progress?: string;
   skillFocus?: string[];
   classStatus?: string;
+  outcomeText?: string;
   representativePhotoUrl?: string;
   reportPhotos?: string;
   incident?: boolean;
@@ -86,10 +87,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
     }
     const normalizedCourseType = courseLabel(attendance.course.courseType);
-    let progressRows = await prisma.courseProgress.findMany({
-      where: { courseType: normalizedCourseType },
-      orderBy: { lesson: "asc" },
-    });
+    let progressRows = isKindergarten(attendance.course.department)
+      ? await listLessonTemplates(prisma, normalizedCourseType)
+      : await prisma.courseProgress.findMany({
+          where: { courseType: normalizedCourseType },
+          orderBy: { lesson: "asc" },
+        });
     if (progressRows.length === 0 && COURSE_CURRICULUM[normalizedCourseType]) {
       progressRows = COURSE_CURRICULUM[normalizedCourseType].map((item) => ({
         id: 0,
@@ -97,7 +100,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         lesson: item.lesson,
         title: item.title,
         createdAt: new Date(),
-      }));
+      })) as never;
     }
 
     return NextResponse.json({
@@ -117,6 +120,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         lesson: item.lesson,
         title: item.title,
         value: progressText(item),
+        focus: "focus" in item ? item.focus : "",
+        skills: "skills" in item ? item.skills : [],
+        outcomeText: "activityDirection" in item ? item.activityDirection : "",
       })),
       skillFocus: safeJsonArray(attendance.skillFocus),
       classStatus: attendance.classStatus,
@@ -153,7 +159,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const data = (await req.json()) as ReportPayload;
-    const skillFocus = safeJsonArray(data.skillFocus);
     const progress = String(data.progress ?? "").trim();
     const kindergarten = isKindergarten(attendance.course.department);
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
@@ -167,33 +172,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const lessonTemplate = kindergarten
       ? await getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
       : null;
-    const generated = kindergarten
-      ? generateTeachingReport({
-        school: attendance.course.school,
-        courseType: attendance.course.courseType,
-        progress,
-        skillFocus,
-        classStatus,
-        incident,
-        incidentChild,
-        incidentProcess,
-        incidentAction,
-        incidentNotified,
-        lessonTemplate,
-      })
-      : {
-        aiSummary: `今日訓練內容：${progress || "老師已完成現場訓練回報"}。`,
-        aiSkillFocus: "",
-        aiTeachingNote: incident
-          ? `本次課程有特殊事件，${incidentChild ? `孩子「${incidentChild}」` : "現場"}狀況為：${incidentProcess || "已由老師現場觀察與處理"}。處理方式：${incidentAction || "已即時處理"}。${incidentNotified === "是" ? "已通知現場老師或窗口。" : "尚未通知現場老師或窗口。"}`
-          : "本次課程無特殊事件。",
-      };
+    const skillFocus = kindergarten
+      ? safeJsonArray(data.skillFocus).length ? safeJsonArray(data.skillFocus) : (lessonTemplate?.skills ?? [])
+      : [];
+    const focusText = kindergarten ? String(lessonTemplate?.focus ?? "").trim() : "";
+    const outcomeText = String(data.outcomeText ?? lessonTemplate?.activityDirection ?? "").trim();
 
     const reportContent = [
       progress ? `${kindergarten ? "課程進度" : "訓練內容"}：${progress}` : "",
-      generated.aiSummary,
-      generated.aiSkillFocus,
-      generated.aiTeachingNote,
+      focusText ? `本堂重點：${focusText}` : "",
+      outcomeText ? `成果回報：${outcomeText}` : "",
+      skillFocus.length ? `能力培養：${skillFocus.join("、")}` : "",
     ].filter(Boolean).join("\n");
 
     await prisma.attendance.update({
@@ -210,7 +199,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         incidentAction: incident ? incidentAction : "",
         incidentNotified: incident ? incidentNotified : "",
         ...(representativePhotoUrl ? { reportPhotos: JSON.stringify([representativePhotoUrl]) } : {}),
-        ...generated,
+        aiSummary: "",
+        aiSkillFocus: "",
+        aiTeachingNote: "",
       },
     });
 
@@ -218,7 +209,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
     return NextResponse.json({
       ok: true,
-      ...generated,
+      reportContent,
+      aiSummary: "",
+      aiSkillFocus: "",
+      aiTeachingNote: "",
       schoolNotifyStatus: notify.status,
       schoolNotifyError: notify.error ?? "",
       shouldAskAssessment,

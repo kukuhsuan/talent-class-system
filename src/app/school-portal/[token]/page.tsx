@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 
 type PortalData = {
@@ -56,17 +57,23 @@ export default function SchoolPortalPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setLoading(true);
-    setError("");
-    fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}`)
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || "讀取園所資料失敗");
-        return body;
-      })
-      .then(setData)
-      .catch((e) => setError((e as Error).message || "讀取園所資料失敗"))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      setLoading(true);
+      setError("");
+      fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}`)
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || "讀取園所資料失敗");
+          return body;
+        })
+        .then((body) => { if (!cancelled) setData(body); })
+        .catch((e) => { if (!cancelled) setError((e as Error).message || "讀取園所資料失敗"); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [params.token, year, month]);
 
   const recentReports = useMemo(() => (data?.reports ?? []).slice(0, 3), [data]);
@@ -117,7 +124,7 @@ export default function SchoolPortalPage() {
               <div className="text-xs text-slate-500">幼兒園學習成果平台</div>
             </div>
             <div className="h-12 w-12 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <img src="/upbear-logo.png" alt="優比熊" className="h-full w-full object-cover" />
+              <Image src="/upbear-logo.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" />
             </div>
           </div>
 
@@ -293,13 +300,15 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   const [copied, setCopied] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
   const [shareImageUrl, setShareImageUrl] = useState("");
-  const skills = parseSkillFocus(row.skillFocus || row.aiSkillFocus);
-  const progressText = cleanProgressText(row.reportContent);
-  const learningPoints = progressText ? translateProgressForParents(progressText, row.courseName).split("\n").filter(Boolean).slice(0, 3) : [];
-  const outcomeText = buildParentFriendlyText(row.aiTeachingNote, row.aiSummary, skills);
-  const mainText = buildOutcomeDisplayText(progressText, outcomeText, row.courseName, skills);
+  const skills = parseSkillFocus(row.skillFocus || reportField(row.reportContent, "能力培養") || row.aiSkillFocus);
+  const progressText = reportField(row.reportContent, "課程進度") || reportField(row.reportContent, "訓練內容") || cleanProgressText(row.reportContent);
+  const focusText = reportField(row.reportContent, "本堂重點");
+  const learningPoints = focusText.split(/\n|、|，/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
+  const outcomeText = reportField(row.reportContent, "成果回報") || row.aiTeachingNote || row.aiSummary || "";
+  const mainText = outcomeText || "本堂課已完成成果回報。";
   const shareText = buildParentShareText(row, mainText, skills);
   const canExpand = mainText.length > 95;
+  const lesson = extractLesson(progressText);
 
   async function copyShareText() {
     try {
@@ -336,12 +345,18 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
               <h3 className="text-lg font-black text-[#142452] sm:text-2xl">{row.courseName}</h3>
               <p className="mt-1 text-xs font-bold leading-5 text-[#7683A0] sm:text-sm">{row.date}｜{row.teacherName}{row.studentCount ? `｜👦 本堂參與：${row.studentCount} 位孩子` : ""}</p>
             </div>
-            <span className="hidden w-fit rounded-2xl bg-slate-50 px-4 py-2 text-sm font-black text-slate-500 ring-1 ring-slate-100 sm:inline-flex">成果紀錄</span>
+            <span className="hidden w-fit rounded-2xl bg-slate-50 px-4 py-2 text-sm font-black text-slate-500 ring-1 ring-slate-100 sm:inline-flex">{lesson ? `進度第 ${lesson} 堂` : "成果紀錄"}</span>
           </div>
 
           {row.representativePhotoUrl && (
             <div className="mt-3 overflow-hidden rounded-[20px] border border-slate-200 bg-slate-50 sm:mt-5 sm:rounded-[22px]">
-              <img src={row.representativePhotoUrl} alt={`${row.courseName}代表照片`} loading="lazy" className="h-[240px] w-full object-cover sm:h-72" />
+              <Image src={row.representativePhotoUrl} alt={`${row.courseName}代表照片`} width={960} height={540} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 70vw, 760px" loading="lazy" quality={68} className="h-[240px] w-full object-cover sm:h-72" />
+            </div>
+          )}
+
+          {progressText && (
+            <div className="mt-3 rounded-[18px] border border-slate-100 bg-slate-50 px-3 py-2 text-sm font-black text-[#142452] sm:mt-5">
+              今天上了：{progressText}
             </div>
           )}
 
@@ -351,8 +366,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
               <div className="mt-2 grid gap-2">
                 {learningPoints.map((point) => (
                   <div key={point} className="flex items-center gap-2 rounded-2xl bg-blue-50/70 px-3 py-2 text-sm font-black leading-6 text-[#142452]">
-                    <span className="text-lg">{firstIcon(point)}</span>
-                    <span>{stripLeadingIcon(point)}</span>
+                    <span>{point}</span>
                   </div>
                 ))}
               </div>
@@ -396,7 +410,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
             </div>
             {shareImageUrl && (
               <div className="mt-4 overflow-hidden rounded-[20px] border border-white bg-white shadow-sm">
-                <img src={shareImageUrl} alt="家長分享成果卡預覽" className="mx-auto max-h-[520px] w-full object-contain" />
+                <img src={shareImageUrl} alt="家長分享成果卡預覽" loading="lazy" className="mx-auto max-h-[520px] w-full object-contain" />
               </div>
             )}
           </div>
@@ -415,6 +429,19 @@ function parseSkillFocus(value: string) {
     // Existing records may be plain text; split them below.
   }
   return value.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function reportField(content: string, label: string) {
+  const lines = (content || "").split("\n");
+  const start = lines.findIndex((line) => line.trim().startsWith(`${label}：`));
+  if (start < 0) return "";
+  const first = lines[start].replace(`${label}：`, "").trim();
+  const rest: string[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^[^：:]{2,8}[：:]/.test(lines[index].trim())) break;
+    rest.push(lines[index]);
+  }
+  return [first, ...rest].join("\n").trim();
 }
 
 function cleanProgressText(value: string) {
@@ -958,7 +985,7 @@ function SkillCards({ skills, skillMap }: { skills: string[]; skillMap: Record<s
           return (
             <div key={skill} className="flex aspect-square w-full flex-col items-center justify-center rounded-[20px] bg-[#f8fafc] p-3 text-center shadow-[0_8px_20px_rgba(30,64,175,0.04)] ring-1 ring-slate-200/80 sm:rounded-[24px] sm:p-5">
               {meta?.image ? (
-                <img src={meta.image} alt={skill} loading="lazy" className="h-16 w-16 rounded-full object-cover ring-4 ring-white shadow-sm sm:h-20 sm:w-20 lg:h-[86px] lg:w-[86px]" />
+                <Image src={meta.image} alt={skill} width={96} height={96} sizes="(max-width: 640px) 64px, 86px" loading="lazy" quality={70} className="h-16 w-16 rounded-full object-cover ring-4 ring-white shadow-sm sm:h-20 sm:w-20 lg:h-[86px] lg:w-[86px]" />
               ) : (
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-4xl font-black text-blue-600 shadow-inner sm:h-20 sm:w-20 sm:text-5xl lg:h-[86px] lg:w-[86px]">{meta?.icon ?? "•"}</div>
               )}
@@ -1103,7 +1130,7 @@ function BrandBlock() {
   return (
     <div className="flex flex-col items-center border-b border-slate-200 pb-5 pt-3">
       <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-200">
-        <img src="/upbear-logo.png" alt="優比熊" className="h-full w-full object-cover" />
+        <Image src="/upbear-logo.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" />
       </div>
       <div className="mt-3 text-center text-lg font-black text-slate-900">WaysLeader AI</div>
       <div className="mt-1 text-xs font-bold text-slate-500">幼兒園學習成果平台</div>

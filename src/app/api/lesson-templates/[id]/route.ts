@@ -36,6 +36,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     cleanText(data.aiStyle),
     Number(id),
   );
+  await prisma.courseProgress.upsert({
+    where: { courseType_lesson: { courseType, lesson } },
+    update: { title },
+    create: { courseType, lesson, title },
+  });
   return NextResponse.json({ ok: true });
 }
 

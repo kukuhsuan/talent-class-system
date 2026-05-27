@@ -46,6 +46,11 @@ export async function POST(req: NextRequest) {
     cleanText(data.activityDirection),
     cleanText(data.aiStyle),
   );
+  await prisma.courseProgress.upsert({
+    where: { courseType_lesson: { courseType, lesson } },
+    update: { title },
+    create: { courseType, lesson, title },
+  });
 
   const rows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
     "SELECT id FROM LessonTemplate WHERE courseType = ? AND lesson = ? LIMIT 1",

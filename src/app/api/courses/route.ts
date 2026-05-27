@@ -8,25 +8,50 @@ import { departmentQueryValues, normalizeCategory, normalizeDepartment, normaliz
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dept = searchParams.get("dept") ?? "";
+  const page = Math.max(1, Number(searchParams.get("page") ?? "0") || 0);
+  const pageSizeRaw = Number(searchParams.get("pageSize") ?? "0") || 0;
+  const pageSize = pageSizeRaw ? Math.min(50, Math.max(20, pageSizeRaw)) : 0;
+  const region = normalizeRegion(searchParams.get("region") ?? "");
+  const search = (searchParams.get("search") ?? "").trim();
+  const includeDates = searchParams.get("includeDates") !== "0";
   if (searchParams.get("nextCode") === "1") {
     const rows = await prisma.course.findMany({ select: { code: true } });
     return NextResponse.json({ code: nextCourseCode(rows.map((r) => r.code)) });
   }
 
-  const courses = await prisma.course.findMany({
-    where: dept ? { department: { in: departmentQueryValues(dept) } } : {},
+  const where: Record<string, unknown> = {};
+  if (dept) where.department = { in: departmentQueryValues(dept) };
+  if (region) where.region = region;
+  if (search) {
+    where.OR = [
+      { code: { contains: search } },
+      { school: { contains: search } },
+      { courseType: { contains: search } },
+      { teacher: { is: { name: { contains: search } } } },
+    ];
+  }
+
+  const query = {
+    where,
     include: {
       teacher: true,
       assistantTeacher: true,
       schoolRel: true,
-      attendances: { select: { date: true }, orderBy: { date: "asc" } },
+      ...(includeDates ? { attendances: { select: { date: true }, orderBy: { date: "asc" } } } : {}),
     },
     orderBy: [{ region: "asc" }, { dayOfWeek: "asc" }],
-  });
-  return NextResponse.json(courses.map((course) => ({
+  } as const;
+
+  const [courses, total] = await Promise.all([
+    prisma.course.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
+    pageSize ? prisma.course.count({ where }) : Promise.resolve(0),
+  ]);
+  const items = courses.map((course) => ({
     ...course,
-    scheduledDates: [...new Set(course.attendances.map((a) => a.date.toISOString().slice(0, 10)))],
-  })));
+    scheduledDates: "attendances" in course ? [...new Set(course.attendances.map((a) => a.date.toISOString().slice(0, 10)))] : [],
+  }));
+  if (pageSize) return NextResponse.json({ items, total, page, pageSize });
+  return NextResponse.json(items);
 }
 
 export async function POST(req: NextRequest) {

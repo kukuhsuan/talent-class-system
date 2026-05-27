@@ -4,7 +4,7 @@ import { SaveButton } from "@/components/SaveButton";
 import { Toast } from "@/components/Toast";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
-import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, normalizeCategory, normalizeDepartment, normalizeRegion, regionMatchesFilter, REGION_OPTIONS } from "@/lib/courseMeta";
+import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, normalizeCategory, normalizeDepartment, normalizeRegion, REGION_OPTIONS } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
 
@@ -17,6 +17,7 @@ type Course = {
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
   scheduledDates?: string[];
 };
+type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 type DeptOption = (typeof DEPARTMENTS)[number];
 
@@ -114,6 +115,10 @@ export default function CoursesPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterRegion, setFilterRegion] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
   const [saving, setSaving] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [showCourseOptionForm, setShowCourseOptionForm] = useState(false);
@@ -125,14 +130,21 @@ export default function CoursesPage() {
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   const load = useCallback(
-    () =>
+    () => {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), includeDates: "1" });
+      if (dept) params.set("dept", dept);
+      if (filterRegion) params.set("region", filterRegion);
+      if (search.trim()) params.set("search", search.trim());
+      return (
       Promise.all([
-        fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}` : ""}`).then((r) => r.json()),
+        fetch(`/api/courses?${params}`).then((r) => r.json() as Promise<PageResult<Course>>),
         fetch("/api/teachers").then((r) => r.json()),
         fetch("/api/schools").then((r) => r.json()),
         fetch("/api/course-options").then((r) => r.json()),
-      ]).then(([c, t, s, o]) => { setCourses(c); setTeachers(t); setSchools(s); setCourseOptions(o); }),
-    [dept],
+      ]).then(([c, t, s, o]) => { setCourses(c.items); setTotal(c.total); setTeachers(t); setSchools(s); setCourseOptions(o); })
+      );
+    },
+    [dept, filterRegion, page, search],
   );
 
   useEffect(() => { load(); }, [load]);
@@ -271,8 +283,9 @@ export default function CoursesPage() {
     scrollToFormOnEdit();
   };
 
-  const regions = [...new Set(courses.map((c) => normalizeRegion(c.region)).filter(Boolean))].sort();
-  const filtered = courses.filter((c) => !filterRegion || normalizeRegion(c.region) === filterRegion);
+  const regions = [...new Set([...REGION_OPTIONS, ...schools.map((s) => normalizeRegion(s.region)).filter(Boolean)])].sort();
+  const filtered = courses;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const parsedDates = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { dates: [], errors: [] };
   const previewDates = collectScheduledDates(form);
 
@@ -282,7 +295,7 @@ export default function CoursesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
-          <p className="text-sm text-slate-500">共 {courses.length} 門課程</p>
+          <p className="text-sm text-slate-500">共 {total} 門課程，目前顯示 {courses.length} 門</p>
         </div>
         <button onClick={startCreate}
           className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
@@ -544,10 +557,18 @@ export default function CoursesPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-[1fr_auto]">
+          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜尋課程編號、園所、課程或老師" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-40">上一頁</button>
+            <span>第 {page} / {totalPages} 頁</span>
+            <button disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-40">下一頁</button>
+          </div>
+        </div>
         <div className="p-4 border-b border-slate-100 flex gap-2 overflow-x-auto md:flex-wrap">
-          <button onClick={() => setFilterRegion("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-xs border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
-          {[...new Set([...REGION_OPTIONS, ...regions])].map((r) => <button key={r} onClick={() => setFilterRegion(r)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
-          <span className="shrink-0 text-sm text-slate-500 self-center ml-2">共 {filtered.length} 門</span>
+          <button onClick={() => { setFilterRegion(""); setPage(1); }} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-xs border ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>全部</button>
+          {regions.map((r) => <button key={r} onClick={() => { setFilterRegion(r); setPage(1); }} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-xs border ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600"}`}>{r}</button>)}
+          <span className="shrink-0 text-sm text-slate-500 self-center ml-2">本頁 {filtered.length} 門</span>
         </div>
         <div className="divide-y divide-slate-100 md:hidden">
           {filtered.map((c) => (
