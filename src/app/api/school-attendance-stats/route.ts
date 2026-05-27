@@ -3,9 +3,34 @@ import ExcelJS from "exceljs";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, normalizeDepartment } from "@/lib/courseMeta";
 
-function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
-  if (row.studentCountA != null || row.studentCountB != null) return (row.studentCountA ?? 0) + (row.studentCountB ?? 0);
-  return row.studentCount ?? 0;
+export const runtime = "nodejs";
+
+function safeText(value: unknown, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function safeDate(value: Date | string | null | undefined) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function safeCount(value: unknown) {
+  const count = Number(value ?? 0);
+  return Number.isFinite(count) ? count : 0;
+}
+
+function countOf(row: { studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
+  if (row.studentCountA != null || row.studentCountB != null) return safeCount(row.studentCountA) + safeCount(row.studentCountB);
+  return safeCount(row.studentCount);
+}
+
+function contentDisposition(year: number, month: number) {
+  const paddedMonth = String(month).padStart(2, "0");
+  const asciiName = `school-attendance-${year}-${paddedMonth}.xlsx`;
+  const utf8Name = encodeURIComponent(`${year}年${month}月園所上課人數.xlsx`);
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -34,31 +59,36 @@ export async function GET(req: NextRequest) {
     orderBy: { date: "asc" },
   }) as unknown as Array<{
     id: number;
-    date: Date;
+    date: Date | string | null;
     studentCount: number | null;
     studentCountA: number | null;
     studentCountB: number | null;
-    actualTeacher: { name: string };
+    actualTeacher: { name: string } | null;
     course: {
-      school: string;
-      courseType: string;
-      department: string;
+      school: string | null;
+      courseType: string | null;
+      department: string | null;
       schoolRel: { type: string } | null;
-    };
+    } | null;
   }>;
 
   const rows = records
     .map((r) => {
-      const schoolType = r.course.schoolRel?.type ? normalizeDepartment(r.course.schoolRel.type) : (r.course.department ? normalizeDepartment(r.course.department) : "未分類");
+      const course = r.course;
+      const rawCourseType = safeText(course?.courseType, "未分類課程");
+      const rawSchool = safeText(course?.school, "未命名園所");
+      const schoolType = course?.schoolRel?.type
+        ? normalizeDepartment(course.schoolRel.type)
+        : (course?.department ? normalizeDepartment(course.department) : "未分類");
       return {
         id: r.id,
-        school: r.course.school,
+        school: rawSchool,
         schoolType,
-        courseType: r.course.courseType,
-        courseName: courseLabel(r.course.courseType),
-        date: r.date.toISOString().slice(0, 10),
+        courseType: rawCourseType,
+        courseName: courseLabel(rawCourseType),
+        date: safeDate(r.date),
         studentCount: countOf(r),
-        teacherName: r.actualTeacher.name,
+        teacherName: safeText(r.actualTeacher?.name, "未填老師"),
       };
     })
     .filter((r) => !type || r.schoolType === type);
@@ -86,7 +116,7 @@ export async function GET(req: NextRequest) {
           courseName: row.courseName,
           teacherName: row.teacherName,
           date: row.date,
-          studentCount: row.studentCount,
+          studentCount: safeCount(row.studentCount),
           lessonCount: 1,
         }))
       : [{
@@ -114,11 +144,12 @@ export async function GET(req: NextRequest) {
     ws.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
     ws.getColumn("studentCount").numFmt = "0";
     ws.getColumn("lessonCount").numFmt = "0";
-    const buf = await wb.xlsx.writeBuffer();
-    return new NextResponse(buf, {
+    const body = await wb.xlsx.writeBuffer();
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${year}年${month}月園所上課人數.xlsx"`,
+        "Content-Disposition": contentDisposition(year, month),
+        "Cache-Control": "no-store",
       },
     });
   }
