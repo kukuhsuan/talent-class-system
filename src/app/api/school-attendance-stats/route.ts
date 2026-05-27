@@ -33,6 +33,16 @@ function contentDisposition(year: number, month: number) {
   return `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
 }
 
+function styleSheet(ws: ExcelJS.Worksheet) {
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: ws.columnCount },
+  };
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? new Date().getFullYear());
@@ -110,40 +120,109 @@ export async function GET(req: NextRequest) {
   }
 
   if (format === "xlsx") {
-    const exportRows = rows.length > 0
-      ? rows.map((row) => ({
+    const detailRows = rows
+      .map((row) => ({
+        school: row.school,
+        courseName: row.courseName,
+        teacherName: row.teacherName,
+        date: row.date,
+        studentCount: safeCount(row.studentCount),
+        lessonCount: 1,
+      }))
+      .sort((a, b) => (
+        a.school.localeCompare(b.school, "zh-Hant")
+        || a.courseName.localeCompare(b.courseName, "zh-Hant")
+        || a.date.localeCompare(b.date)
+        || a.teacherName.localeCompare(b.teacherName, "zh-Hant")
+      ));
+
+    const summaryRows = Object.values(detailRows.reduce<Record<string, {
+      school: string;
+      courseName: string;
+      teacherNames: Set<string>;
+      dates: Set<string>;
+      studentCount: number;
+      lessonCount: number;
+    }>>((acc, row) => {
+      const key = `${row.school}::${row.courseName}`;
+      if (!acc[key]) {
+        acc[key] = {
           school: row.school,
           courseName: row.courseName,
-          teacherName: row.teacherName,
-          date: row.date,
-          studentCount: safeCount(row.studentCount),
-          lessonCount: 1,
-        }))
-      : [{
-          school: school || "全部園所",
-          courseName: courseType ? courseLabel(courseType) : "全部課程",
-          teacherName: "",
-          date: "",
-          studentCount: total,
-          lessonCount: totalLessons,
-        }];
+          teacherNames: new Set<string>(),
+          dates: new Set<string>(),
+          studentCount: 0,
+          lessonCount: 0,
+        };
+      }
+      acc[key].studentCount += row.studentCount;
+      acc[key].lessonCount += row.lessonCount;
+      if (row.teacherName) acc[key].teacherNames.add(row.teacherName);
+      if (row.date) acc[key].dates.add(row.date);
+      return acc;
+    }, {})).map((row) => ({
+      school: row.school,
+      courseName: row.courseName,
+      teacherName: Array.from(row.teacherNames).join("、") || "未填老師",
+      dates: Array.from(row.dates).sort().join("、"),
+      studentCount: row.studentCount,
+      lessonCount: row.lessonCount,
+    })).sort((a, b) => (
+      a.school.localeCompare(b.school, "zh-Hant")
+      || a.courseName.localeCompare(b.courseName, "zh-Hant")
+    ));
+
+    if (summaryRows.length === 0) {
+      summaryRows.push({
+        school: school || "全部園所",
+        courseName: courseType ? courseLabel(courseType) : "全部課程",
+        teacherName: "未填老師",
+        dates: "",
+        studentCount: total,
+        lessonCount: totalLessons,
+      });
+    }
+
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(`${year}年${month}月園所人數`);
-    ws.columns = [
+    const summarySheet = wb.addWorksheet("園所課程統計");
+    summarySheet.columns = [
       { header: "園所名稱", key: "school", width: 22 },
       { header: "課程名稱", key: "courseName", width: 16 },
-      { header: "老師", key: "teacherName", width: 14 },
+      { header: "出席總人數", key: "studentCount", width: 12 },
+      { header: "堂數", key: "lessonCount", width: 8 },
+      { header: "老師", key: "teacherName", width: 22 },
+      { header: "上課日期", key: "dates", width: 42 },
+    ];
+    summarySheet.addRows(summaryRows);
+    summarySheet.addRow({});
+    summarySheet.addRow({ school: "本月總計", studentCount: total, lessonCount: totalLessons });
+    summarySheet.getColumn("studentCount").numFmt = "0";
+    summarySheet.getColumn("lessonCount").numFmt = "0";
+    styleSheet(summarySheet);
+
+    const detailSheet = wb.addWorksheet("日期明細");
+    detailSheet.columns = [
+      { header: "園所名稱", key: "school", width: 22 },
+      { header: "課程名稱", key: "courseName", width: 16 },
       { header: "日期", key: "date", width: 14 },
       { header: "出席人數", key: "studentCount", width: 10 },
+      { header: "老師", key: "teacherName", width: 14 },
       { header: "堂數", key: "lessonCount", width: 8 },
     ];
-    ws.addRows(exportRows);
-    ws.addRow({});
-    ws.addRow({ school: "本月總計", studentCount: total, lessonCount: totalLessons });
-    ws.getRow(1).font = { bold: true };
-    ws.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
-    ws.getColumn("studentCount").numFmt = "0";
-    ws.getColumn("lessonCount").numFmt = "0";
+    detailSheet.addRows(detailRows.length > 0 ? detailRows : [{
+      school: school || "全部園所",
+      courseName: courseType ? courseLabel(courseType) : "全部課程",
+      date: "",
+      studentCount: total,
+      teacherName: "未填老師",
+      lessonCount: totalLessons,
+    }]);
+    detailSheet.addRow({});
+    detailSheet.addRow({ school: "本月總計", studentCount: total, lessonCount: totalLessons });
+    detailSheet.getColumn("studentCount").numFmt = "0";
+    detailSheet.getColumn("lessonCount").numFmt = "0";
+    styleSheet(detailSheet);
+
     const body = await wb.xlsx.writeBuffer();
     return new NextResponse(body, {
       headers: {
