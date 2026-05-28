@@ -5,16 +5,24 @@ const portalSecret = new TextEncoder().encode(
 );
 
 export async function signSchoolPortalToken(schoolId: number) {
-  return new SignJWT({ type: "school-portal", schoolId })
+  return signSchoolPortalTokenWithVersion(schoolId, 1);
+}
+
+export async function signSchoolPortalTokenWithVersion(schoolId: number, tokenVersion: number) {
+  return new SignJWT({ type: "school-portal", schoolId, tokenVersion })
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("365d")
+    .setExpirationTime("90d")
     .sign(portalSecret);
 }
 
 export async function verifySchoolPortalToken(token: string) {
   const { payload } = await jwtVerify(token, portalSecret);
-  if (payload.type !== "school-portal" || typeof payload.schoolId !== "number") {
+  if (
+    payload.type !== "school-portal"
+    || typeof payload.schoolId !== "number"
+    || typeof payload.tokenVersion !== "number"
+  ) {
     throw new Error("Invalid school portal token");
   }
-  return { schoolId: payload.schoolId };
+  return { schoolId: payload.schoolId, tokenVersion: payload.tokenVersion };
 }

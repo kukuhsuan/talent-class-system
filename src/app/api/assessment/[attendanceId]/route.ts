@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { assessmentSemester, generateGrowthComment, growthTitle, normalizeScores, parseScores, scoreAverage } from "@/lib/kindergartenAssessment";
+import { verifyPublicAccessToken } from "@/lib/publicAccessToken";
 
 type Payload = {
   childName?: string;
@@ -33,8 +34,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ att
   try {
     await ensureAssessmentTable();
     const { attendanceId } = await params;
+    const verified = verifyPublicAccessToken(decodeURIComponent(attendanceId), "assessment");
     const attendance = await prisma.attendance.findUnique({
-      where: { id: Number(attendanceId) },
+      where: { id: verified.attendanceId },
       include: { course: true, actualTeacher: true },
     });
     if (!attendance) return NextResponse.json({ error: "找不到評量課程" }, { status: 404 });
@@ -66,6 +68,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ att
       })),
     });
   } catch (e) {
+    if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
+      return NextResponse.json({ error: "評量連結無效或已過期" }, { status: 401 });
+    }
     console.error("assessment load failed", e);
     return NextResponse.json({ error: `讀取評量資料失敗：${(e as Error).message}` }, { status: 500 });
   }
@@ -75,8 +80,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ att
   try {
     await ensureAssessmentTable();
     const { attendanceId } = await params;
+    const verified = verifyPublicAccessToken(decodeURIComponent(attendanceId), "assessment");
     const attendance = await prisma.attendance.findUnique({
-      where: { id: Number(attendanceId) },
+      where: { id: verified.attendanceId },
       include: { course: true },
     });
     if (!attendance) return NextResponse.json({ error: "找不到評量課程" }, { status: 404 });
@@ -115,6 +121,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ att
     const rows = await prisma.$queryRawUnsafe<{ id: number }[]>("SELECT id FROM KindergartenAssessment ORDER BY id DESC LIMIT 1");
     return NextResponse.json({ ok: true, id: Number(rows[0]?.id), comment, title });
   } catch (e) {
+    if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
+      return NextResponse.json({ error: "評量連結無效或已過期" }, { status: 401 });
+    }
     console.error("assessment save failed", e);
     return NextResponse.json({ error: `儲存評量失敗：${(e as Error).message}` }, { status: 500 });
   }

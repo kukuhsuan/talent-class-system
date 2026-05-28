@@ -2,10 +2,31 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySchoolPortalToken } from "@/lib/schoolPortalToken";
 
+async function ensurePortalTokenVersionColumn() {
+  try {
+    await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN portalTokenVersion INTEGER NOT NULL DEFAULT 1');
+  } catch {
+    // Column already exists.
+  }
+}
+
+async function requireCurrentPortalToken(token: string) {
+  const verified = await verifySchoolPortalToken(token);
+  await ensurePortalTokenVersionColumn();
+  const rows = await prisma.$queryRawUnsafe<Array<{ portalTokenVersion: number }>>(
+    "SELECT portalTokenVersion FROM School WHERE id = ?",
+    verified.schoolId,
+  );
+  if (Number(rows[0]?.portalTokenVersion ?? 0) !== verified.tokenVersion) {
+    throw new Error("Invalid school portal token");
+  }
+  return verified;
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string; id: string }> }) {
   try {
     const { token, id } = await params;
-    const { schoolId } = await verifySchoolPortalToken(decodeURIComponent(token));
+    const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
     const assessment = await prisma.kindergartenAssessment.findUnique({
       where: { id: Number(id) },
       include: { attendance: { include: { course: true, actualTeacher: true } } },

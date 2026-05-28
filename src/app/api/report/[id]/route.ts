@@ -5,6 +5,7 @@ import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { COURSE_CURRICULUM } from "@/lib/line";
 import { notifySchoolReport } from "@/lib/schoolNotification";
 import { getLessonTemplateForReport, listLessonTemplates } from "@/lib/lessonTemplates";
+import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -39,6 +40,13 @@ function firstPhotoUrl(value: string | null | undefined) {
     // Older data can be a plain URL string.
   }
   return raw;
+}
+
+function reportPhotoUrl(value: string | null | undefined, token: string) {
+  const first = firstPhotoUrl(value);
+  if (!first.startsWith("private:")) return first;
+  const path = first.slice("private:".length);
+  return `/api/report/${encodeURIComponent(token)}/photo?path=${encodeURIComponent(path)}`;
 }
 
 function sanitizePhotoUrl(value: string) {
@@ -78,8 +86,9 @@ async function assessmentCount(attendanceId: number) {
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
     const attendance = await prisma.attendance.findUnique({
-      where: { id: Number(id) },
+      where: { id: attendanceId },
       include: { course: true, actualTeacher: true },
     });
 
@@ -134,13 +143,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSummary: attendance.aiSummary,
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
-      representativePhotoUrl: firstPhotoUrl(attendance.reportPhotos),
+      representativePhotoUrl: reportPhotoUrl(attendance.reportPhotos, id),
       shouldAskAssessment: await isFinalKindergartenAttendance(attendance),
       assessmentCount: await assessmentCount(attendance.id),
       schoolNotifyStatus: (attendance as unknown as { schoolNotifyStatus?: string }).schoolNotifyStatus ?? "未通知",
       schoolNotifyError: (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? "",
     });
   } catch (e) {
+    if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
+      return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
+    }
     console.error("report form load failed", e);
     return NextResponse.json({ error: `讀取回報表單失敗：${(e as Error).message}` }, { status: 500 });
   }
@@ -149,8 +161,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
     const attendance = await prisma.attendance.findUnique({
-      where: { id: Number(id) },
+      where: { id: attendanceId },
       include: { course: true },
     });
 
@@ -216,10 +229,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       schoolNotifyStatus: notify.status,
       schoolNotifyError: notify.error ?? "",
       shouldAskAssessment,
-      assessmentUrl: shouldAskAssessment ? `/assessment/${attendance.id}` : "",
+      assessmentUrl: shouldAskAssessment ? `/assessment/${encodeURIComponent(signPublicAccessToken("assessment", attendance.id))}` : "",
       assessmentCount: await assessmentCount(attendance.id),
     });
   } catch (e) {
+    if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
+      return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
+    }
     console.error("report form save failed", e);
     return NextResponse.json({ error: `送出回報失敗：${(e as Error).message}` }, { status: 500 });
   }

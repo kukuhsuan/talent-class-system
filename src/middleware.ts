@@ -5,7 +5,13 @@ const secret = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "talent-class-secret-change-in-prod"
 );
 
-const PUBLIC = ["/login", "/report", "/assessment/", "/school-portal", "/api/auth", "/api/line", "/api/cron", "/api/setup", "/api/report", "/api/assessment/", "/api/school-portal"];
+const PUBLIC_EXACT = ["/login", "/api/setup"];
+const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/api/auth", "/api/line", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/"];
+const ADMIN_ROLES = new Set(["admin", "developer"]);
+
+function isPublicPath(path: string) {
+  return PUBLIC_EXACT.includes(path) || PUBLIC_PREFIX.some((prefix) => path.startsWith(prefix));
+}
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
@@ -30,12 +36,18 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  if (PUBLIC.some((p) => path.startsWith(p))) return NextResponse.next();
+  if (isPublicPath(path)) return NextResponse.next();
 
   if (!token) return unauthorized();
 
   try {
-    await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret);
+    if (!ADMIN_ROLES.has(String(payload.role ?? ""))) {
+      if (path.startsWith("/api/")) {
+        return NextResponse.json({ error: "權限不足" }, { status: 403 });
+      }
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
     return NextResponse.next();
   } catch {
     return unauthorized();

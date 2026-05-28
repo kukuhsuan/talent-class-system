@@ -24,6 +24,13 @@ function firstPhotoUrl(value: string | null | undefined) {
   return raw;
 }
 
+function portalPhotoUrl(value: string | null | undefined, token: string) {
+  const first = firstPhotoUrl(value);
+  if (!first.startsWith("private:")) return first;
+  const path = first.slice("private:".length);
+  return `/api/school-portal/${encodeURIComponent(token)}/photo?path=${encodeURIComponent(path)}`;
+}
+
 async function getSkillCards() {
   try {
     return await prisma.skillCard.findMany({
@@ -35,10 +42,31 @@ async function getSkillCards() {
   }
 }
 
+async function ensurePortalTokenVersionColumn() {
+  try {
+    await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN portalTokenVersion INTEGER NOT NULL DEFAULT 1');
+  } catch {
+    // Column already exists.
+  }
+}
+
+async function requireCurrentPortalToken(token: string) {
+  const verified = await verifySchoolPortalToken(token);
+  await ensurePortalTokenVersionColumn();
+  const rows = await prisma.$queryRawUnsafe<Array<{ portalTokenVersion: number }>>(
+    "SELECT portalTokenVersion FROM School WHERE id = ?",
+    verified.schoolId,
+  );
+  if (Number(rows[0]?.portalTokenVersion ?? 0) !== verified.tokenVersion) {
+    throw new Error("Invalid school portal token");
+  }
+  return verified;
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await verifySchoolPortalToken(decodeURIComponent(token));
+    const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
     const { searchParams } = new URL(req.url);
     const year = Number(searchParams.get("year") ?? new Date().getFullYear());
     const month = Number(searchParams.get("month") ?? new Date().getMonth() + 1);
@@ -113,7 +141,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       aiSummary: r.aiSummary,
       aiSkillFocus: r.aiSkillFocus,
       aiTeachingNote: r.aiTeachingNote,
-      representativePhotoUrl: firstPhotoUrl(r.reportPhotos),
+      representativePhotoUrl: portalPhotoUrl(r.reportPhotos, token),
       schoolNotifyStatus: r.schoolNotifyStatus,
     }));
 

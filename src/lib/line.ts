@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { COURSE_LABEL, courseLabel } from "@/lib/courseMeta";
+import { signPublicAccessToken } from "@/lib/publicAccessToken";
 
 export { COURSE_LABEL, courseLabel };
 
@@ -330,6 +331,7 @@ export function buildReportRequestMessage(opts: {
   attendanceId: number;
 }) {
   const label = courseLabel(opts.courseType);
+  const reportToken = signPublicAccessToken("report", opts.attendanceId);
   return {
     type: "flex",
     altText: `請回報 ${opts.school} ${label} 課程`,
@@ -367,7 +369,7 @@ export function buildReportRequestMessage(opts: {
             type: "button",
             style: "primary",
             color: "#7B9E87",
-            action: { type: "uri", label: "🧸 課後回報", uri: `${appUrl()}/report/${opts.attendanceId}` },
+            action: { type: "uri", label: "🧸 課後回報", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
           },
         ],
       },

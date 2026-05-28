@@ -1,9 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@libsql/client";
 
 // Public idempotent migration endpoint — safe to call multiple times
 // All ALTER TABLE use try/catch so they skip if column already exists
-export async function GET() {
+function authorized(req: NextRequest) {
+  if (process.env.NODE_ENV !== "production") return true;
+  const secret = process.env.ADMIN_PASSWORD;
+  if (!secret) return false;
+  const headerSecret = req.headers.get("x-admin-secret");
+  const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  return headerSecret === secret || bearer === secret;
+}
+
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const client = createClient({
     url: process.env.TURSO_DATABASE_URL!,
     authToken: process.env.TURSO_AUTH_TOKEN,
@@ -15,6 +28,7 @@ export async function GET() {
     'ALTER TABLE Teacher ADD COLUMN isAssistant BOOLEAN NOT NULL DEFAULT false',
     'ALTER TABLE Teacher ADD COLUMN assistantFee INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE School ADD COLUMN type TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE School ADD COLUMN portalTokenVersion INTEGER NOT NULL DEFAULT 1',
     'ALTER TABLE Course ADD COLUMN address TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Course ADD COLUMN assistantTeacherId INTEGER',
     'ALTER TABLE Attendance ADD COLUMN assistantTeacherId INTEGER',
