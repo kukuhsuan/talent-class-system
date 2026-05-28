@@ -17,7 +17,6 @@ model School {
   notes        String   @default("")
   lineUserId   String?
   lineBindCode String?  @unique
-  portalTokenVersion Int @default(1)
   createdAt    DateTime @default(now())
   courses      Course[]
 }
