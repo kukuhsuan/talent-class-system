@@ -7,7 +7,7 @@ import {
   buildReportRequestMessage, buildCurriculumSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
-import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 
 type LineEvent = {
   type: string;
@@ -336,10 +336,9 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     });
     const attInfo = await prisma.attendance.findUnique({
       where: { id: attendanceId }, include: { course: true },
-    }) as unknown as { course: { department: string } } | null;
+    }) as unknown as { category: string; course: { department: string } } | null;
     const dept = attInfo?.course?.department ?? "幼兒園";
-    await sendCountBoard(attendanceId, dept, replyToken, token, `✅ 已記錄：【${content}】\n請填寫今日出席人數：`);
-    await forwardReportToSchool(attendanceId);
+    await completeOrAskCount(attendanceId, attInfo?.category, dept, replyToken, token, `✅ 已記錄：【${content}】`);
     return;
   }
 
@@ -362,10 +361,9 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     if (!cancelled) {
       const attInfo = await prisma.attendance.findUnique({
         where: { id: attendanceId }, include: { course: true },
-      }) as unknown as { course: { department: string } } | null;
+      }) as unknown as { category: string; course: { department: string } } | null;
       const dept = attInfo?.course?.department ?? "幼兒園";
-      await sendCountBoard(attendanceId, dept, replyToken, token, "✅ 已記錄正常上課！請填寫今日出席人數：");
-      await forwardReportToSchool(attendanceId);
+      await completeOrAskCount(attendanceId, attInfo?.category, dept, replyToken, token, "✅ 已記錄正常上課！");
     } else {
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
     }
@@ -380,6 +378,23 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     }], token);
     return;
   }
+}
+
+async function completeOrAskCount(
+  attendanceId: number,
+  category: string | null | undefined,
+  dept: string,
+  replyToken: string,
+  token: string,
+  prefixText: string,
+) {
+  if (!requiresStudentCount(category)) {
+    await replyMessage(replyToken, [{ type: "text", text: `${prefixText}\n課內課固定班級，免填出席人數，已完成回報。` }], token);
+    await forwardReportToSchool(attendanceId);
+    return;
+  }
+  await sendCountBoard(attendanceId, dept, replyToken, token, `${prefixText}\n請填寫今日出席人數：`);
+  await forwardReportToSchool(attendanceId);
 }
 
 // Decide whether to show A班 board (安親) or single board (幼兒園/國小)
@@ -471,23 +486,10 @@ async function saveDetailedReport(userId: string, attendanceId: number, text: st
   const att = await prisma.attendance.findUnique({
     where: { id: attendanceId },
     include: { course: true },
-  }) as unknown as { course: { department: string } } | null;
+  }) as unknown as { category: string; course: { department: string } } | null;
 
   const dept = att?.course?.department ?? "幼兒園";
-  const isAnqin = dept.includes("安親");
-  if (isAnqin) {
-    await replyMessage(replyToken, [
-      { type: "text", text: `✅ 成功記錄：【${content}】\n安親班請分別填寫 A班 與 B班 人數：` },
-      buildStudentCountBoard(attendanceId, "A", dept),
-    ], token);
-  } else {
-    const max = dept.includes("幼兒園") ? 25 : 40;
-    await replyMessage(replyToken, [
-      { type: "text", text: `✅ 成功記錄：【${content}】\n請填寫今日出席人數：` },
-      buildStudentCountBoard(attendanceId, "", dept, 1, max),
-    ], token);
-  }
-  await forwardReportToSchool(attendanceId);
+  await completeOrAskCount(attendanceId, att?.category, dept, replyToken, token, `✅ 成功記錄：【${content}】`);
 }
 
 async function forwardReportToSchool(attendanceId: number) {

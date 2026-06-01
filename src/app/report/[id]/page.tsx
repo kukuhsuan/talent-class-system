@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useParams } from "next/navigation";
+import { requiresStudentCount } from "@/lib/courseMeta";
 import { SKILL_FOCUS_OPTIONS, normalizeClassStatus } from "@/lib/teachingReport";
 
 type ReportInfo = {
@@ -8,6 +9,7 @@ type ReportInfo = {
   date: string;
   school: string;
   department: string;
+  category: string;
   reportMode: "kindergarten" | "simple";
   courseName: string;
   className: string;
@@ -190,7 +192,8 @@ export default function TeacherReportPage() {
   async function submit() {
     if (saving) return;
     const kindergarten = info?.reportMode === "kindergarten";
-    if (!form.studentCount) {
+    const needsStudentCount = requiresStudentCount(info?.category);
+    if (needsStudentCount && !form.studentCount) {
       setError("請填寫今日出席人數");
       return;
     }
@@ -210,7 +213,7 @@ export default function TeacherReportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          studentCount: Number(form.studentCount),
+          studentCount: form.studentCount === "" ? null : Number(form.studentCount),
           skillFocus: kindergarten ? form.skillFocus : [],
           classStatus: kindergarten ? form.classStatus : "",
         }),
@@ -234,12 +237,13 @@ export default function TeacherReportPage() {
   if (loading) return <div className="mx-auto max-w-md py-16 text-center text-slate-500">載入表單中...</div>;
   if (!info) return <div className="mx-auto max-w-md py-16 text-center text-red-500">{error || "找不到表單"}</div>;
   const isKindergarten = info.reportMode === "kindergarten";
+  const needsStudentCount = requiresStudentCount(info.category);
 
   return (
     <div className="mx-auto max-w-md pb-10">
       <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#F5EBDD] via-[#F9F6EF] to-[#DCE8DD] px-5 pb-6 pt-5 shadow-sm">
         <div className="text-xs font-semibold tracking-[0.2em] text-[#7B9E87]">WAYSLEADER AI LEARNING REPORT</div>
-        <h1 className="mt-2 text-2xl font-bold text-[#2E2B27]">課後回報</h1>
+        <h1 className="mt-2 text-2xl font-bold text-[#2E2B27]">課程回報</h1>
         <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-slate-700 shadow-sm">
           <div className="font-semibold text-slate-900">{info.school}</div>
           <div className="mt-1">{info.date}｜{info.courseName}</div>
@@ -271,11 +275,17 @@ export default function TeacherReportPage() {
 
       <div className="space-y-4">
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">出席人數</label>
-          <input inputMode="numeric" type="number" value={form.studentCount}
-            onChange={(e) => setForm({ ...form, studentCount: e.target.value })}
-            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-semibold outline-none focus:border-[#7B9E87]"
-            placeholder="請輸入人數" />
+          <label className="text-sm font-semibold text-slate-800">出席人數{needsStudentCount ? "" : "（免填）"}</label>
+          {needsStudentCount ? (
+            <input inputMode="numeric" type="number" value={form.studentCount}
+              onChange={(e) => setForm({ ...form, studentCount: e.target.value })}
+              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-semibold outline-none focus:border-[#7B9E87]"
+              placeholder="請輸入人數" />
+          ) : (
+            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">
+              課內課固定班級，免填每堂出席人數
+            </div>
+          )}
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
@@ -409,7 +419,7 @@ export default function TeacherReportPage() {
 
         <button onClick={submit} disabled={saving}
           className="sticky bottom-4 w-full rounded-2xl bg-[#3F6B55] px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-900/15 disabled:cursor-not-allowed disabled:opacity-60">
-          {saving ? "送出中..." : "送出課後回報"}
+          {saving ? "送出中..." : "送出課程回報"}
         </button>
       </div>
     </div>

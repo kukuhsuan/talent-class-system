@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { courseLabel } from "@/lib/courseMeta";
+import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { COURSE_CURRICULUM } from "@/lib/line";
 import { notifySchoolReport } from "@/lib/schoolNotification";
@@ -118,6 +118,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       school: attendance.course.school,
       courseType: attendance.course.courseType,
       department: attendance.course.department,
+      category: attendance.category,
       reportMode: isKindergarten(attendance.course.department) ? "kindergarten" : "simple",
       courseName: normalizedCourseType,
       className: attendance.course.enrollCount,
@@ -173,6 +174,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const data = (await req.json()) as ReportPayload;
     const progress = String(data.progress ?? "").trim();
+    const needsStudentCount = requiresStudentCount(attendance.category);
+    if (needsStudentCount && data.studentCount == null) {
+      return NextResponse.json({ error: "請填寫今日出席人數" }, { status: 400 });
+    }
     const kindergarten = isKindergarten(attendance.course.department);
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
     const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());

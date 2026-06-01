@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useDepartment } from "@/lib/departmentContext";
-import { courseLabel } from "@/lib/courseMeta";
+import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { taipeiDateIso } from "@/lib/courseDates";
 
 type Teacher = { id: number; name: string };
@@ -68,10 +68,11 @@ export default function Home() {
     if (!m) return true;
     return Number(m[1]) * 60 + Number(m[2]) <= nowMinutes;
   };
+  const isCountRequired = (a: Attendance) => requiresStudentCount(a.category || a.course.category);
   const pendingReports = todayAttendance.filter((a) =>
     !a.cancelled &&
     isPastTime(a.course.time) &&
-    (a.studentCount == null || !(a.reportContent ?? "").trim())
+    ((isCountRequired(a) && a.studentCount == null) || !(a.reportContent ?? "").trim())
   );
   const unnotified = todayAttendance.filter((a) => !a.cancelled && !a.reportSentAt);
 
@@ -187,7 +188,7 @@ export default function Home() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="font-semibold text-amber-900">待回報課程</h2>
-              <p className="text-sm text-amber-700 mt-1">已到上課時間但還缺出席人數或課程進度。</p>
+              <p className="text-sm text-amber-700 mt-1">已到上課時間但還缺課程進度；課後課也會檢查出席人數。</p>
             </div>
             <Link href="/attendance" className="rounded-lg bg-white border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">前往出勤紀錄</Link>
           </div>
@@ -198,7 +199,7 @@ export default function Home() {
                   <div className="font-medium text-slate-900">{a.course.school}｜{courseLabel(a.course.courseType)}</div>
                   <div className="mt-1 text-sm text-slate-500">{a.date.slice(0, 10)} · {a.actualTeacher.name}{a.course.time ? ` · ${a.course.time}` : ""}</div>
                   <div className="mt-1 flex flex-wrap gap-2">
-                    {a.studentCount == null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">缺出席人數</span>}
+                    {isCountRequired(a) && a.studentCount == null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">缺出席人數</span>}
                     {!(a.reportContent ?? "").trim() && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">缺課程進度</span>}
                   </div>
                 </div>
@@ -265,7 +266,9 @@ export default function Home() {
                           <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">已登記</span>
                           {att.studentCount != null
                             ? <span className="text-sm font-bold text-blue-600">👦 {att.studentCount} 人</span>
-                            : <span className="text-xs text-amber-500">待回報人數</span>}
+                            : isCountRequired(att)
+                              ? <span className="text-xs text-amber-500">待回報人數</span>
+                              : <span className="text-xs text-slate-500">免填人數</span>}
                           {att.actualTeacher.id !== c.teacherId && <div className="text-xs text-orange-500">代：{att.actualTeacher.name}</div>}
                         </div>
                       )

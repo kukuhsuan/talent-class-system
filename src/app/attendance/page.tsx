@@ -4,7 +4,7 @@ import { SaveButton } from "@/components/SaveButton";
 import { Toast } from "@/components/Toast";
 import { ensureOk } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
-import { CATEGORY_OPTIONS, courseLabel, normalizeCategory } from "@/lib/courseMeta";
+import { CATEGORY_OPTIONS, courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
@@ -133,11 +133,13 @@ export default function AttendancePage() {
     return `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))} 週${weekday}`;
   };
   const isPastOrToday = (r: Attendance) => fmt(r.date) <= today();
-  const isMissingReport = (r: Attendance) => !r.cancelled && r.studentCount === null && isPastOrToday(r);
+  const isCountRequired = (r: Attendance) => requiresStudentCount(r.category);
+  const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? "待回報" : "免填");
+  const isMissingReport = (r: Attendance) => !r.cancelled && isCountRequired(r) && r.studentCount === null && isPastOrToday(r);
   const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
   const filteredRecords = records.filter((r) => {
     if (statusFilter === "missing") return isMissingReport(r);
-    if (statusFilter === "done") return !r.cancelled && r.studentCount !== null;
+    if (statusFilter === "done") return !r.cancelled && (!isCountRequired(r) || r.studentCount !== null);
     if (statusFilter === "substitute") return isSubstitute(r);
     if (statusFilter === "cancelled") return r.cancelled;
     return true;
@@ -147,7 +149,7 @@ export default function AttendancePage() {
   const statusTabs = [
     { key: "all", label: "全部", count: filteredByControls.length, className: "bg-blue-50 text-blue-700 border-blue-100" },
     { key: "missing", label: "待回報", count: filteredByControls.filter(isMissingReport).length, className: "bg-amber-50 text-amber-700 border-amber-100" },
-    { key: "done", label: "已回報", count: filteredByControls.filter((r) => !r.cancelled && r.studentCount !== null).length, className: "bg-green-50 text-green-700 border-green-100" },
+    { key: "done", label: "已回報", count: filteredByControls.filter((r) => !r.cancelled && (!isCountRequired(r) || r.studentCount !== null)).length, className: "bg-green-50 text-green-700 border-green-100" },
     { key: "substitute", label: "代課", count: filteredByControls.filter(isSubstitute).length, className: "bg-orange-50 text-orange-700 border-orange-100" },
     { key: "cancelled", label: "停課", count: filteredByControls.filter((r) => r.cancelled).length, className: "bg-red-50 text-red-700 border-red-100" },
   ];
@@ -248,8 +250,8 @@ export default function AttendancePage() {
               </select>
             </div>
             <div>
-              <label>出席人數</label>
-              <input type="number" value={form.studentCount} onChange={(e) => setForm({ ...form, studentCount: e.target.value })} placeholder="人數" />
+              <label>出席人數{requiresStudentCount(form.category) ? "" : "（課內免填）"}</label>
+              <input type="number" value={form.studentCount} onChange={(e) => setForm({ ...form, studentCount: e.target.value })} placeholder={requiresStudentCount(form.category) ? "人數" : "固定班級免填"} />
             </div>
             <div>
               <label>類別</label>
@@ -402,7 +404,7 @@ export default function AttendancePage() {
                             {r.cancelled ? <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-600">停課</span> : <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-600">出課</span>}
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{r.studentCount ?? "待回報"}</div></div>
+                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{countDisplay(r)}</div></div>
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{normalizeCategory(r.category)}｜{r.hours}h</div></div>
                           </div>
                           {substitute && <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
@@ -445,7 +447,9 @@ export default function AttendancePage() {
                                 {(r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教：{(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                                 {substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                               </td>
-                              <td className="px-4 py-4 text-center">{r.studentCount ?? <span className="text-amber-600">待回報</span>}</td>
+                              <td className="px-4 py-4 text-center">
+                                {r.studentCount ?? (isCountRequired(r) ? <span className="text-amber-600">待回報</span> : <span className="text-slate-500">免填</span>)}
+                              </td>
                               <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{normalizeCategory(r.category)}</span></td>
                               <td className="px-4 py-4 text-center">{r.hours}h</td>
                               <td className="px-4 py-4">

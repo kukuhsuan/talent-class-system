@@ -33,10 +33,11 @@ export async function GET(req: NextRequest) {
       },
       select: {
         id: true, date: true, cancelled: true, studentCount: true, reportContent: true, reportSentAt: true,
+        category: true,
         course: {
           select: {
             id: true, school: true, courseType: true, teacherId: true,
-            time: true, address: true,
+            time: true, address: true, category: true,
             teacher: { select: { id: true, name: true } },
           },
         },

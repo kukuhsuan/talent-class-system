@@ -55,6 +55,10 @@ export function normalizeCategory(category: string | null | undefined): Category
   return CATEGORY_ALIASES[trimmed] ?? "課後";
 }
 
+export function requiresStudentCount(category: string | null | undefined) {
+  return normalizeCategory(category) !== "課內";
+}
+
 export const CATEGORY_BADGE_CLASS: Record<CategoryOption, string> = {
   課內: "bg-green-100 text-green-700 border border-green-200",
   課後: "bg-blue-100 text-blue-700 border border-blue-200",

@@ -47,9 +47,10 @@ export async function GET(req: NextRequest) {
   if (status === "missing") {
     where.cancelled = false;
     where.studentCount = null;
+    where.AND = [...((where.AND as Record<string, unknown>[] | undefined) ?? []), { category: { not: "課內" } }];
   } else if (status === "done") {
     where.cancelled = false;
-    where.studentCount = { not: null };
+    where.OR = [{ studentCount: { not: null } }, { category: "課內" }];
   } else if (status === "cancelled") {
     where.cancelled = true;
   }
