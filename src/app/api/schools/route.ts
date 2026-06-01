@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       phone: data.phone ?? "",
       contact: data.contact ?? "",
       notes: data.notes ?? "",
-      lineUserId: data.lineUserId ?? undefined,
+      lineUserId: typeof data.lineUserId === "string" ? data.lineUserId.trim() || null : undefined,
       lineBindCode: data.lineBindCode ?? undefined,
     },
   });

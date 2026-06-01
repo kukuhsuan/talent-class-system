@@ -7,10 +7,10 @@ import { DEPARTMENT_OPTIONS, normalizeDepartment, normalizeRegion, REGION_OPTION
 import { useToast } from "@/lib/useToast";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
-type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string };
+type School = { id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string; lineUserId: string | null };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
-const empty: Omit<School, "id"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "" };
+const empty: Omit<School, "id"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "", lineUserId: "" };
 
 export default function SchoolsPage() {
   const [schools, setSchools] = useState<School[]>([]);
@@ -87,7 +87,7 @@ export default function SchoolsPage() {
   }
 
   function edit(s: School) {
-    setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes });
+    setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes, lineUserId: s.lineUserId ?? "" });
     setEditing(s.id);
     setShowForm(true);
     scrollToFormOnEdit();
@@ -146,6 +146,11 @@ export default function SchoolsPage() {
               <label className="text-xs text-gray-500 mb-1 block">備註</label>
               <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
+            <div className="md:col-span-2">
+              <label className="text-xs text-gray-500 mb-1 block">LINE User ID（可手動貼上）</label>
+              <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.lineUserId ?? ""} onChange={(e) => setForm({ ...form, lineUserId: e.target.value })} placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+              <p className="mt-1 text-xs text-slate-400">若園所已用綁定碼綁定，這裡會自動帶入；你也可以直接貼既有 User ID。</p>
+            </div>
           </div>
           <div className="flex gap-3 mt-4">
             <SaveButton saving={saving} onClick={save} className="px-6" />
@@ -197,6 +202,7 @@ export default function SchoolsPage() {
               <div className="mt-3 space-y-1 text-sm text-slate-500">
                 {s.address && <div>{s.address}</div>}
                 {(s.phone || s.contact) && <div>{s.contact || "聯絡人未填"}{s.phone ? ` · ${s.phone}` : ""}</div>}
+                <div className={s.lineUserId ? "text-xs text-green-600" : "text-xs text-slate-400"}>LINE：{s.lineUserId ? "已綁定" : "未綁定"}</div>
                 {s.notes && <div className="text-xs">{s.notes}</div>}
               </div>
             </div>
@@ -213,6 +219,7 @@ export default function SchoolsPage() {
               <th className="text-left px-4 py-3 font-medium">地址</th>
               <th className="text-left px-4 py-3 font-medium">電話</th>
               <th className="text-left px-4 py-3 font-medium">聯絡人</th>
+              <th className="text-left px-4 py-3 font-medium">LINE</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -225,6 +232,11 @@ export default function SchoolsPage() {
                 <td className="px-4 py-3 text-gray-500">{s.address || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.phone || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.contact || "—"}</td>
+                <td className="px-4 py-3">
+                  {s.lineUserId
+                    ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已綁定</span>
+                    : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
+                </td>
                 <td className="px-4 py-3 text-right space-x-2">
                   <button onClick={() => copyPortalLink(s.id)} className="text-emerald-600 hover:underline text-xs">複製園所端連結</button>
                   <button onClick={() => edit(s)} className="text-blue-600 hover:underline text-xs">編輯</button>
@@ -233,7 +245,7 @@ export default function SchoolsPage() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">尚無園所資料</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-gray-400">尚無園所資料</td></tr>
             )}
           </tbody>
         </table>
