@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays, parseAttendanceDay } from "@/lib/attendanceBatch";
 import { normalizeCategory } from "@/lib/courseMeta";
+import { taipeiDateIso, utcStartOfNextIsoDay } from "@/lib/courseDates";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -35,6 +36,14 @@ export async function GET(req: NextRequest) {
     end.setDate(end.getDate() + 1);
     where.date = { gte: start, lt: end };
   }
+
+  const tomorrowStart = utcStartOfNextIsoDay(taipeiDateIso());
+  const currentDateFilter = (where.date ?? {}) as { gte?: Date; lt?: Date };
+  where.date = {
+    ...currentDateFilter,
+    lt: currentDateFilter.lt && currentDateFilter.lt < tomorrowStart ? currentDateFilter.lt : tomorrowStart,
+  };
+
   if (status === "missing") {
     where.cancelled = false;
     where.studentCount = null;

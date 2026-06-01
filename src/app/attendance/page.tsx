@@ -5,6 +5,7 @@ import { Toast } from "@/components/Toast";
 import { ensureOk } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
 import { CATEGORY_OPTIONS, courseLabel, normalizeCategory } from "@/lib/courseMeta";
+import { taipeiDateIso } from "@/lib/courseDates";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
 
@@ -17,7 +18,7 @@ type Attendance = {
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => taipeiDateIso();
 const EMPTY_FORM = {
   date: today(), courseId: 0, actualTeacherId: 0, assistantTeacherId: null as number | null,
   studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 1, notes: "",
@@ -131,7 +132,8 @@ export default function AttendancePage() {
     const weekday = ["日", "一", "二", "三", "四", "五", "六"][date.getDay()];
     return `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))} 週${weekday}`;
   };
-  const isMissingReport = (r: Attendance) => !r.cancelled && r.studentCount === null;
+  const isPastOrToday = (r: Attendance) => fmt(r.date) <= today();
+  const isMissingReport = (r: Attendance) => !r.cancelled && r.studentCount === null && isPastOrToday(r);
   const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
   const filteredRecords = records.filter((r) => {
     if (statusFilter === "missing") return isMissingReport(r);

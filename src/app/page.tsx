@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useDepartment } from "@/lib/departmentContext";
 import { courseLabel } from "@/lib/courseMeta";
+import { taipeiDateIso } from "@/lib/courseDates";
 
 type Teacher = { id: number; name: string };
 type Course = { id: number; code?: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category?: string; dayOfWeek?: string; time: string; region?: string; address?: string };
@@ -22,7 +23,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = taipeiDateIso(now);
   const todayDayName = DAY_NAMES[now.getDay()];
   const year = now.getFullYear();
   const month = now.getMonth() + 1;

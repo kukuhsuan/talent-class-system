@@ -63,6 +63,27 @@ export function formatMonthDay(iso: string): string {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
+export function taipeiDateIso(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+export function utcStartOfIsoDay(iso: string): Date {
+  return new Date(`${iso}T00:00:00.000Z`);
+}
+
+export function utcStartOfNextIsoDay(iso: string): Date {
+  const date = utcStartOfIsoDay(iso);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date;
+}
+
 export function parseCourseDateInput(input: string, fallbackYear = new Date().getFullYear()) {
   const errors: string[] = [];
   const normalized = input
