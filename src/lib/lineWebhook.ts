@@ -146,26 +146,21 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       return;
     }
 
-    // 安親班固定 7-8月；若已過8月則顯示隔年7-8月
     const DAY_JS: Record<string, number> = {
       "星期一": 1, "星期二": 2, "星期三": 3, "星期四": 4,
       "星期五": 5, "星期六": 6, "星期日": 0,
     };
     const now = new Date();
-    // 決定年份：已超過8月底就用隔年
-    let targetYear = now.getFullYear();
-    if (now.getMonth() >= 8) targetYear += 1; // 9月以後顯示隔年
+    const targetYear = now.getFullYear();
 
-    const julFirst = new Date(targetYear, 6, 1);   // 7/1
-    const augLast  = new Date(targetYear, 7, 31);  // 8/31
-    const augLastEnd = new Date(augLast);
-    augLastEnd.setHours(23, 59, 59, 999);
+    const yearStart = new Date(targetYear, 0, 1);
+    const yearEnd = new Date(targetYear, 11, 31, 23, 59, 59, 999);
 
     const actualRows = await prisma.attendance.findMany({
       where: {
         actualTeacherId: teacher.id,
         cancelled: false,
-        date: { gte: julFirst, lte: augLastEnd },
+        date: { gte: yearStart, lte: yearEnd },
       },
       include: { course: { include: { schoolRel: true } } },
       orderBy: { date: "asc" },
@@ -173,13 +168,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       date: Date;
       course: { school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
     }>;
-
-    // 找到7/1當週的週一
-    const julDay = julFirst.getDay();
-    const diffToMon = julDay === 0 ? -6 : 1 - julDay;
-    const firstMonday = new Date(julFirst);
-    firstMonday.setDate(julFirst.getDate() + diffToMon);
-    firstMonday.setHours(0, 0, 0, 0);
 
     const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
@@ -192,71 +180,65 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       month: string;
       entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string }>;
     }> = [];
-    const cursor = new Date(firstMonday);
-    while (cursor <= augLast) {
-      const mon = new Date(cursor);
-      const sat = new Date(mon); sat.setDate(mon.getDate() + 5);
+    type ScheduleEntryRow = {
+      date: string;
+      dayShort: string;
+      school: string;
+      courseType: string;
+      time: string;
+      address?: string;
+      sortKey: number;
+    };
 
-      // Only include weeks that overlap with Jul–Aug
-      const weekEnd = new Date(mon); weekEnd.setDate(mon.getDate() + 6);
-      if (weekEnd >= julFirst && mon <= augLast) {
-        type WeekEntryRow = {
-          date: string;
-          dayShort: string;
-          school: string;
-          courseType: string;
-          time: string;
-          address?: string;
-          sortKey: number;
-        };
-        const entries = actualRows.length > 0
-          ? actualRows
-            .filter((a) => a.date >= mon && a.date <= weekEnd)
-            .map((a): WeekEntryRow => {
-              const iso = a.date.toISOString().slice(0, 10);
-              const weekday = weekdayOfIso(iso);
-              return {
-                date: formatMonthDay(iso),
-                dayShort: weekday.replace("星期", ""),
-                school: a.course.school,
-                courseType: a.course.courseType,
-                time: a.course.time,
-                address: a.course.address || a.course.schoolRel?.address || "",
-                sortKey: a.date.getTime(),
-              };
-            })
-            .sort((a, b) => a.sortKey - b.sortKey)
-            .map(({ date, dayShort, school, courseType, time, address }) => ({ date, dayShort, school, courseType, time, address }))
-          : displayCourses
-          .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
-          .map((c: { dayOfWeek: string; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null }): WeekEntryRow | null => {
-            const d = new Date(mon);
-            const targetDay = DAY_JS[c.dayOfWeek];
-            const diff = targetDay === 0 ? 6 : targetDay - 1;
-            d.setDate(mon.getDate() + diff);
-            // Only include dates within Jul-Aug
-            if (d < julFirst || d > augLast) return null;
+    for (let month = 0; month < 12; month++) {
+      const monthStart = new Date(targetYear, month, 1);
+      const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
+      const entries = actualRows.length > 0
+        ? actualRows
+          .filter((a) => a.date >= monthStart && a.date <= monthEnd)
+          .map((a): ScheduleEntryRow => {
+            const iso = a.date.toISOString().slice(0, 10);
+            const weekday = weekdayOfIso(iso);
             return {
-              date: fmt(d),
-              dayShort: c.dayOfWeek.replace("星期", ""),
-              school: c.school,
-              courseType: c.courseType,
-              time: c.time,
-              address: c.address || c.schoolRel?.address || "",
-              sortKey: diff,
+              date: formatMonthDay(iso),
+              dayShort: weekday.replace("星期", ""),
+              school: a.course.school,
+              courseType: a.course.courseType,
+              time: a.course.time,
+              address: a.course.address || a.course.schoolRel?.address || "",
+              sortKey: a.date.getTime(),
             };
           })
-          .filter((e): e is WeekEntryRow => e !== null)
-          .sort((a, b) => a.sortKey - b.sortKey)
-          .map(({ date, dayShort, school, courseType, time, address }) => ({ date, dayShort, school, courseType, time, address }));
+        : displayCourses
+          .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
+          .flatMap((c: { dayOfWeek: string; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null }) => {
+            const rows: ScheduleEntryRow[] = [];
+            const targetDay = DAY_JS[c.dayOfWeek];
+            const cursor = new Date(monthStart);
+            while (cursor <= monthEnd) {
+              if (cursor.getDay() === targetDay) {
+                rows.push({
+                  date: fmt(cursor),
+                  dayShort: c.dayOfWeek.replace("星期", ""),
+                  school: c.school,
+                  courseType: c.courseType,
+                  time: c.time,
+                  address: c.address || c.schoolRel?.address || "",
+                  sortKey: cursor.getTime(),
+                });
+              }
+              cursor.setDate(cursor.getDate() + 1);
+            }
+            return rows;
+          });
 
-        weeks.push({
-          label: `${fmt(mon)} ~ ${fmt(sat)}`,
-          month: `${mon.getMonth() + 1}月`,
-          entries,
-        });
-      }
-      cursor.setDate(cursor.getDate() + 7);
+      weeks.push({
+        label: `${targetYear} 年 ${month + 1} 月`,
+        month: `${month + 1}月`,
+        entries: entries
+          .sort((a, b) => a.sortKey - b.sortKey)
+          .map(({ date, dayShort, school, courseType, time, address }) => ({ date, dayShort, school, courseType, time, address })),
+      });
     }
 
     const msg = buildTwoMonthScheduleMessage({ teacherName: teacher.name, weeks });
@@ -296,35 +278,35 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   }
 
   const upper = text.toUpperCase();
+  const looksLikeBindCode = /^[A-Z0-9]{6}$/.test(upper);
 
   if (region === "school") {
-    const school = await prisma.school.findFirst({ where: { lineBindCode: upper } });
-    if (school) {
-      await prisma.school.update({ where: { id: school.id }, data: { lineUserId: userId } });
-      await replyMessage(replyToken, [{ type: "text", text: `✅ 綁定成功！${school.name} 已連結。之後課程回報會自動發送到這裡。` }], token);
+    if (looksLikeBindCode) {
+      const school = await prisma.school.findFirst({ where: { lineBindCode: upper } });
+      if (school) {
+        await prisma.school.update({ where: { id: school.id }, data: { lineUserId: userId } });
+        await replyMessage(replyToken, [{ type: "text", text: `✅ 綁定成功！${school.name} 已連結。之後課程回報會自動發送到這裡。` }], token);
+        return;
+      }
+      await replyMessage(replyToken, [{ type: "text", text: "找不到此綁定碼，請確認後重試，或聯絡管理員。" }], token);
       return;
     }
-    await replyMessage(replyToken, [{ type: "text", text: "找不到此綁定碼，請確認後重試，或聯絡管理員。" }], token);
     return;
   }
 
-  const teacher = await prisma.teacher.findFirst({ where: { lineBindCode: upper } });
-  if (teacher) {
-    await prisma.teacher.update({ where: { id: teacher.id }, data: { lineUserId: userId, lineRegion: region } });
-    await replyMessage(replyToken, [{ type: "text", text: `✅ 綁定成功！${teacher.name} 老師，您已連結到${region === "north" ? "北部" : "南部"}系統。` }], token);
+  if (looksLikeBindCode) {
+    const teacher = await prisma.teacher.findFirst({ where: { lineBindCode: upper } });
+    if (teacher) {
+      await prisma.teacher.update({ where: { id: teacher.id }, data: { lineUserId: userId, lineRegion: region } });
+      await replyMessage(replyToken, [{ type: "text", text: `✅ 綁定成功！${teacher.name} 老師，您已連結到${region === "north" ? "北部" : "南部"}系統。` }], token);
+      return;
+    }
+    await replyMessage(replyToken, [{ type: "text", text: "請確認綁定碼是否正確，或聯絡管理員。" }], token);
     return;
   }
 
-  const bound = await prisma.teacher.findFirst({ where: { lineUserId: userId } });
-  if (bound) {
-    await replyMessage(replyToken, [{
-      type: "text",
-      text: `您好，${bound.name} 老師！\n\n可用指令：\n📅 課表 — 查詢本週課程\n📝 報課 — 回報今日出席`,
-    }], token);
-    return;
-  }
-
-  await replyMessage(replyToken, [{ type: "text", text: "請傳送您的綁定碼完成身份驗證，管理員可提供您的綁定碼。" }], token);
+  // Ignore casual chat such as "ok" or "感謝". Teachers only receive replies
+  // after explicit commands like "課表" / "報課" or while completing a report.
 }
 
 async function handlePostback(userId: string, data: string, replyToken: string, region: LineRegion, token: string) {

@@ -605,7 +605,7 @@ export function buildScheduleMessage(opts: {
   };
 }
 
-// Build a 2-month schedule as a carousel (one bubble per week, ~8 weeks)
+// Build a schedule carousel. LINE allows up to 12 bubbles, so the yearly view uses one bubble per month.
 export function buildTwoMonthScheduleMessage(opts: {
   teacherName: string;
   weeks: Array<{
@@ -647,8 +647,8 @@ export function buildTwoMonthScheduleMessage(opts: {
 
   return {
     type: "flex",
-    altText: `${opts.teacherName} 老師近2個月課程表`,
-    contents: { type: "carousel", contents: bubbles },
+    altText: `${opts.teacherName} 老師課程表`,
+    contents: { type: "carousel", contents: bubbles.slice(0, 12) },
   };
 }
 
