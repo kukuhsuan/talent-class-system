@@ -149,12 +149,14 @@ export default function AttendancePage() {
     const weekday = ["日", "一", "二", "三", "四", "五", "六"][date.getDay()];
     return `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))} 週${weekday}`;
   };
+  const WAITING_TEACHER = "待排老師";
   const isCountRequired = (r: Attendance) => requiresStudentCount(r.category);
   const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? "待回報" : "免填");
   const isReportComplete = (r: Attendance) => r.cancelled
     || (!isCountRequired(r) ? Boolean(r.reportContent?.trim()) : r.studentCount !== null);
   const isMissingReport = (r: Attendance) => Boolean(r.pendingReport);
   const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
+  const isUnassigned = (r: Attendance) => r.actualTeacher.name === WAITING_TEACHER;
   const statusLabel = (r: Attendance) => r.cancelled
     ? "停課"
     : !isCountRequired(r)
@@ -166,16 +168,19 @@ export default function AttendancePage() {
     if (statusFilter === "done") return isReportComplete(r);
     if (statusFilter === "substitute") return isSubstitute(r);
     if (statusFilter === "cancelled") return r.cancelled;
+    if (statusFilter === "unassigned") return isUnassigned(r);
     return true;
   });
   const filteredByControls = records;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const unassignedCount = filteredByControls.filter(isUnassigned).length;
   const statusTabs = [
     { key: "all", label: "全部", count: filteredByControls.length, className: "bg-blue-50 text-blue-700 border-blue-100" },
     { key: "missing", label: "待回報", count: filteredByControls.filter(isMissingReport).length, className: "bg-amber-50 text-amber-700 border-amber-100" },
     { key: "done", label: "已回報", count: filteredByControls.filter(isReportComplete).length, className: "bg-green-50 text-green-700 border-green-100" },
     { key: "substitute", label: "代課", count: filteredByControls.filter(isSubstitute).length, className: "bg-orange-50 text-orange-700 border-orange-100" },
     { key: "cancelled", label: "停課", count: filteredByControls.filter((r) => r.cancelled).length, className: "bg-red-50 text-red-700 border-red-100" },
+    ...(unassignedCount > 0 ? [{ key: "unassigned", label: "⚠ 待指派老師", count: unassignedCount, className: "bg-rose-50 text-rose-700 border-rose-200" }] : []),
   ];
   const schoolOptions = [...new Set(courses.map((r) => r.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
   const summary = {
@@ -434,8 +439,8 @@ export default function AttendancePage() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="font-semibold text-slate-900">{fmtShort(r.date)}</div>
-                              <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜主教 {r.actualTeacher.name}</div>
-                              {(r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
+                              <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜{isUnassigned(r) ? <span className="font-semibold text-rose-600">⚠ 待指派老師</span> : `主教 ${r.actualTeacher.name}`}</div>
+                              {!isUnassigned(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                             </div>
                             <span className={`rounded-full px-2 py-1 text-xs ${r.cancelled ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>{statusLabel(r)}</span>
                           </div>
@@ -474,16 +479,19 @@ export default function AttendancePage() {
                         {group.rows.map((r) => {
                           const substitute = isSubstitute(r);
                           return (
-                            <tr key={r.id} className={`${r.cancelled ? "opacity-50" : ""} hover:bg-slate-50/70`}>
+                            <tr key={r.id} className={`${r.cancelled ? "opacity-50" : ""} ${isUnassigned(r) ? "bg-rose-50/40" : ""} hover:bg-slate-50/70`}>
                               <td className="px-4 py-4 whitespace-nowrap">{fmtShort(r.date)}</td>
                               <td className="px-4 py-4">
                                 <div className="font-medium text-slate-900">{courseLabel(r.course.courseType)}</div>
                                 <div className="font-mono text-xs text-slate-400">{r.course.code}</div>
                               </td>
                               <td className="px-4 py-4">
-                                <div className={substitute ? "font-medium text-orange-700" : "text-slate-700"}>{r.actualTeacher.name}</div>
-                                {(r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教：{(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
-                                {substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
+                                {isUnassigned(r)
+                                  ? <div className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">⚠ 待指派老師</div>
+                                  : <div className={substitute ? "font-medium text-orange-700" : "text-slate-700"}>{r.actualTeacher.name}</div>
+                                }
+                                {!isUnassigned(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教：{(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
+                                {!isUnassigned(r) && substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                               </td>
                               <td className="px-4 py-4 text-center">
                                 {r.studentCount ?? (isCountRequired(r) ? <span className="text-amber-600">待回報</span> : <span className="text-slate-500">免填</span>)}
