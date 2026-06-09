@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays, parseAttendanceDay } from "@/lib/attendanceBatch";
+import { attendanceScheduledTimeMap, stampAttendanceTime } from "@/lib/attendanceTime";
 import { normalizeCategory } from "@/lib/courseMeta";
-import { taipeiDateIso, utcStartOfNextIsoDay } from "@/lib/courseDates";
+import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
+import { attendanceMissingItems, attendanceReportWindow, isPendingReport } from "@/lib/reportWindow";
+import { coursePayrollHoursForAttendance, coursePayrollHoursMap } from "@/lib/payrollHours";
+import { resolvePayrollHours } from "@/lib/payrollHoursCore";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -28,7 +33,8 @@ export async function GET(req: NextRequest) {
   const courseFilter: Record<string, unknown> = {};
   if (dept) courseFilter.department = dept;
   if (school) courseFilter.school = school;
-  if (category) where.category = normalizeCategory(category);
+  const normalizedCategory = category ? normalizeCategory(category) : "";
+  if (normalizedCategory) where.category = normalizedCategory;
   if (teacherId) where.actualTeacherId = Number(teacherId);
   if (date) {
     const start = parseAttendanceDay(date.slice(0, 10));
@@ -46,31 +52,81 @@ export async function GET(req: NextRequest) {
 
   if (status === "missing") {
     where.cancelled = false;
-    where.studentCount = null;
-    where.AND = [...((where.AND as Record<string, unknown>[] | undefined) ?? []), { category: { not: "課內" } }];
+    const todayIso = taipeiDateIso();
+    const twoDaysAgo = utcStartOfIsoDay(todayIso);
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    const dateFilter = (where.date ?? {}) as { gte?: Date; lt?: Date };
+    where.date = {
+      ...dateFilter,
+      gte: dateFilter.gte && dateFilter.gte > twoDaysAgo ? dateFilter.gte : twoDaysAgo,
+    };
+    const missingProgress = { reportContent: "" };
+    if (normalizedCategory === "課內") {
+      where.OR = [missingProgress];
+    } else {
+      const missingCount = {
+        ...(normalizedCategory ? {} : { category: { not: "課內" } }),
+        studentCount: null,
+        studentCountA: null,
+        studentCountB: null,
+      };
+      where.OR = [missingCount, missingProgress];
+    }
   } else if (status === "done") {
     where.cancelled = false;
-    where.OR = [{ studentCount: { not: null } }, { category: "課內" }];
+    where.OR = [
+      { studentCount: { not: null } },
+      { studentCountA: { not: null } },
+      { studentCountB: { not: null } },
+      { category: "課內", reportContent: { not: "" } },
+    ];
   } else if (status === "cancelled") {
     where.cancelled = true;
   }
   if (Object.keys(courseFilter).length) where.course = courseFilter;
 
   const query = {
-    where,
+    where: where as Prisma.AttendanceWhereInput,
     include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
-    orderBy: { date: "desc" },
-  } as const;
-  const [records, total] = await Promise.all([
-    prisma.attendance.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
-    pageSize ? prisma.attendance.count({ where }) : Promise.resolve(0),
+    orderBy: { date: "desc" as const },
+  } satisfies Prisma.AttendanceFindManyArgs;
+  const paginateInDatabase = pageSize > 0 && status !== "missing";
+  const [records, databaseTotal] = await Promise.all([
+    prisma.attendance.findMany({ ...query, ...(paginateInDatabase ? { skip: (page - 1) * pageSize, take: pageSize } : {}) }),
+    paginateInDatabase ? prisma.attendance.count({ where: where as Prisma.AttendanceWhereInput }) : Promise.resolve(0),
   ]);
-  const unique = new Map<string, (typeof records)[number]>();
-  for (const record of records) {
+  const scheduledTimeMap = await attendanceScheduledTimeMap(records.map((record) => record.id));
+  const payrollMap = await coursePayrollHoursMap(records.map((record) => record.courseId));
+  const annotatedRecords = records.map((record) => {
+    const scheduledTime = scheduledTimeMap.get(record.id) || record.course.time || "";
+    const payrollHours = resolvePayrollHours(record.hours, payrollMap.get(record.courseId), scheduledTime);
+    const reportWindow = attendanceReportWindow({ ...record, hours: payrollHours.payableHours }, scheduledTime);
+    const missingItems = attendanceMissingItems({ ...record, hours: payrollHours.payableHours }, scheduledTime);
+    return {
+      ...record,
+      scheduledTime: scheduledTimeMap.get(record.id) ?? "",
+      course: { ...record.course, payrollHours: payrollMap.get(record.courseId) ?? null },
+      hours: payrollHours.payableHours,
+      hoursNeedsReview: payrollHours.needsReview,
+      hoursReviewReason: payrollHours.reason,
+      reportFillable: reportWindow.fillable,
+      reportExpired: reportWindow.expired,
+      reportFillStatus: reportWindow.status,
+      reportExpiresAt: reportWindow.expiresAt.toISOString(),
+      missingItems,
+      pendingReport: isPendingReport({ ...record, hours: payrollHours.payableHours }, scheduledTime),
+    };
+  });
+  const unique = new Map<string, (typeof annotatedRecords)[number]>();
+  for (const record of annotatedRecords) {
     const key = `${record.course.code || record.courseId}|${record.date.toISOString().slice(0, 10)}`;
     if (!unique.has(key)) unique.set(key, record);
   }
-  const items = [...unique.values()];
+  const allItems = [...unique.values()].filter((record) => status !== "missing" || record.pendingReport);
+  const total = status === "missing" ? allItems.length : databaseTotal;
+  const items = pageSize && status === "missing"
+    ? allItems.slice((page - 1) * pageSize, page * pageSize)
+    : allItems;
   if (pageSize) return NextResponse.json({ items, total, page, pageSize });
   return NextResponse.json(items);
 }
@@ -86,7 +142,7 @@ function buildFields(data: Record<string, unknown>) {
     makeupDate: data.makeupDate ? parseAttendanceDay(String(data.makeupDate).slice(0, 10)) : null,
     makeupDone: Boolean(data.makeupDone),
     category: normalizeCategory(data.category as string),
-    hours: Number(data.hours) || 1,
+    hours: Number.isFinite(Number(data.hours)) ? Number(data.hours) : 0,
     notes: (data.notes as string) ?? "",
   };
 }
@@ -105,8 +161,18 @@ export async function POST(req: NextRequest) {
   }
 
   const fields = buildFields(data);
+  const course = await prisma.course.findUnique({ where: { id: fields.courseId }, select: { id: true, time: true } });
+  const payrollMap = await coursePayrollHoursMap(course ? [course.id] : []);
+  const calculatedHours = coursePayrollHoursForAttendance(payrollMap.get(fields.courseId), course?.time ?? "");
+  if (!fields.hours || fields.hours <= 0) fields.hours = calculatedHours.hours;
+  if (calculatedHours.needsReview && !fields.notes.includes("上課時間需人工確認")) {
+    fields.notes = [fields.notes, `上課時間需人工確認：${calculatedHours.reason}`].filter(Boolean).join("；");
+  }
 
   const { created, skipped, records } = await createAttendancesForUniqueDays(dates, fields);
+  if (created > 0) {
+    await stampAttendanceTime(fields.courseId, dates, course?.time ?? "");
+  }
   if (dates.length === 1) {
     return NextResponse.json(
       records[0] ?? { created, skipped, records },

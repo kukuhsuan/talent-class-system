@@ -5,24 +5,31 @@ import { Toast } from "@/components/Toast";
 import { ensureOk } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
 import { CATEGORY_OPTIONS, courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
+import { coursePayrollHoursForAttendance } from "@/lib/payrollHoursCore";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
 
 type Teacher = { id: number; name: string };
-type Course = { id: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null; category: string };
+type Course = { id: number; code: string; school: string; courseType: string; time: string; payrollHours?: number | null; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null; category: string };
 type Attendance = {
   id: number; date: string; course: Course; actualTeacher: Teacher; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   studentCount: number | null; cancelled: boolean; cancelReason: string; makeupDate: string | null; makeupDone: boolean;
-  category: string; hours: number; notes: string;
+  category: string; hours: number; notes: string; scheduledTime?: string; reportContent?: string;
+  reportFillable?: boolean; reportExpired?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 const today = () => taipeiDateIso();
+const initialStatusFilter = () => {
+  if (typeof window === "undefined") return "all";
+  const status = new URLSearchParams(window.location.search).get("status");
+  return ["all", "missing", "done", "substitute", "cancelled"].includes(status ?? "") ? status ?? "all" : "all";
+};
 const EMPTY_FORM = {
   date: today(), courseId: 0, actualTeacherId: 0, assistantTeacherId: null as number | null,
-  studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 1, notes: "",
-  extraDates: [] as string[],
+  studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 0, notes: "",
+  scheduledTime: "", confirmCompleted: false, extraDates: [] as string[],
 };
 
 export default function AttendancePage() {
@@ -35,7 +42,7 @@ export default function AttendancePage() {
   const [showForm, setShowForm] = useState(false);
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
   const [filterSchool, setFilterSchool] = useState("");
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterDate, setFilterDate] = useState("");
@@ -69,7 +76,17 @@ export default function AttendancePage() {
 
   const onCourseChange = (courseId: number) => {
     const c = courses.find((x) => x.id === courseId);
-    setForm((f) => ({ ...f, courseId, actualTeacherId: c?.teacherId ?? 0, assistantTeacherId: c?.assistantTeacherId ?? null, category: normalizeCategory(c?.category) }));
+    const calculatedHours = coursePayrollHoursForAttendance(c?.payrollHours, c?.time ?? "");
+    setForm((f) => ({
+      ...f,
+      courseId,
+      category: normalizeCategory(c?.category),
+      hours: calculatedHours.hours,
+      ...(editing === null ? {
+        actualTeacherId: c?.teacherId ?? 0,
+        assistantTeacherId: c?.assistantTeacherId ?? null,
+      } : {}),
+    }));
   };
 
   const save = async () => {
@@ -120,7 +137,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, extraDates: [] });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [] });
     setEditing(r.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -132,14 +149,21 @@ export default function AttendancePage() {
     const weekday = ["日", "一", "二", "三", "四", "五", "六"][date.getDay()];
     return `${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))} 週${weekday}`;
   };
-  const isPastOrToday = (r: Attendance) => fmt(r.date) <= today();
   const isCountRequired = (r: Attendance) => requiresStudentCount(r.category);
   const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? "待回報" : "免填");
-  const isMissingReport = (r: Attendance) => !r.cancelled && isCountRequired(r) && r.studentCount === null && isPastOrToday(r);
+  const isReportComplete = (r: Attendance) => r.cancelled
+    || (!isCountRequired(r) ? Boolean(r.reportContent?.trim()) : r.studentCount !== null);
+  const isMissingReport = (r: Attendance) => Boolean(r.pendingReport);
   const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
+  const statusLabel = (r: Attendance) => r.cancelled
+    ? "停課"
+    : !isCountRequired(r)
+      ? isReportComplete(r) ? "出課完成" : "待確認出課"
+      : isReportComplete(r) ? "完成" : "出課";
+  const hoursDisplay = (r: Attendance) => r.hoursNeedsReview ? "需人工確認" : `${r.hours}h`;
   const filteredRecords = records.filter((r) => {
     if (statusFilter === "missing") return isMissingReport(r);
-    if (statusFilter === "done") return !r.cancelled && (!isCountRequired(r) || r.studentCount !== null);
+    if (statusFilter === "done") return isReportComplete(r);
     if (statusFilter === "substitute") return isSubstitute(r);
     if (statusFilter === "cancelled") return r.cancelled;
     return true;
@@ -149,7 +173,7 @@ export default function AttendancePage() {
   const statusTabs = [
     { key: "all", label: "全部", count: filteredByControls.length, className: "bg-blue-50 text-blue-700 border-blue-100" },
     { key: "missing", label: "待回報", count: filteredByControls.filter(isMissingReport).length, className: "bg-amber-50 text-amber-700 border-amber-100" },
-    { key: "done", label: "已回報", count: filteredByControls.filter((r) => !r.cancelled && (!isCountRequired(r) || r.studentCount !== null)).length, className: "bg-green-50 text-green-700 border-green-100" },
+    { key: "done", label: "已回報", count: filteredByControls.filter(isReportComplete).length, className: "bg-green-50 text-green-700 border-green-100" },
     { key: "substitute", label: "代課", count: filteredByControls.filter(isSubstitute).length, className: "bg-orange-50 text-orange-700 border-orange-100" },
     { key: "cancelled", label: "停課", count: filteredByControls.filter((r) => r.cancelled).length, className: "bg-red-50 text-red-700 border-red-100" },
   ];
@@ -260,8 +284,8 @@ export default function AttendancePage() {
               </select>
             </div>
             <div>
-              <label>時數</label>
-              <input type="number" step="0.5" value={form.hours} onChange={(e) => setForm({ ...form, hours: Number(e.target.value) })} />
+              <label>計薪時數</label>
+              <input type="number" step="0.01" value={form.hours} onChange={(e) => setForm({ ...form, hours: Number(e.target.value) })} />
             </div>
             <div>
               <label className="flex items-center gap-2 mt-6 cursor-pointer">
@@ -269,6 +293,14 @@ export default function AttendancePage() {
                 <span className="text-sm font-medium text-slate-700">停課</span>
               </label>
             </div>
+            {editing !== null && !requiresStudentCount(form.category) && !form.cancelled && (
+              <div>
+                <label className="flex items-center gap-2 mt-6 cursor-pointer">
+                  <input type="checkbox" checked={form.confirmCompleted} onChange={(e) => setForm({ ...form, confirmCompleted: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm font-medium text-slate-700">確認已出課（後台人工確認）</span>
+                </label>
+              </div>
+            )}
             {form.cancelled && (
               <>
                 <div>
@@ -287,6 +319,10 @@ export default function AttendancePage() {
                 </div>
               </>
             )}
+            <div>
+              <label>每日上課時間（覆蓋課程預設）</label>
+              <input value={form.scheduledTime} onChange={(e) => setForm({ ...form, scheduledTime: e.target.value })} placeholder={courses.find((c) => c.id === form.courseId)?.time ?? "例：14:00-15:00"} />
+            </div>
             <div className="md:col-span-2">
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註" />
@@ -401,12 +437,14 @@ export default function AttendancePage() {
                               <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜主教 {r.actualTeacher.name}</div>
                               {(r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                             </div>
-                            {r.cancelled ? <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-600">停課</span> : <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-600">出課</span>}
+                            <span className={`rounded-full px-2 py-1 text-xs ${r.cancelled ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>{statusLabel(r)}</span>
                           </div>
+                          {isCountRequired(r) && r.reportFillStatus && <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.reportFillStatus}</div>}
                           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{countDisplay(r)}</div></div>
-                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 時數</div><div className="font-medium">{normalizeCategory(r.category)}｜{r.hours}h</div></div>
+                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 計薪</div><div className="font-medium">{normalizeCategory(r.category)}｜{hoursDisplay(r)}</div></div>
                           </div>
+                          {r.hoursNeedsReview && <div className="mt-2 text-xs font-medium text-amber-600">上課時間需人工確認{r.hoursReviewReason ? `：${r.hoursReviewReason}` : ""}</div>}
                           {substitute && <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                           {(r.cancelReason || r.notes) && <div className="mt-2 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
                           <div className="mt-4 flex gap-4">
@@ -426,7 +464,7 @@ export default function AttendancePage() {
                           <th className="px-4 py-3 text-left font-semibold">老師</th>
                           <th className="px-4 py-3 text-center font-semibold">人數</th>
                           <th className="px-4 py-3 text-left font-semibold">類別</th>
-                          <th className="px-4 py-3 text-center font-semibold">時數</th>
+                          <th className="px-4 py-3 text-center font-semibold">計薪時數</th>
                           <th className="px-4 py-3 text-left font-semibold">狀態</th>
                           <th className="px-4 py-3 text-left font-semibold">備註</th>
                           <th className="px-4 py-3 text-left font-semibold">操作</th>
@@ -451,11 +489,16 @@ export default function AttendancePage() {
                                 {r.studentCount ?? (isCountRequired(r) ? <span className="text-amber-600">待回報</span> : <span className="text-slate-500">免填</span>)}
                               </td>
                               <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{normalizeCategory(r.category)}</span></td>
-                              <td className="px-4 py-4 text-center">{r.hours}h</td>
-                              <td className="px-4 py-4">
-                                {r.cancelled ? <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs text-red-600">停課</span> : <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs text-green-600">出課</span>}
+                              <td className="px-4 py-4 text-center">
+                                {r.hoursNeedsReview ? <span className="text-amber-600">需人工確認</span> : `${r.hours}h`}
                               </td>
-                              <td className="max-w-[220px] truncate px-4 py-4 text-xs text-slate-500" title={r.cancelReason || r.notes || ""}>{r.cancelReason || r.notes || "-"}</td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-col items-start gap-1">
+                                  <span className={`rounded-full px-2.5 py-1 text-xs ${r.cancelled ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>{statusLabel(r)}</span>
+                                  {isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
+                                </div>
+                              </td>
+                              <td className="max-w-[220px] truncate px-4 py-4 text-xs text-slate-500" title={r.hoursNeedsReview ? `上課時間需人工確認：${r.hoursReviewReason || ""}` : r.cancelReason || r.notes || ""}>{r.hoursNeedsReview ? "上課時間需人工確認" : r.cancelReason || r.notes || "-"}</td>
                               <td className="px-4 py-4">
                                 <div className="flex gap-4 whitespace-nowrap">
                                   <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
