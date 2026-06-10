@@ -17,6 +17,11 @@ export async function POST(req: NextRequest) {
   const migrations = [
     'ALTER TABLE Teacher ADD COLUMN email TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Teacher ADD COLUMN phone TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Teacher ADD COLUMN bankName TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Teacher ADD COLUMN bankCode TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Teacher ADD COLUMN bankBranch TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Teacher ADD COLUMN bankAccountName TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Teacher ADD COLUMN bankAccountNumber TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Teacher ADD COLUMN isAssistant BOOLEAN NOT NULL DEFAULT false',
     'ALTER TABLE Teacher ADD COLUMN assistantFee INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE School ADD COLUMN type TEXT NOT NULL DEFAULT ""',
@@ -55,6 +60,11 @@ export async function POST(req: NextRequest) {
     'CREATE TABLE IF NOT EXISTS UserAccount (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, name TEXT NOT NULL, passwordHash TEXT NOT NULL, role TEXT NOT NULL DEFAULT "admin", isActive BOOLEAN NOT NULL DEFAULT true, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
     'CREATE TABLE IF NOT EXISTS KindergartenAssessment (id INTEGER PRIMARY KEY AUTOINCREMENT, attendanceId INTEGER NOT NULL, childName TEXT NOT NULL, semester TEXT NOT NULL DEFAULT "", courseName TEXT NOT NULL DEFAULT "", scores TEXT NOT NULL DEFAULT "", comment TEXT NOT NULL DEFAULT "", title TEXT NOT NULL DEFAULT "", certificatePayload TEXT NOT NULL DEFAULT "", createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
     'CREATE INDEX IF NOT EXISTS KindergartenAssessment_attendanceId_idx ON KindergartenAssessment(attendanceId)',
+    // Performance indexes — 2026-06-10
+    'CREATE INDEX IF NOT EXISTS "Attendance_cancelled_idx" ON "Attendance"("cancelled")',
+    'CREATE INDEX IF NOT EXISTS "Attendance_category_idx" ON "Attendance"("category")',
+    'CREATE INDEX IF NOT EXISTS "Course_isActive_idx" ON "Course"("isActive")',
+    'CREATE INDEX IF NOT EXISTS "Course_department_idx" ON "Course"("department")',
   ];
 
   for (const sql of migrations) {

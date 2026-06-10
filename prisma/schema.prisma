@@ -7,18 +7,18 @@ datasource db {
 }
 
 model School {
-  id           Int      @id @default(autoincrement())
-  name         String   @unique
-  type         String   @default("")
-  region       String   @default("")
-  address      String   @default("")
-  phone        String   @default("")
-  contact      String   @default("")
-  notes        String   @default("")
-  lineUserId   String?
-  lineBindCode String?  @unique
-  createdAt    DateTime @default(now())
-  courses      Course[]
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  type               String   @default("")
+  region             String   @default("")
+  address            String   @default("")
+  phone              String   @default("")
+  contact            String   @default("")
+  notes              String   @default("")
+  lineUserId         String?
+  lineBindCode       String?  @unique
+  createdAt          DateTime @default(now())
+  courses            Course[]
 }
 
 model CourseProgress {
@@ -105,6 +105,11 @@ model Teacher {
   notes                String       @default("")
   email                String       @default("")
   phone                String       @default("")
+  bankName             String       @default("")
+  bankCode             String       @default("")
+  bankBranch           String       @default("")
+  bankAccountName      String       @default("")
+  bankAccountNumber    String       @default("")
   lineUserId           String?      @unique
   lineBindCode         String?      @unique
   lineRegion           String       @default("")
@@ -131,6 +136,10 @@ model Course {
   courseType         String
   address            String       @default("")
   dayOfWeek          String       @default("")
+  recurrenceType     String       @default("")
+  startDate          DateTime?
+  endDate            DateTime?
+  weekday            String       @default("")
   time               String       @default("")
   category           String       @default("課後")
   department         String       @default("幼兒園")
@@ -139,6 +148,26 @@ model Course {
   notes              String       @default("")
   createdAt          DateTime     @default(now())
   attendances        Attendance[]
+  scheduleExceptions CourseScheduleException[]
+
+  @@index([schoolId])
+  @@index([teacherId])
+  @@index([isActive])
+  @@index([department])
+}
+
+model CourseScheduleException {
+  id              Int      @id @default(autoincrement())
+  course          Course   @relation(fields: [courseId], references: [id])
+  courseId        Int
+  date            DateTime
+  type            String
+  replacementDate DateTime?
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+
+  @@index([courseId, date])
+  @@index([type])
 }
 
 model Attendance {
@@ -159,6 +188,8 @@ model Attendance {
   makeupDone         Boolean                  @default(false)
   category           String                   @default("課後")
   hours              Float                    @default(1)
+  isPayrollLocked    Boolean                  @default(false)
+  payrollLockedAt    DateTime?
   notes              String                   @default("")
   reportContent      String                   @default("")
   reportSentAt       DateTime?
@@ -180,6 +211,12 @@ model Attendance {
   assessments        KindergartenAssessment[]
 
   @@unique([courseId, date])
+  @@index([date])
+  @@index([actualTeacherId])
+  @@index([assistantTeacherId])
+  @@index([isPayrollLocked])
+  @@index([cancelled])
+  @@index([category])
 }
 
 model KindergartenAssessment {

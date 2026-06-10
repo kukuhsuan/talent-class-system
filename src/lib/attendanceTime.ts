@@ -4,19 +4,30 @@ import { parseAttendanceDay } from "@/lib/attendanceBatch";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { normalizeCategory } from "@/lib/courseMeta";
 
+// Module-level flag: avoids repeated PRAGMA table_info round-trips within the same process lifetime.
+// (Mirrors the pattern used by coursePayrollColumnReady in payrollHours.ts)
+let scheduledTimeColumnReady = false;
+
 async function hasAttendanceScheduledTimeColumn() {
+  if (scheduledTimeColumnReady) return true;
   const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>('PRAGMA table_info("Attendance")');
   return columns.some((column) => column.name === "scheduledTime");
 }
 
 export async function ensureAttendanceScheduledTimeColumn() {
-  if (await hasAttendanceScheduledTimeColumn()) return true;
+  if (scheduledTimeColumnReady) return true;
+  if (await hasAttendanceScheduledTimeColumn()) {
+    scheduledTimeColumnReady = true;
+    return true;
+  }
 
   await prisma.$executeRawUnsafe(
     'ALTER TABLE "Attendance" ADD COLUMN "scheduledTime" TEXT DEFAULT \'\'',
   ).catch(() => undefined);
 
-  return hasAttendanceScheduledTimeColumn();
+  const exists = await hasAttendanceScheduledTimeColumn();
+  if (exists) scheduledTimeColumnReady = true;
+  return exists;
 }
 
 export async function attendanceScheduledTimeMap(attendanceIds: number[]) {
