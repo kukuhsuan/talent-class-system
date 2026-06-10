@@ -6,8 +6,12 @@ import {
   replyMessage, pushMessage,
   buildReportRequestMessage, buildCurriculumSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
 } from "@/lib/line";
-import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
+import { formatMonthDay, taipeiDateIso, weekdayOfIso } from "@/lib/courseDates";
+import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
+import { attendanceScheduledTimeMap, stampAttendanceTime } from "@/lib/attendanceTime";
 import { courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
+import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
+import { isPendingReport } from "@/lib/reportWindow";
 
 type LineEvent = {
   type: string;
@@ -89,39 +93,110 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
       return;
     }
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const end = new Date(start.getTime() + 86400000);
-    const dayNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
-    const todayDay = dayNames[today.getDay()];
+    const todayIso = taipeiDateIso();
+    const { start: todayStart, end: todayEnd } = dayBounds(todayIso);
+    const todayDay = dayNameOfIso(todayIso);
 
-    const courses = await prisma.course.findMany({
-      where: { teacherId: teacher.id, dayOfWeek: todayDay, isActive: true },
-    }) as unknown as Array<{ id: number; school: string; courseType: string; category: string; department: string }>;
+    // === 第一優先：過去 48 小時內未回報課程 ===
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const pastRaw = await (prisma.attendance.findMany({
+      where: {
+        actualTeacherId: teacher.id,
+        cancelled: false,
+        date: { gte: fortyEightHoursAgo, lt: todayStart },
+        course: { isActive: true },
+        OR: [
+          { studentCount: null, studentCountA: null, studentCountB: null },
+          { reportContent: "" },
+        ],
+      },
+      include: { course: true },
+    }) as unknown as Promise<Array<{
+      id: number; date: Date; category: string; hours: number;
+      studentCount: number | null; studentCountA: number | null; studentCountB: number | null;
+      reportContent: string; cancelled: boolean;
+      course: { id: number; school: string; courseType: string; category: string; department: string; time: string };
+    }>>);
+    const pastScheduledTimeMap = await attendanceScheduledTimeMap(pastRaw.map((a) => a.id));
+    const pendingPast = pastRaw.filter((att) => {
+      const scheduledTime = pastScheduledTimeMap.get(att.id) || att.course.time || "";
+      return isPendingReport(att, scheduledTime);
+    });
 
-    if (courses.length === 0) {
-      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，今天（${todayDay}）沒有排課。` }], token);
+    // === 第二優先：今日課程 ===
+    const datedCourseIds = await courseIdsWithAnyAttendance({ teacherId: teacher.id, isActive: true });
+    const [scheduledAttendances, weekdayCourses] = await Promise.all([
+      prisma.attendance.findMany({
+        where: {
+          actualTeacherId: teacher.id,
+          cancelled: false,
+          date: { gte: todayStart, lt: todayEnd },
+          course: { isActive: true },
+        },
+        include: { course: true },
+      }) as unknown as Promise<Array<{ id: number; course: { id: number; school: string; courseType: string; category: string; department: string; time: string } }>>,
+      prisma.course.findMany({
+        where: {
+          teacherId: teacher.id,
+          dayOfWeek: todayDay,
+          isActive: true,
+          ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
+        },
+      }) as unknown as Promise<Array<{ id: number; school: string; courseType: string; category: string; department: string; time: string }>>,
+    ]);
+
+    // 全無 → 明確告知
+    if (pendingPast.length === 0 && scheduledAttendances.length === 0 && weekdayCourses.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有待回報課程。` }], token);
       return;
     }
 
-    const atts: Array<{ id: number; school: string; courseType: string; department: string }> = [];
-    for (const course of courses) {
+    const atts: Array<{ id: number; school: string; courseType: string; department: string; dateLabel?: string }> = [];
+
+    // 過去待回報優先放入
+    for (const att of pendingPast) {
+      const iso = att.date instanceof Date ? att.date.toISOString().slice(0, 10) : String(att.date).slice(0, 10);
+      atts.push({ id: att.id, school: att.course.school, courseType: att.course.courseType, department: att.course.department, dateLabel: formatMonthDay(iso) });
+    }
+
+    // 今日課程
+    for (const att of scheduledAttendances) {
+      atts.push({ id: att.id, school: att.course.school, courseType: att.course.courseType, department: att.course.department });
+    }
+    for (const course of weekdayCourses) {
       let att = await prisma.attendance.findFirst({
-        where: { courseId: course.id, date: { gte: start, lt: end } },
+        where: { courseId: course.id, date: { gte: todayStart, lt: todayEnd } },
       }) as { id: number } | null;
       if (!att) {
+        const calculatedHours = attendanceHoursFromCourseTime((course as { time?: string }).time ?? "");
         att = await prisma.attendance.create({
-          data: { date: today, courseId: course.id, actualTeacherId: teacher.id, category: normalizeCategory(course.category), hours: 1 },
+          data: {
+            date: todayStart,
+            courseId: course.id,
+            actualTeacherId: teacher.id,
+            category: normalizeCategory(course.category),
+            hours: calculatedHours.hours,
+            notes: calculatedHours.needsReview ? `上課時間需人工確認：${calculatedHours.reason}` : "",
+          },
         }) as { id: number };
+        await stampAttendanceTime(course.id, [todayIso], course.time ?? "");
       }
       atts.push({ id: att.id, school: course.school, courseType: course.courseType, department: course.department });
     }
 
-    // All departments enter the mobile report form. The form itself decides
-    // whether to show full kindergarten fields or the simplified after-school flow.
-    const replyMsgs: object[] = [
-      { type: "text", text: `${teacher.name} 老師，您今天有 ${atts.length} 堂課，請依序回報：` },
-    ];
+    // 組合回覆文字
+    const pastCount = pendingPast.length;
+    const todayCount = scheduledAttendances.length + weekdayCourses.length;
+    let introText: string;
+    if (pastCount > 0 && todayCount > 0) {
+      introText = `${teacher.name} 老師，您有 ${pastCount} 堂課程尚未完成回報（48小時補報期限內），加上今天 ${todayCount} 堂，請依序回報：`;
+    } else if (pastCount > 0) {
+      introText = `${teacher.name} 老師，您有 ${pastCount} 堂課程仍在 48 小時補報期限內，請完成回報：`;
+    } else {
+      introText = `${teacher.name} 老師，您今天有 ${atts.length} 堂課，請依序回報：`;
+    }
+
+    const replyMsgs: object[] = [{ type: "text", text: introText }];
     for (const a of atts.slice(0, 3)) {
       replyMsgs.push(buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
     }
@@ -165,15 +240,22 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       include: { course: { include: { schoolRel: true } } },
       orderBy: { date: "asc" },
     }) as unknown as Array<{
+      id: number;
       date: Date;
-      course: { school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
+      course: { id: number; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
     }>;
+    const actualTimeMap = await attendanceScheduledTimeMap(actualRows.map((row) => row.id));
 
     const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
     // 安親班課程優先（有 department 含「安親」的優先顯示）
     const anqinCourses = courses.filter((c: { department?: string }) => c.department?.includes("安親"));
     const displayCourses = anqinCourses.length > 0 ? anqinCourses : courses;
+    const displayCourseIds = new Set(displayCourses.map((course) => course.id));
+    const datedCourseIds = await courseIdsWithAnyAttendance({
+      isActive: true,
+      id: { in: [...displayCourseIds] },
+    });
 
     const weeks: Array<{
       label: string;
@@ -193,9 +275,9 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     for (let month = 0; month < 12; month++) {
       const monthStart = new Date(targetYear, month, 1);
       const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
-      const entries = actualRows.length > 0
-        ? actualRows
-          .filter((a) => a.date >= monthStart && a.date <= monthEnd)
+      const entries = [
+        ...actualRows
+          .filter((a) => displayCourseIds.has(a.course.id) && a.date >= monthStart && a.date <= monthEnd)
           .map((a): ScheduleEntryRow => {
             const iso = a.date.toISOString().slice(0, 10);
             const weekday = weekdayOfIso(iso);
@@ -204,12 +286,13 @@ async function handleText(userId: string, text: string, replyToken: string, regi
               dayShort: weekday.replace("星期", ""),
               school: a.course.school,
               courseType: a.course.courseType,
-              time: a.course.time,
+              time: actualTimeMap.get(a.id) || a.course.time,
               address: a.course.address || a.course.schoolRel?.address || "",
               sortKey: a.date.getTime(),
             };
-          })
-        : displayCourses
+          }),
+        ...displayCourses
+          .filter((c) => !datedCourseIds.has(c.id))
           .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
           .flatMap((c: { dayOfWeek: string; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null }) => {
             const rows: ScheduleEntryRow[] = [];
@@ -230,7 +313,8 @@ async function handleText(userId: string, text: string, replyToken: string, regi
               cursor.setDate(cursor.getDate() + 1);
             }
             return rows;
-          });
+          }),
+      ];
 
       weeks.push({
         label: `${targetYear} 年 ${month + 1} 月`,
