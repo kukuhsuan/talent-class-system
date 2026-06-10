@@ -4,7 +4,7 @@ import { courseLabel } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string; lineUserId: string | null; lineBindCode: string | null; lineRegion: string };
 type School = { id: number; name: string; region: string; lineUserId: string | null; lineBindCode: string | null };
-type Attendance = { id: number; date: string; course: { school: string; courseType: string; code: string }; actualTeacher: { name: string; lineUserId: string | null }; reportSentAt: string | null; reportContent: string; cancelled: boolean; studentCount: number | null };
+type Attendance = { id: number; date: string; course: { school: string; courseType: string; code: string }; actualTeacher: { name: string; lineUserId: string | null }; reportSentAt: string | null; reportContent: string; cancelled: boolean; studentCount: number | null; pendingReport?: boolean };
 
 const REGION_LABEL = { north: "北部", south: "南部" };
 
@@ -31,7 +31,9 @@ export default function NotifyPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`/api/attendance?year=${year}&month=${month}`).then(r => r.json()).then(setAttendance);
+    fetch(`/api/attendance?year=${year}&month=${month}&pageSize=50&page=1`)
+      .then(r => r.json())
+      .then(data => setAttendance(Array.isArray(data) ? data : (data.items ?? [])));
   }, [year, month]);
 
   async function generateTeacherCode(teacherId: number) {
@@ -283,7 +285,7 @@ export default function NotifyPage() {
                         : <span className="text-xs text-slate-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {a.actualTeacher.lineUserId && (
+                      {a.actualTeacher.lineUserId && a.pendingReport && (
                         <button onClick={() => sendReportRequest(a.id)} disabled={sending === a.id}
                           className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-lg disabled:opacity-50">
                           {sending === a.id ? "發送中..." : "請老師回報"}

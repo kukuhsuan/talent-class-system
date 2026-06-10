@@ -7,6 +7,30 @@ import { normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/c
 import { coursePayrollHoursForAttendance, parsePayrollHours, setCoursePayrollHours } from "@/lib/payrollHours";
 import { recurrenceFields } from "@/lib/courseRecurrence";
 
+// GET /api/courses/[id] — returns single course with scheduledDates (for edit form)
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const course = await prisma.course.findUnique({
+    where: { id: Number(id) },
+    include: {
+      teacher: true,
+      assistantTeacher: true,
+      schoolRel: true,
+      attendances: { select: { date: true }, orderBy: { date: "asc" } },
+    },
+  });
+  if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const { coursePayrollHoursMap } = await import("@/lib/payrollHours");
+  const payrollMap = await coursePayrollHoursMap([course.id]);
+
+  return NextResponse.json({
+    ...course,
+    payrollHours: payrollMap.get(course.id) ?? null,
+    scheduledDates: [...new Set(course.attendances.map((a) => a.date.toISOString().slice(0, 10)))],
+  });
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;

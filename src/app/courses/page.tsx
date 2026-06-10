@@ -141,7 +141,7 @@ export default function CoursesPage() {
 
   const load = useCallback(
     () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), includeDates: "1" });
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), includeDates: "0" });
       const effectiveDept = filterDepartment || dept;
       if (effectiveDept) params.set("dept", effectiveDept);
       if (filterRegion) params.set("region", filterRegion);
@@ -303,17 +303,24 @@ export default function CoursesPage() {
     load();
   };
 
-  const edit = (c: Course) => {
-    const existingDates = uniqueSortedDates(c.scheduledDates ?? []);
+  const edit = async (c: Course) => {
+    // Fetch full course with scheduledDates on demand (list loads with includeDates=0)
+    let fullCourse = c;
+    try {
+      const res = await fetch(`/api/courses/${c.id}`);
+      if (res.ok) fullCourse = await res.json();
+    } catch { /* fallback to c */ }
+
+    const existingDates = uniqueSortedDates(fullCourse.scheduledDates ?? []);
     const inferredWeekly = inferWeeklyDates(existingDates);
-    const persistedMode = DATE_MODES.some((mode) => mode.value === c.recurrenceType) ? c.recurrenceType : "";
+    const persistedMode = DATE_MODES.some((mode) => mode.value === fullCourse.recurrenceType) ? fullCourse.recurrenceType : "";
     const dateMode = persistedMode || (inferredWeekly ? "weekly" : "multiple");
-    const recurrenceStart = c.startDate?.slice(0, 10) || inferredWeekly?.start || "";
-    const recurrenceEnd = c.endDate?.slice(0, 10) || inferredWeekly?.end || "";
-    const recurrenceDays = c.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [c.dayOfWeek || "星期一"];
-    setForm({ code: c.code, region: normalizeRegion(c.region), teacherId: c.teacherId, assistantTeacherId: c.assistantTeacherId ?? null, school: c.school, schoolId: c.schoolId,
-      courseType: c.courseType, address: c.address || "", dayOfWeek: c.dayOfWeek, time: c.time, payrollHours: c.payrollHours == null ? "" : String(c.payrollHours), category: normalizeCategory(c.category),
-      department: coerceDept(c.department || "幼兒園"), enrollCount: c.enrollCount, isActive: c.isActive, notes: c.notes,
+    const recurrenceStart = fullCourse.startDate?.slice(0, 10) || inferredWeekly?.start || "";
+    const recurrenceEnd = fullCourse.endDate?.slice(0, 10) || inferredWeekly?.end || "";
+    const recurrenceDays = fullCourse.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [fullCourse.dayOfWeek || "星期一"];
+    setForm({ code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
+      courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), category: normalizeCategory(fullCourse.category),
+      department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes,
       dateMode, scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: dateMode === "weekly" ? [] : existingDates,
       rangeStart: dateMode === "range" ? recurrenceStart : "", rangeEnd: dateMode === "range" ? recurrenceEnd : "",
       recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays });
