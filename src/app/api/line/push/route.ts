@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getLineConfig, pushMessage, buildReminderMessage, buildReportRequestMessage } from "@/lib/line";
+import { getLineConfig, pushMessage, buildReminderMessage, buildReportReminderMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
-
-const DAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
+import { attendanceScheduledTimeMap } from "@/lib/attendanceTime";
+import { isPendingReport } from "@/lib/reportWindow";
 
 // POST /api/line/push
 // body: { type: "reminder" | "report_request", teacherId?, date?, attendanceId? }
@@ -15,16 +16,52 @@ export async function POST(req: NextRequest) {
     const targetDate = body.date ? new Date(body.date) : (() => {
       const d = new Date(); d.setDate(d.getDate() + 1); return d;
     })();
-    const dayName = DAY_NAMES[targetDate.getDay()];
     const dateStr = targetDate.toISOString().slice(0, 10);
+    const dayName = dayNameOfIso(dateStr);
+    const { start, end } = dayBounds(dateStr);
+    const teacherFilter = body.teacherId ? { teacherId: Number(body.teacherId) } : {};
+    const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...teacherFilter });
 
-    const courses = await prisma.course.findMany({
-      where: { isActive: true, dayOfWeek: dayName, ...(body.teacherId ? { teacherId: Number(body.teacherId) } : {}) },
-      include: { teacher: true },
-    });
+    const [scheduledAttendances, weekdayCourses] = await Promise.all([
+      prisma.attendance.findMany({
+        where: {
+          cancelled: false,
+          date: { gte: start, lt: end },
+          ...(body.teacherId ? { actualTeacherId: Number(body.teacherId) } : {}),
+          course: { isActive: true },
+        },
+        include: { course: true, actualTeacher: true },
+      }),
+      prisma.course.findMany({
+        where: {
+          isActive: true,
+          dayOfWeek: dayName,
+          ...teacherFilter,
+          ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
+        },
+        include: { teacher: true },
+      }),
+    ]);
+    const scheduledTimeMap = await attendanceScheduledTimeMap(scheduledAttendances.map((attendance) => attendance.id));
 
     let sent = 0, skipped = 0;
-    for (const course of courses) {
+    for (const att of scheduledAttendances) {
+      const teacher = att.actualTeacher;
+      if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
+
+      const cfg = getLineConfig(teacher.lineRegion as LineRegion);
+      const msg = buildReminderMessage({
+        teacherName: teacher.name,
+        school: att.course.school,
+        courseType: att.course.courseType,
+        time: scheduledTimeMap.get(att.id) || att.course.time,
+        date: dateStr,
+        dayOfWeek: dayName,
+      });
+      await pushMessage(teacher.lineUserId, [msg], cfg.token);
+      sent++;
+    }
+    for (const course of weekdayCourses) {
       const teacher = course.teacher;
       if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
 
@@ -52,16 +89,24 @@ export async function POST(req: NextRequest) {
     });
     if (!att) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    const scheduledTimeMap = await attendanceScheduledTimeMap([att.id]);
+    if (!isPendingReport(att, scheduledTimeMap.get(att.id) || att.course.time || "")) {
+      return NextResponse.json({ error: "此課程已完成回報或不在回報期限內" }, { status: 409 });
+    }
+
     const teacher = att.actualTeacher;
     if (!teacher.lineUserId || !teacher.lineRegion) {
       return NextResponse.json({ error: "Teacher has no LINE binding" }, { status: 400 });
     }
 
     const cfg = getLineConfig(teacher.lineRegion as LineRegion);
-    const msg = buildReportRequestMessage({
+    const time = scheduledTimeMap.get(att.id) || att.course.time || "";
+    const msg = buildReportReminderMessage({
+      teacherName: teacher.name,
       school: att.course.school,
-      courseType: att.course.courseType,
-      attendanceId: att.id,
+      courseName: att.course.courseType,
+      date: att.date.toISOString().slice(0, 10),
+      time,
     });
     await pushMessage(teacher.lineUserId, [msg], cfg.token);
     return NextResponse.json({ ok: true });

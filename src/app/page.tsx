@@ -2,25 +2,48 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useDepartment } from "@/lib/departmentContext";
-import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { taipeiDateIso } from "@/lib/courseDates";
-
-type Teacher = { id: number; name: string };
-type Course = { id: number; code?: string; school: string; courseType: string; teacher: Teacher; teacherId: number; category?: string; dayOfWeek?: string; time: string; region?: string; address?: string };
-type Attendance = { id: number; date: string; course: Course; actualTeacher: Teacher; studentCount: number | null; cancelled: boolean; category: string; hours: number; notes: string; reportContent?: string; reportSentAt?: string | null };
+import { courseLabel } from "@/lib/courseMeta";
 
 const DAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+
+type DashboardStats = {
+  todayCourseCount: number;
+  todaySubstituteCount: number;
+  pendingFillableCount: number;
+  unboundTeacherCount: number;
+  unnotifiedCount: number;
+  teacherCount: number;
+};
+type PendingDetail = {
+  id: number;
+  school: string;
+  courseType: string;
+  date: string;
+  teacherName: string;
+  teacherLineUserId: string | null;
+  time: string;
+  missingItems: string[];
+};
+
+const EMPTY_STATS: DashboardStats = {
+  todayCourseCount: 0,
+  todaySubstituteCount: 0,
+  pendingFillableCount: 0,
+  unboundTeacherCount: 0,
+  unnotifiedCount: 0,
+  teacherCount: 0,
+};
 
 export default function Home() {
   const { dept } = useDepartment();
   const [seeded, setSeeded] = useState(true);
   const [seeding, setSeeding] = useState(false);
-  const [todayCourses, setTodayCourses] = useState<Course[]>([]);
-  const [todayAttendance, setTodayAttendance] = useState<Attendance[]>([]);
-  const [unboundTeachers, setUnboundTeachers] = useState<Array<{ id: number; name: string; phone?: string }>>([]);
-  const [sendingReport, setSendingReport] = useState<number | null>(null);
-  const [stats, setStats] = useState({ teachers: 0, courses: 0, monthAttendance: 0 });
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
+  const [pendingDetails, setPendingDetails] = useState<PendingDetail[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reminding, setReminding] = useState<number | null>(null);
+  const [remindedIds, setRemindedIds] = useState<Set<number>>(new Set());
 
   const now = new Date();
   const todayStr = taipeiDateIso(now);
@@ -31,67 +54,62 @@ export default function Home() {
 
   useEffect(() => {
     async function load() {
-      const params = new URLSearchParams({ year: String(year), month: String(month) });
+      setLoading(true);
+      const params = new URLSearchParams({ year: String(year), month: String(month), today: todayStr });
       if (dept) params.set("dept", dept);
       const data = await fetch(`/api/dashboard?${params}`).then((r) => r.json());
 
-      const courses: Course[] = data.courses ?? [];
-      const attendance: Attendance[] = data.attendance ?? [];
-      const teacherCount: number = data.teacherCount ?? 0;
-
-      const todayA = attendance.filter((a) => a.date.slice(0, 10) === todayStr);
-      const fromWeekday = courses.filter((c) => c.dayOfWeek === todayDayName);
-      const fromScheduled = courses.filter((c) => todayA.some((a) => a.course.id === c.id));
-      const todayC = [...fromWeekday, ...fromScheduled].filter(
-        (c, i, arr) => arr.findIndex((x) => x.id === c.id) === i,
-      );
-      const monthCount = attendance.filter((a) => !a.cancelled).length;
-
-      setTodayCourses(todayC);
-      setTodayAttendance(todayA);
-      setUnboundTeachers(data.unboundTeachers ?? []);
-      setStats({ teachers: teacherCount, courses: courses.length, monthAttendance: monthCount });
-      setSeeded(teacherCount > 0);
+      setStats({
+        todayCourseCount: Number(data.todayCourseCount ?? 0),
+        todaySubstituteCount: Number(data.todaySubstituteCount ?? 0),
+        pendingFillableCount: Number(data.pendingFillableCount ?? 0),
+        unboundTeacherCount: Number(data.unboundTeacherCount ?? 0),
+        unnotifiedCount: Number(data.unnotifiedCount ?? 0),
+        teacherCount: Number(data.teacherCount ?? 0),
+      });
+      setPendingDetails(Array.isArray(data.pendingDetails) ? data.pendingDetails.slice(0, 5) : []);
+      setSeeded(Number(data.teacherCount ?? 0) > 0);
       setLoading(false);
     }
     load();
-  }, [dept, year, month, todayStr, todayDayName]);
+  }, [dept, year, month, todayStr]);
 
-  function getAttendanceForCourse(courseId: number) {
-    return todayAttendance.find((a) => a.course.id === courseId);
-  }
-
-  const todaySubstitutes = todayAttendance.filter((a) => !a.cancelled && a.actualTeacher.id !== a.course.teacherId);
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const isPastTime = (time?: string) => {
-    const m = (time ?? "").match(/(\d{1,2}):(\d{2})/);
-    if (!m) return true;
-    return Number(m[1]) * 60 + Number(m[2]) <= nowMinutes;
-  };
-  const isCountRequired = (a: Attendance) => requiresStudentCount(a.category || a.course.category);
-  const pendingReports = todayAttendance.filter((a) =>
-    !a.cancelled &&
-    isPastTime(a.course.time) &&
-    ((isCountRequired(a) && a.studentCount == null) || !(a.reportContent ?? "").trim())
-  );
-  const unnotified = todayAttendance.filter((a) => !a.cancelled && !a.reportSentAt);
-
-  async function sendReportReminder(attendanceId: number) {
-    setSendingReport(attendanceId);
-    const res = await fetch("/api/line/push", {
+  const handleRemind = async (attendanceId: number) => {
+    setReminding(attendanceId);
+    await fetch("/api/line/push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "report_request", attendanceId }),
     });
-    setSendingReport(null);
-    alert(res.ok ? "已發送 LINE 回報提醒" : "發送失敗，請確認老師是否已綁定 LINE");
-  }
+    setRemindedIds((prev) => new Set(prev).add(attendanceId));
+    setReminding(null);
+  };
 
   const handleSeed = async () => {
     setSeeding(true);
     await fetch("/api/seed", { method: "POST" });
     setSeeding(false);
     window.location.reload();
+  };
+
+  const cards = [
+    { label: "今日課程", value: stats.todayCourseCount, href: "/schedule", tone: "blue" },
+    { label: "今日代課", value: stats.todaySubstituteCount, href: "/substitutes", tone: "orange" },
+    { label: "待回報數量", value: stats.pendingFillableCount, href: "/attendance?status=missing", tone: "amber" },
+    { label: "LINE 未綁定", value: stats.unboundTeacherCount, href: "/notify", tone: "slate" },
+    { label: "未通知事項", value: stats.unnotifiedCount, href: "/notify", tone: "rose" },
+  ];
+
+  const toneClass: Record<string, string> = {
+    blue: "bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100",
+    orange: "bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100",
+    amber: "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100",
+    slate: "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100",
+    rose: "bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100",
+  };
+  const formatDate = (iso: string) => {
+    const [, month, day] = iso.slice(0, 10).split("-");
+    return `${Number(month)}/${Number(day)}`;
   };
 
   return (
@@ -114,166 +132,82 @@ export default function Home() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
-        {[
-          { label: "今日課程", value: loading ? null : todayCourses.length, color: "text-blue-600" },
-          { label: `${month}月出課次數`, value: loading ? null : stats.monthAttendance, color: "text-green-600" },
-          { label: "開課中課程", value: loading ? null : stats.courses, color: "text-purple-600" },
-        ].map((s) => (
-          <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5 text-center">
-            {s.value === null
-              ? <div className="h-9 bg-slate-100 rounded-lg animate-pulse mx-auto w-12 mb-1" />
-              : <div className={`text-3xl font-bold ${s.color}`}>{s.value}</div>}
-            <div className="text-sm text-slate-500 mt-1">{s.label}</div>
-          </div>
-        ))}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
+        <div className="mb-4">
+          <h2 className="font-semibold text-slate-800">今日概況</h2>
+          <p className="text-sm text-slate-500 mt-1">首頁只顯示必要數量與前 5 筆待處理明細。</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {cards.map((card) => (
+            <Link key={card.label} href={card.href}
+              className={`rounded-xl border px-4 py-4 transition-colors ${toneClass[card.tone]}`}>
+              <div className="text-xs font-medium opacity-80">{card.label}</div>
+              {loading
+                ? <div className="mt-3 h-8 w-12 rounded-lg bg-white/70 animate-pulse" />
+                : <div className="mt-1 text-3xl font-bold">{card.value}</div>}
+            </Link>
+          ))}
+        </div>
       </div>
 
-      {!loading && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5 mb-6">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-4">
-            <div>
-              <h2 className="font-semibold text-slate-800">今日待處理中心</h2>
-              <p className="text-sm text-slate-500">客服每天先確認這裡，避免漏追課程與通知。</p>
-            </div>
-            <Link href="/notify" className="text-sm text-blue-600 hover:underline">LINE 通知</Link>
+      <div className="mt-6 rounded-xl border border-amber-100 bg-white shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-amber-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-800">待回報明細</h2>
+            <p className="text-sm text-slate-500">只顯示前 5 筆，完整清單請到出勤紀錄查看。</p>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-3">
-            <div className="rounded-lg bg-blue-50 px-3 md:px-4 py-3"><div className="text-xs text-blue-500">今日課程</div><div className="text-2xl font-bold text-blue-700">{todayCourses.length}</div></div>
-            <div className="rounded-lg bg-orange-50 px-3 md:px-4 py-3"><div className="text-xs text-orange-500">今日代課</div><div className="text-2xl font-bold text-orange-700">{todaySubstitutes.length}</div></div>
-            <div className="rounded-lg bg-amber-50 px-3 md:px-4 py-3"><div className="text-xs text-amber-500">待回報</div><div className="text-2xl font-bold text-amber-700">{pendingReports.length}</div></div>
-            <div className="rounded-lg bg-slate-50 px-3 md:px-4 py-3"><div className="text-xs text-slate-500">LINE 未綁定</div><div className="text-2xl font-bold text-slate-700">{unboundTeachers.length}</div></div>
-            <div className="rounded-lg bg-rose-50 px-3 md:px-4 py-3"><div className="text-xs text-rose-500">未通知事項</div><div className="text-2xl font-bold text-rose-700">{unnotified.length}</div></div>
-          </div>
-        </div>
-      )}
-
-      {/* Today courses */}
-      {!loading && todaySubstitutes.length > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 mb-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="font-semibold text-orange-900">今日代課提醒</h2>
-              <p className="text-sm text-orange-700 mt-1">今天有 {todaySubstitutes.length} 筆代課，請客服確認老師與園所通知狀態。</p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/substitutes" className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700">前往代課紀錄</Link>
-              <Link href="/attendance" className="rounded-lg bg-white border border-orange-200 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100">前往出勤紀錄</Link>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {todaySubstitutes.map((a) => (
-              <div key={a.id} className="rounded-lg bg-white border border-orange-100 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-slate-900">{a.course.school}</div>
-                    <div className="mt-1 text-sm text-slate-600">{courseLabel(a.course.courseType)}{a.course.time ? ` · ${a.course.time}` : ""}</div>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">代課</span>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div><span className="text-slate-400">原老師：</span><span className="font-medium text-slate-700">{a.course.teacher.name}</span></div>
-                  <div><span className="text-slate-400">代課：</span><span className="font-medium text-orange-700">{a.actualTeacher.name}</span></div>
-                </div>
-                {a.course.address && <div className="mt-2 text-xs text-slate-500">{a.course.address}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!loading && pendingReports.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="font-semibold text-amber-900">待回報課程</h2>
-              <p className="text-sm text-amber-700 mt-1">已到上課時間但還缺課程進度；課後課也會檢查出席人數。</p>
-            </div>
-            <Link href="/attendance" className="rounded-lg bg-white border border-amber-200 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">前往出勤紀錄</Link>
-          </div>
-          <div className="mt-4 divide-y divide-amber-100 rounded-lg bg-white border border-amber-100">
-            {pendingReports.map((a) => (
-              <div key={a.id} className="p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="font-medium text-slate-900">{a.course.school}｜{courseLabel(a.course.courseType)}</div>
-                  <div className="mt-1 text-sm text-slate-500">{a.date.slice(0, 10)} · {a.actualTeacher.name}{a.course.time ? ` · ${a.course.time}` : ""}</div>
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {isCountRequired(a) && a.studentCount == null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">缺出席人數</span>}
-                    {!(a.reportContent ?? "").trim() && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">缺課程進度</span>}
-                  </div>
-                </div>
-                <button onClick={() => sendReportReminder(a.id)} disabled={sendingReport === a.id} className="self-start md:self-auto rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-                  {sendingReport === a.id ? "發送中..." : "發送 LINE 提醒"}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!loading && unboundTeachers.length > 0 && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800">LINE 未綁定老師</h3>
-            <Link href="/notify" className="text-sm text-blue-600 hover:underline">前往綁定</Link>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {unboundTeachers.map((t) => <span key={t.id} className="rounded-full bg-white border border-slate-200 px-3 py-1 text-sm text-slate-600">{t.name}</span>)}
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-        <div className="px-4 md:px-5 py-4 border-b border-slate-100 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="font-semibold text-slate-700">今日課程 — {todayDayName}</h2>
-          <Link href="/attendance" className="text-sm text-blue-600 hover:underline">去登記出勤</Link>
+          {stats.pendingFillableCount > 5 && (
+            <Link href="/attendance?status=missing" className="text-sm font-medium text-amber-700 hover:underline">
+              查看更多待回報
+            </Link>
+          )}
         </div>
         {loading ? (
-          <div className="divide-y divide-slate-100">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="px-4 md:px-5 py-4 flex items-center gap-4 animate-pulse">
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-slate-100 rounded w-2/3" />
-                  <div className="h-3 bg-slate-100 rounded w-1/2" />
-                </div>
-                <div className="h-6 w-14 bg-slate-100 rounded-full" />
-              </div>
-            ))}
+          <div className="space-y-3 p-4">
+            {[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg bg-slate-100 animate-pulse" />)}
           </div>
-        ) : todayCourses.length === 0 ? (
-          <div className="py-12 text-center text-slate-400">今天沒有課程</div>
+        ) : pendingDetails.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-slate-400">目前沒有待回報事項</div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {todayCourses.map((c) => {
-              const att = getAttendanceForCourse(c.id);
+            {pendingDetails.map((item) => {
+              const hasLine = Boolean(item.teacherLineUserId);
+              const reminded = remindedIds.has(item.id);
+              const isSending = reminding === item.id;
               return (
-                <div key={c.id} className="px-4 md:px-5 py-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-slate-800">{c.school}</span>
-                      <span className="text-xs text-slate-400 font-mono">{c.code}</span>
-                      {c.region && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{c.region}</span>}
-                    </div>
-                    <div className="text-sm text-slate-500 mt-0.5">{courseLabel(c.courseType)} · {c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
+                <div key={item.id} className="grid gap-2 px-4 py-4 md:grid-cols-[1.2fr_1fr_auto_auto] md:items-center">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-900">{item.school}</div>
+                    <div className="mt-1 text-sm text-slate-500">{courseLabel(item.courseType)} · {item.teacherName}</div>
                   </div>
-                  <div className="md:text-right shrink-0">
-                    {att ? (
-                      att.cancelled ? (
-                        <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">停課</span>
-                      ) : (
-                        <div className="flex flex-col items-start md:items-end gap-1">
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">已登記</span>
-                          {att.studentCount != null
-                            ? <span className="text-sm font-bold text-blue-600">👦 {att.studentCount} 人</span>
-                            : isCountRequired(att)
-                              ? <span className="text-xs text-amber-500">待回報人數</span>
-                              : <span className="text-xs text-slate-500">免填人數</span>}
-                          {att.actualTeacher.id !== c.teacherId && <div className="text-xs text-orange-500">代：{att.actualTeacher.name}</div>}
-                        </div>
-                      )
+                  <div className="text-sm text-slate-600">
+                    <span className="font-medium">{formatDate(item.date)}</span>
+                    {item.time && <span className="ml-2 text-slate-400">{item.time}</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {item.missingItems.map((label) => (
+                      <span key={label} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex justify-end">
+                    {!hasLine ? (
+                      <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs text-slate-400 cursor-default">
+                        老師未綁 LINE
+                      </span>
+                    ) : reminded ? (
+                      <span className="rounded-lg bg-green-50 px-3 py-1.5 text-xs font-medium text-green-600">
+                        ✓ 已提醒
+                      </span>
                     ) : (
-                      <span className="text-xs bg-slate-100 text-slate-400 px-2 py-1 rounded-full">未登記</span>
+                      <button
+                        onClick={() => handleRemind(item.id)}
+                        disabled={isSending}
+                        className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                      >
+                        {isSending ? "發送中…" : "提醒老師回報"}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -281,39 +215,13 @@ export default function Home() {
             })}
           </div>
         )}
-      </div>
-
-      {/* Today student count summary */}
-      {!loading && todayAttendance.filter((a) => !a.cancelled && a.studentCount != null).length > 0 && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
-          <h3 className="font-semibold text-blue-800 mb-3">📊 今日出席人數回報</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-            {todayAttendance.filter((a) => !a.cancelled && a.studentCount != null).map((a) => (
-              <div key={a.id} className="bg-white rounded-lg px-3 py-2 flex items-center justify-between">
-                <span className="text-sm text-slate-700 truncate">{a.course.school}</span>
-                <span className="text-sm font-bold text-blue-600 ml-2 shrink-0">{a.studentCount} 人</span>
-              </div>
-            ))}
+        {stats.pendingFillableCount > 0 && stats.pendingFillableCount <= 5 && (
+          <div className="border-t border-slate-100 px-4 py-3 text-right">
+            <Link href="/attendance?status=missing" className="text-sm font-medium text-amber-700 hover:underline">
+              前往出勤紀錄
+            </Link>
           </div>
-          <p className="text-xs text-blue-500 mt-2">
-            共 {todayAttendance.filter((a) => !a.cancelled && a.studentCount != null).reduce((s, a) => s + (a.studentCount ?? 0), 0)} 人出席
-          </p>
-        </div>
-      )}
-
-      {/* Quick links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { href: "/schedule", label: "週課表", desc: "查看每週排班" },
-          { href: "/attendance", label: "登記出勤", desc: "記錄今日上課" },
-          { href: "/salary", label: "薪資計算", desc: `${month}月薪資報表` },
-          { href: "/schools", label: "園所管理", desc: "新增/編輯園所" },
-        ].map((item) => (
-          <Link key={item.href} href={item.href} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:border-blue-300 hover:shadow-md transition-all">
-            <div className="font-semibold text-slate-700 text-sm">{item.label}</div>
-            <div className="text-xs text-slate-400 mt-1">{item.desc}</div>
-          </Link>
-        ))}
+        )}
       </div>
     </div>
   );

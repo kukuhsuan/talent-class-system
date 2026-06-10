@@ -377,6 +377,46 @@ export function buildReportRequestMessage(opts: {
   };
 }
 
+// Build a text-only report reminder (used by home page "提醒老師回報" and notify page)
+export function buildReportReminderMessage(opts: {
+  teacherName: string;
+  school: string;
+  courseName: string;
+  date: string; // YYYY-MM-DD
+  time: string;
+}) {
+  const [year, month, day] = opts.date.split("-").map(Number);
+  const dateFormatted = `${year}年${month}月${day}日`;
+  const timeStr = opts.time?.trim() || "待確認";
+
+  const text = [
+    "📌 課程回報提醒",
+    "",
+    `親愛的 ${opts.teacherName} 教練您好：`,
+    "",
+    "提醒您以下課程尚未完成回報：",
+    "",
+    `🏫 ${opts.school}`,
+    `📚 ${opts.courseName}`,
+    `📅 ${dateFormatted}`,
+    `⏰ ${timeStr}`,
+    "",
+    "請於 48 小時內完成課程回報。",
+    "",
+    "課程回報內容包含：",
+    "1️⃣ 出席人數（課內課免填）",
+    "2️⃣ 課程進度 / 今日課程內容",
+    "3️⃣ 備註或特殊狀況",
+    "",
+    "⚠️ 課程回報是薪資核算與園所服務紀錄的重要依據。",
+    "若未完成回報，該堂課將暫不列入薪資結算，待資料補齊後再行核算。",
+    "",
+    "感謝老師配合！",
+  ].join("\n");
+
+  return { type: "text", text };
+}
+
 // Preset progress options card
 export function buildProgressSelectMessage(attendanceId: number) {
   const presets = ["依進度上課", "特別活動", "期末複習", "成果展示", "戶外活動", "體能測驗"];
