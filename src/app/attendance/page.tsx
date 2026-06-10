@@ -152,16 +152,23 @@ export default function AttendancePage() {
   const WAITING_TEACHER = "待排老師";
   const isCountRequired = (r: Attendance) => requiresStudentCount(r.category);
   const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? "待回報" : "免填");
-  const isReportComplete = (r: Attendance) => r.cancelled
-    || (!isCountRequired(r) ? Boolean(r.reportContent?.trim()) : r.studentCount !== null);
+  const isReportComplete = (r: Attendance) => {
+    if (r.cancelled) return true;
+    const hasReport = Boolean(r.reportContent?.trim());
+    if (!isCountRequired(r)) return hasReport;
+    // 課後課 / 營隊：人數 + 課程進度兩者都需要
+    return r.studentCount !== null && hasReport;
+  };
   const isMissingReport = (r: Attendance) => Boolean(r.pendingReport);
   const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
   const isUnassigned = (r: Attendance) => r.actualTeacher.name === WAITING_TEACHER;
-  const statusLabel = (r: Attendance) => r.cancelled
-    ? "停課"
-    : !isCountRequired(r)
-      ? isReportComplete(r) ? "出課完成" : "待確認出課"
-      : isReportComplete(r) ? "完成" : "出課";
+  const statusLabel = (r: Attendance) => {
+    if (r.cancelled) return "停課";
+    if (!isCountRequired(r)) return isReportComplete(r) ? "出課完成" : "待確認出課";
+    if (isReportComplete(r)) return "完成";
+    if (r.studentCount !== null && !r.reportContent?.trim()) return "缺課程進度";
+    return "出課";
+  };
   const hoursDisplay = (r: Attendance) => r.hoursNeedsReview ? "需人工確認" : `${r.hours}h`;
   const filteredRecords = records.filter((r) => {
     if (statusFilter === "missing") return isMissingReport(r);
@@ -442,7 +449,12 @@ export default function AttendancePage() {
                               <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜{isUnassigned(r) ? <span className="font-semibold text-rose-600">⚠ 待指派老師</span> : `主教 ${r.actualTeacher.name}`}</div>
                               {!isUnassigned(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                             </div>
-                            <span className={`rounded-full px-2 py-1 text-xs ${r.cancelled ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>{statusLabel(r)}</span>
+                            <span className={`rounded-full px-2 py-1 text-xs ${
+                              r.cancelled ? "bg-red-100 text-red-600"
+                              : statusLabel(r) === "缺課程進度" ? "bg-amber-100 text-amber-700 font-semibold"
+                              : isReportComplete(r) ? "bg-green-100 text-green-600"
+                              : "bg-slate-100 text-slate-500"
+                            }`}>{statusLabel(r)}</span>
                           </div>
                           {isCountRequired(r) && r.reportFillStatus && <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.reportFillStatus}</div>}
                           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
@@ -502,7 +514,12 @@ export default function AttendancePage() {
                               </td>
                               <td className="px-4 py-4">
                                 <div className="flex flex-col items-start gap-1">
-                                  <span className={`rounded-full px-2.5 py-1 text-xs ${r.cancelled ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>{statusLabel(r)}</span>
+                                  <span className={`rounded-full px-2.5 py-1 text-xs ${
+                                    r.cancelled ? "bg-red-100 text-red-600"
+                                    : statusLabel(r) === "缺課程進度" ? "bg-amber-100 text-amber-700 font-semibold"
+                                    : isReportComplete(r) ? "bg-green-100 text-green-600"
+                                    : "bg-slate-100 text-slate-500"
+                                  }`}>{statusLabel(r)}</span>
                                   {isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
                                 </div>
                               </td>
