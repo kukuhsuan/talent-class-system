@@ -1,47 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { pushMessage, buildReminderMessage } from "@/lib/line";
+import { getLineConfig, pushMessage, buildReminderMessage } from "@/lib/line";
+import type { LineRegion } from "@/lib/line";
+import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
+import { formatMonthDay } from "@/lib/courseDates";
+import { attendanceScheduledTimeMap } from "@/lib/attendanceTime";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowName = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][tomorrow.getDay()];
-  const tomorrowStr = tomorrow.toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "long" });
+  const tomorrowIso = tomorrow.toISOString().slice(0, 10);
+  const tomorrowName = dayNameOfIso(tomorrowIso);
+  const tomorrowStr = `${formatMonthDay(tomorrowIso)} ${tomorrowName}`;
+  const { start: dayStart, end: dayEnd } = dayBounds(tomorrowIso);
+  const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true }, tomorrow);
 
-  const y = tomorrow.getFullYear();
-  const m = tomorrow.getMonth();
-  const d = tomorrow.getDate();
-  const dayStart = new Date(y, m, d);
-  const dayEnd = new Date(y, m, d + 1);
-
-  const attTomorrow = await prisma.attendance.findMany({
-    where: { date: { gte: dayStart, lt: dayEnd } },
-    select: { courseId: true },
-  });
-  const idsFromSchedule = [...new Set(attTomorrow.map((a) => a.courseId))];
-
-  const [byWeekday, bySchedule] = await Promise.all([
+  const [bySchedule, byWeekday] = await Promise.all([
+    prisma.attendance.findMany({
+      where: {
+        cancelled: false,
+        date: { gte: dayStart, lt: dayEnd },
+        course: { isActive: true },
+      },
+      include: { course: true, actualTeacher: true },
+    }),
     prisma.course.findMany({
-      where: { isActive: true, dayOfWeek: tomorrowName },
+      where: {
+        isActive: true,
+        dayOfWeek: tomorrowName,
+        ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
+      },
       include: { teacher: true },
     }),
-    idsFromSchedule.length
-      ? prisma.course.findMany({
-          where: { isActive: true, id: { in: idsFromSchedule } },
-          include: { teacher: true },
-        })
-      : Promise.resolve([]),
   ]);
+  const scheduledTimeMap = await attendanceScheduledTimeMap(bySchedule.map((attendance) => attendance.id));
 
-  const merged = new Map<number, (typeof byWeekday)[number]>();
-  for (const c of byWeekday) merged.set(c.id, c);
-  for (const c of bySchedule) merged.set(c.id, c);
-  const courses = [...merged.values()];
+  const courses = [
+    ...bySchedule.map((att) => ({ ...att.course, time: scheduledTimeMap.get(att.id) || att.course.time, teacherId: att.actualTeacher.id, teacher: att.actualTeacher })),
+    ...byWeekday,
+  ];
 
   if (courses.length === 0) {
     return NextResponse.json({ sent: 0, message: "no courses tomorrow" });
@@ -61,10 +63,8 @@ export async function GET(req: NextRequest) {
     const teacher = teacherCourses[0].teacher;
     if (!teacher.lineUserId) continue;
 
-    const region = teacher.lineRegion || "north";
-    const token = region === "south"
-      ? process.env.LINE_SOUTH_TOKEN!
-      : process.env.LINE_NORTH_TOKEN!;
+    const region = (teacher.lineRegion || "north") as LineRegion;
+    const token = getLineConfig(region).token;
 
     const messages = teacherCourses.map((c) =>
       buildReminderMessage({

@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.teacher.count(),
     prisma.teacher.count({ where: { lineUserId: null } }),
-    courseIdsWithAnyAttendance({ isActive: true, ...deptFilter }),
+    courseIdsWithAnyAttendance({ isActive: true, ...deptFilter }, todayStart),
   ]);
 
   const scheduledTimeMap = await attendanceScheduledTimeMap(pendingCandidates.map((item) => item.id));

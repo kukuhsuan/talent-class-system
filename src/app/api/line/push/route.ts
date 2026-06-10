@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const dayName = dayNameOfIso(dateStr);
     const { start, end } = dayBounds(dateStr);
     const teacherFilter = body.teacherId ? { teacherId: Number(body.teacherId) } : {};
-    const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...teacherFilter });
+    const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...teacherFilter }, targetDate);
 
     const [scheduledAttendances, weekdayCourses] = await Promise.all([
       prisma.attendance.findMany({

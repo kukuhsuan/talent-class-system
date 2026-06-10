@@ -124,7 +124,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     });
 
     // === 第二優先：今日課程 ===
-    const datedCourseIds = await courseIdsWithAnyAttendance({ teacherId: teacher.id, isActive: true });
+    const datedCourseIds = await courseIdsWithAnyAttendance({ teacherId: teacher.id, isActive: true }, todayStart);
     const [scheduledAttendances, weekdayCourses] = await Promise.all([
       prisma.attendance.findMany({
         where: {
@@ -252,10 +252,11 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const anqinCourses = courses.filter((c: { department?: string }) => c.department?.includes("安親"));
     const displayCourses = anqinCourses.length > 0 ? anqinCourses : courses;
     const displayCourseIds = new Set(displayCourses.map((course) => course.id));
+    const scheduleNearDate = new Date();
     const datedCourseIds = await courseIdsWithAnyAttendance({
       isActive: true,
       id: { in: [...displayCourseIds] },
-    });
+    }, scheduleNearDate);
 
     const weeks: Array<{
       label: string;
