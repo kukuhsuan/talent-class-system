@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getLineConfig, pushMessage, buildReminderMessage, buildReportReminderMessage } from "@/lib/line";
+import { getLineConfig, pushMessage, buildReminderMessage, buildReportRequestMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
 import { attendanceScheduledTimeMap } from "@/lib/attendanceTime";
@@ -100,13 +100,10 @@ export async function POST(req: NextRequest) {
     }
 
     const cfg = getLineConfig(teacher.lineRegion as LineRegion);
-    const time = scheduledTimeMap.get(att.id) || att.course.time || "";
-    const msg = buildReportReminderMessage({
-      teacherName: teacher.name,
+    const msg = buildReportRequestMessage({
       school: att.course.school,
-      courseName: att.course.courseType,
-      date: att.date.toISOString().slice(0, 10),
-      time,
+      courseType: att.course.courseType,
+      attendanceId: att.id,
     });
     await pushMessage(teacher.lineUserId, [msg], cfg.token);
     return NextResponse.json({ ok: true });
