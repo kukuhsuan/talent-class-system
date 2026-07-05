@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { buildSchoolReportMessage, getLineConfig } from "@/lib/line";
+import type { LineRegion } from "@/lib/line";
 
-type NotifyResult = { status: "通知成功" | "通知失敗"; error?: string };
+type NotifyResult = { status: "通知成功" | "通知失敗" | "不需通知"; error?: string };
 
 async function setNotifyStatus(attendanceId: number, status: string, error = "") {
   await prisma.$executeRawUnsafe(
@@ -11,6 +12,20 @@ async function setNotifyStatus(attendanceId: number, status: string, error = "")
     status === "通知成功" ? new Date().toISOString() : null,
     attendanceId,
   );
+}
+
+async function ensureSchoolLineRegionColumn() {
+  await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN lineRegion TEXT NOT NULL DEFAULT "school"').catch(() => undefined);
+}
+
+async function getSchoolLineRegion(schoolId: number): Promise<LineRegion> {
+  await ensureSchoolLineRegionColumn();
+  const rows = await prisma.$queryRawUnsafe<Array<{ lineRegion: string | null }>>(
+    "SELECT lineRegion FROM School WHERE id = ? LIMIT 1",
+    schoolId,
+  );
+  const region = rows[0]?.lineRegion;
+  return region === "school2" ? "school2" : "school";
 }
 
 export async function notifySchoolReport(attendanceId: number): Promise<NotifyResult> {
@@ -32,16 +47,22 @@ export async function notifySchoolReport(attendanceId: number): Promise<NotifyRe
       return { status: "通知失敗", error: "找不到出勤紀錄" };
     }
 
+    if ((att.course.department ?? "").includes("安親")) {
+      return { status: "不需通知" };
+    }
+
     const school = att.course.schoolRel;
     if (!school?.lineUserId) {
       await setNotifyStatus(attendanceId, "通知失敗", "園所尚未綁定 LINE User ID");
       return { status: "通知失敗", error: "園所尚未綁定 LINE User ID" };
     }
 
-    const schoolCfg = getLineConfig("school");
+    const schoolRegion = await getSchoolLineRegion(school.id);
+    const schoolCfg = getLineConfig(schoolRegion);
     if (!schoolCfg.token) {
-      await setNotifyStatus(attendanceId, "通知失敗", "LINE_SCHOOL_TOKEN 尚未設定");
-      return { status: "通知失敗", error: "LINE_SCHOOL_TOKEN 尚未設定" };
+      const missingKey = schoolRegion === "school2" ? "LINE_SCHOOL2_TOKEN 尚未設定" : "LINE_SCHOOL_TOKEN 尚未設定";
+      await setNotifyStatus(attendanceId, "通知失敗", missingKey);
+      return { status: "通知失敗", error: missingKey };
     }
 
     const attData = att as unknown as { studentCount: number | null; studentCountA: number | null; studentCountB: number | null };

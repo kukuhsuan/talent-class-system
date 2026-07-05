@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 function dayKey(date: Date) {
@@ -13,6 +13,7 @@ function score(row: {
   reportContent: string;
   reportSentAt: Date | null;
   notes: string;
+  isPayrollLocked: boolean;
 }) {
   return (
     (row.studentCount !== null ? 16 : 0) +
@@ -20,12 +21,13 @@ function score(row: {
     (row.studentCountB !== null ? 8 : 0) +
     (row.reportContent ? 4 : 0) +
     (row.reportSentAt ? 2 : 0) +
+    (row.isPayrollLocked ? 1_000 : 0) +
     (row.notes ? 1 : 0) +
     row.id / 1_000_000
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const rows = await prisma.attendance.findMany({
     select: {
       id: true,
@@ -38,6 +40,7 @@ export async function GET() {
       reportContent: true,
       reportSentAt: true,
       notes: true,
+      isPayrollLocked: true,
     },
     orderBy: [{ courseId: "asc" }, { date: "asc" }, { id: "asc" }],
   });
@@ -57,23 +60,35 @@ export async function GET() {
     deleteIds.push(...sorted.slice(1).map((row) => row.id));
   }
 
-  for (const id of deleteIds) {
-    await prisma.attendance.delete({ where: { id } });
-  }
+  const lockedDeleteIds = rows.filter((row) => deleteIds.includes(row.id) && row.isPayrollLocked).map((row) => row.id);
+  const safeDeleteIds = deleteIds.filter((id) => !lockedDeleteIds.includes(id));
+  const confirm = req.nextUrl.searchParams.get("confirm") === "1";
 
-  let uniqueIndex = "ok";
-  try {
-    await prisma.$executeRawUnsafe(
-      "CREATE UNIQUE INDEX IF NOT EXISTS Attendance_courseId_date_key ON Attendance(courseId, date)",
-    );
-  } catch (e) {
-    uniqueIndex = `failed: ${(e as Error).message}`;
+  let uniqueIndex = "dry-run";
+  if (confirm) {
+    for (const id of safeDeleteIds) {
+      await prisma.attendance.delete({ where: { id } });
+    }
+    try {
+      await prisma.$executeRawUnsafe(
+        "CREATE UNIQUE INDEX IF NOT EXISTS Attendance_courseId_date_key ON Attendance(courseId, date)",
+      );
+      uniqueIndex = "ok";
+    } catch (e) {
+      uniqueIndex = `failed: ${(e as Error).message}`;
+    }
   }
 
   return NextResponse.json({
     ok: true,
+    dryRun: !confirm,
     duplicateGroups,
-    deleted: deleteIds.length,
+    wouldDelete: safeDeleteIds.length,
+    lockedSkipped: lockedDeleteIds.length,
+    deleted: confirm ? safeDeleteIds.length : 0,
+    deleteIds: safeDeleteIds,
+    lockedDeleteIds,
     uniqueIndex,
+    note: confirm ? "已刪除未鎖定的重複資料。" : "Dry Run：未提供 confirm=1，不會刪除資料。",
   });
 }

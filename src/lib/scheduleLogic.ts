@@ -10,6 +10,35 @@ export function dayNameOfIso(iso: string) {
   return weekdayOfIso(iso);
 }
 
+type CourseDateWindow = {
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+};
+
+function dateOnlyTime(value: Date | string | null | undefined) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return utcStartOfIsoDay(date.toISOString().slice(0, 10)).getTime();
+}
+
+export function courseDateWindowWhere(targetIso: string): Prisma.CourseWhereInput {
+  const targetStart = utcStartOfIsoDay(targetIso);
+  return {
+    AND: [
+      { OR: [{ startDate: null }, { startDate: { lte: targetStart } }] },
+      { OR: [{ endDate: null }, { endDate: { gte: targetStart } }] },
+    ],
+  };
+}
+
+export function courseOccursOnIso(course: CourseDateWindow, targetIso: string) {
+  const target = utcStartOfIsoDay(targetIso).getTime();
+  const start = dateOnlyTime(course.startDate);
+  const end = dateOnlyTime(course.endDate);
+  return (start === null || start <= target) && (end === null || end >= target);
+}
+
 // Returns IDs of courses that have at least one attendance record.
 // Uses EXISTS (course → attendances: some) instead of a full DISTINCT scan on Attendance.
 // nearDate: when provided, only considers attendance within ±180 days — avoids scanning

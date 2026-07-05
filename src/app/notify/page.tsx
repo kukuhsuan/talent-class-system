@@ -52,11 +52,17 @@ export default function NotifyPage() {
     setSending(null);
   }
 
-  async function sendReminder() {
-    setSending(-999);
-    const res = await fetch("/api/line/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "reminder" }) });
+  async function sendReminder(dayOffset = 0) {
+    const sendingKey = dayOffset === 1 ? -997 : -999;
+    setSending(sendingKey);
+    const res = await fetch("/api/line/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "reminder", dayOffset }),
+    });
     const data = await res.json();
-    setMsg(`已發送 ${data.sent} 則提醒，${data.skipped} 位老師尚未綁定 LINE`);
+    const label = dayOffset === 1 ? "明日課程提醒" : "今日課程提醒";
+    setMsg(`${label}已發送 ${data.sent} 則，${data.skipped} 位老師尚未綁定 LINE`);
     setSending(null);
   }
 
@@ -91,9 +97,13 @@ export default function NotifyPage() {
             className="bg-amber-700 hover:bg-amber-800 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
             {sending === -998 ? "發送中..." : "📅 發送課程表"}
           </button>
-          <button onClick={sendReminder} disabled={sending === -999}
+          <button onClick={() => sendReminder(1)} disabled={sending === -997}
+            className="bg-sky-600 hover:bg-sky-700 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+            {sending === -997 ? "發送中..." : "發送明日課程提醒"}
+          </button>
+          <button onClick={() => sendReminder(0)} disabled={sending === -999}
             className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
-            {sending === -999 ? "發送中..." : "發送明日課程提醒"}
+            {sending === -999 ? "發送中..." : "發送今日課程提醒"}
           </button>
         </div>
       </div>
@@ -115,10 +125,11 @@ export default function NotifyPage() {
           {[
             { label: "北部 OA", path: "/api/line/north" },
             { label: "南部 OA", path: "/api/line/south" },
-            { label: "園所 OA", path: "/api/line/school" },
+            { label: "園所 OA 1", path: "/api/line/school" },
+            { label: "園所 OA 2", path: "/api/line/school2" },
           ].map(({ label, path }) => (
             <div key={path} className="flex items-center gap-2">
-              <span className="text-xs font-medium text-blue-700 w-16">{label}</span>
+              <span className="text-xs font-medium text-blue-700 w-20">{label}</span>
               <code className="text-xs bg-white border border-blue-200 px-2 py-1 rounded flex-1 select-all break-all">
                 {publicBase ? `${publicBase}${path}` : `（載入中）${path}`}
               </code>
@@ -127,8 +138,9 @@ export default function NotifyPage() {
         </div>
         <p className="text-xs text-slate-600 mt-4 border-t border-blue-200/80 pt-3">
           <span className="font-semibold text-slate-700">園所 OA 測試：</span>
-          Token 與 Secret 請設定環境變數 <code className="bg-white px-1 rounded">LINE_SCHOOL_TOKEN</code>、
-          <code className="bg-white px-1 rounded">LINE_SCHOOL_SECRET</code>（勿寫死在程式碼）。換測試用 Channel 時只改部署環境即可。
+          原本園所 OA 使用 <code className="bg-white px-1 rounded">LINE_SCHOOL_TOKEN</code> / <code className="bg-white px-1 rounded">LINE_SCHOOL_SECRET</code>；
+          第二組園所 OA 使用 <code className="bg-white px-1 rounded">LINE_SCHOOL2_TOKEN</code> / <code className="bg-white px-1 rounded">LINE_SCHOOL2_SECRET</code>。
+          園所從哪一組 OA 完成綁定，之後課程回報就會由同一組 OA 發送。
         </p>
       </div>
 

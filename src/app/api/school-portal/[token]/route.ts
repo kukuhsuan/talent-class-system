@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, normalizeDepartment } from "@/lib/courseMeta";
+import {
+  canEditSubmittedConfirmation,
+  confirmationHistory,
+  confirmationTermRange,
+  copyPreviousSchoolStartConfirmation,
+  courseConfirmationSummary,
+  getSchoolStartConfirmation,
+  parseConfirmationTerm,
+  semesterWesternLabel,
+  termLabel,
+  upsertSchoolStartConfirmation,
+} from "@/lib/courseConfirmation";
 import { verifySchoolPortalToken } from "@/lib/schoolPortalToken";
+import { writeAuditLog } from "@/lib/auditLog";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
   if (row.studentCountA != null || row.studentCountB != null) return (row.studentCountA ?? 0) + (row.studentCountB ?? 0);
@@ -70,14 +83,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const { searchParams } = new URL(req.url);
     const year = Number(searchParams.get("year") ?? new Date().getFullYear());
     const month = Number(searchParams.get("month") ?? new Date().getMonth() + 1);
-    const start = new Date(year, month - 1, 1);
-    const end = new Date(year, month, 1);
+    const term = parseConfirmationTerm({
+      academicYear: searchParams.get("academicYear"),
+      semester: searchParams.get("semester"),
+    });
+    const { start, end } = confirmationTermRange(term);
 
     const [school, skillCards] = await Promise.all([
       prisma.school.findUnique({ where: { id: schoolId } }),
       getSkillCards(),
     ]);
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
+    const courseConfirmation = await getSchoolStartConfirmation(schoolId, term);
+    const history = courseConfirmation.id ? await confirmationHistory(courseConfirmation.id) : [];
 
     const records = await prisma.attendance.findMany({
       where: {
@@ -194,6 +212,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         contact: school.contact,
         phone: school.phone,
       },
+      courseConfirmation,
+      courseConfirmationHistory: history,
+      confirmationTerm: {
+        ...term,
+        label: termLabel(term),
+        westernLabel: semesterWesternLabel(term),
+      },
       year,
       month,
       summary: {
@@ -207,6 +232,50 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       curriculum,
       assessments,
       skillCards,
+    });
+  } catch {
+    return NextResponse.json({ error: "園所連結無效或已過期" }, { status: 401 });
+  }
+}
+
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  try {
+    const { token } = await params;
+    const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
+    const body = await req.json().catch(() => ({}));
+    const term = parseConfirmationTerm(body.confirmationTerm ?? body);
+    const [school, current] = await Promise.all([
+      prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } }),
+      getSchoolStartConfirmation(schoolId, term),
+    ]);
+    if (!canEditSubmittedConfirmation(current.submittedAt, current.reopenedAt)) {
+      return NextResponse.json({ error: "開課前確認已送出，如需修改請聯繫行政協助調整。" }, { status: 409 });
+    }
+    const courseConfirmation = body.action === "copyPrevious"
+      ? await copyPreviousSchoolStartConfirmation(schoolId, term)
+      : await upsertSchoolStartConfirmation(schoolId, term, body.courseConfirmation ?? body);
+    await writeAuditLog(req, {
+      actorName: school?.name ?? "園所端",
+      actorRole: "school_portal",
+      action: body.action === "copyPrevious" ? "create" : "update",
+      targetType: "SchoolStartConfirmation",
+      targetId: courseConfirmation.id ?? `${schoolId}-${term.academicYear}-${term.semester}`,
+      targetLabel: `${school?.name ?? "園所"} ${termLabel(term)}`,
+      beforeData: current,
+      afterData: courseConfirmation,
+      diffSummary: body.action === "copyPrevious"
+        ? `園所複製上一學期開課前確認：${courseConfirmationSummary(courseConfirmation, { includeTerm: true })}`
+        : `園所送出開課前確認：${courseConfirmationSummary(courseConfirmation, { includeTerm: true })}`,
+    });
+    return NextResponse.json({
+      ok: true,
+      courseConfirmation,
+      courseConfirmationHistory: courseConfirmation.id ? await confirmationHistory(courseConfirmation.id) : [],
+      confirmationTerm: {
+        ...term,
+        label: termLabel(term),
+        westernLabel: semesterWesternLabel(term),
+      },
     });
   } catch {
     return NextResponse.json({ error: "園所連結無效或已過期" }, { status: 401 });

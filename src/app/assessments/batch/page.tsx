@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { groupAverages, parseScores } from "@/lib/kindergartenAssessment";
+import { AssessmentAbilitySummary } from "@/components/AssessmentAbilitySummary";
 
 type Detail = {
   id: number;
@@ -32,7 +33,7 @@ function Radar({ scores }: { scores: string }) {
   });
   const polygon = points.map((point) => `${point.x},${point.y}`).join(" ");
   return (
-    <svg viewBox="0 0 300 300" className="mx-auto h-[78mm] w-[78mm]">
+    <svg viewBox="0 0 300 300" className="mx-auto h-[62mm] w-[62mm]">
       {[1, 2, 3, 4, 5].map((level) => {
         const radius = (level / 5) * maxRadius;
         const ring = groups.map((_group, index) => {
@@ -57,7 +58,7 @@ function Radar({ scores }: { scores: string }) {
 function Sheet({ detail }: { detail: Detail }) {
   const dateText = new Date(detail.date).toLocaleDateString("zh-TW", { year: "numeric", month: "long", day: "numeric" });
   const comment = detail.comment.replace(/\s+/g, " ").trim();
-  const compact = comment.length > 132 ? `${comment.slice(0, 132)}...` : comment;
+  const compact = comment.length > 150 ? `${comment.slice(0, 150)}...` : comment;
   return (
     <article className="certificate-sheet mx-auto mb-6 h-[297mm] w-[210mm] overflow-hidden bg-white p-[6mm] shadow-sm">
       <div className="flex h-[45mm] items-center gap-[12mm] bg-[#0756B7] px-[9mm] text-white">
@@ -77,11 +78,14 @@ function Sheet({ detail }: { detail: Detail }) {
           <h2 className="text-[21pt] font-black">三大核心發展指標</h2>
           <div className="rounded-full bg-[#F3E7D0] px-[5mm] py-[2mm] text-[12pt] font-black text-[#6E4C1E]">{detail.title}</div>
         </div>
-        <div className="-mt-[4mm]"><Radar scores={detail.scores} /></div>
+        <div className="-mt-[7mm]"><Radar scores={detail.scores} /></div>
       </section>
-      <section className="mt-[-3mm] px-[8mm]">
+      <div className="mt-[-1mm]">
+        <AssessmentAbilitySummary scores={detail.scores} />
+      </div>
+      <section className="mt-[4mm] px-[8mm]">
         <div className="inline-block rounded-t-2xl bg-[#0756B7] px-[6mm] py-[2.5mm] text-[15pt] font-bold text-white">教練專業觀察與建議</div>
-        <div className="h-[42mm] overflow-hidden rounded-b-[26px] rounded-tr-[26px] bg-[#E8D9BC] px-[8mm] py-[5mm] text-[14pt] leading-[1.72] text-slate-800">{compact}</div>
+        <div className="h-[38mm] overflow-hidden rounded-b-[22px] rounded-tr-[22px] bg-[#E8D9BC] px-[8mm] py-[4mm] text-[11.5pt] leading-[1.52] text-slate-800">{compact}</div>
       </section>
       <div className="mt-[5mm] flex items-end justify-between px-[8mm] text-[10pt] text-slate-500">
         <div><div>園所：{detail.school}</div><div>授課老師：{detail.teacherName}</div><div>日期：{dateText}</div></div>

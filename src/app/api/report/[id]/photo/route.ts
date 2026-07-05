@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { get, put } from "@vercel/blob";
+import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { verifyPublicAccessToken } from "@/lib/publicAccessToken";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE } from "@/lib/reportWindow";
 
 export const runtime = "nodejs";
 
@@ -14,22 +16,6 @@ function imageExtension(type: string) {
   if (type.includes("png")) return "png";
   if (type.includes("webp")) return "webp";
   return "jpg";
-}
-
-function privatePhotoRef(pathname: string) {
-  return `private:${pathname}`;
-}
-
-function extractPrivatePath(value: string | null | undefined) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  try {
-    const parsed = JSON.parse(raw);
-    const first = Array.isArray(parsed) ? String(parsed[0] ?? "") : "";
-    return first.startsWith("private:") ? first.slice("private:".length) : "";
-  } catch {
-    return raw.startsWith("private:") ? raw.slice("private:".length) : "";
-  }
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,18 +31,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { id: attendanceId },
       select: { reportPhotos: true },
     });
-    if (extractPrivatePath(attendance?.reportPhotos) !== pathname) {
+    const raw = String(attendance?.reportPhotos ?? "");
+    if (!raw.includes(pathname)) {
       return NextResponse.json({ error: "找不到照片" }, { status: 404 });
     }
 
-    const blob = await get(pathname, { access: "private", token: blobToken() });
-    if (!blob?.stream) return NextResponse.json({ error: "找不到照片" }, { status: 404 });
-    return new NextResponse(blob.stream as BodyInit, {
-      headers: {
-        "Content-Type": blob.blob.contentType ?? "image/jpeg",
-        "Cache-Control": "private, max-age=300",
-      },
-    });
+    try {
+      const parsed = JSON.parse(raw);
+      const first = Array.isArray(parsed) ? String(parsed.find((item) => String(item).includes(pathname)) ?? "") : "";
+      if (first.startsWith("http://") || first.startsWith("https://")) return NextResponse.redirect(first);
+    } catch {
+      if (raw.startsWith("http://") || raw.startsWith("https://")) return NextResponse.redirect(raw);
+    }
+    return NextResponse.json({ error: "照片連結格式不支援，請重新上傳" }, { status: 404 });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
       return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
@@ -84,10 +71,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      select: { id: true },
+      include: { course: { select: { time: true } } },
     });
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
+    }
+    const timeMap = await attendanceScheduledTimeMap([attendance.id]);
+    const scheduledTime = effectiveAttendanceTime({
+      scheduledTime: timeMap.get(attendance.id),
+      courseTime: attendance.course.time,
+      attendanceHours: attendance.hours,
+      isPayrollLocked: attendance.isPayrollLocked,
+      reportContent: attendance.reportContent,
+      reportSentAt: attendance.reportSentAt,
+      studentCount: attendance.studentCount,
+      studentCountA: attendance.studentCountA,
+      studentCountB: attendance.studentCountB,
+    });
+    const reportWindow = attendanceReportWindow(attendance, scheduledTime);
+    if (reportWindow.expired && !reportWindow.complete) {
+      return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
     }
 
     const form = await req.formData();
@@ -104,17 +107,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const ext = imageExtension(file.type);
     const blob = await put(`report-photos/${crypto.randomUUID()}.${ext}`, file, {
-      access: "private",
+      access: "public",
       addRandomSuffix: true,
       token,
     });
 
     await prisma.attendance.update({
       where: { id: attendanceId },
-      data: { reportPhotos: JSON.stringify([privatePhotoRef(blob.pathname)]) },
+      data: { reportPhotos: JSON.stringify([blob.url]) },
     });
 
-    return NextResponse.json({ ok: true, url: `/api/report/${encodeURIComponent(id)}/photo?path=${encodeURIComponent(blob.pathname)}` });
+    return NextResponse.json({ ok: true, url: blob.url });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
       return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });

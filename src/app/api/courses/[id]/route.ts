@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
-import { pruneFutureUnreportedAttendanceDates, stampAttendanceTime, syncFutureUnreportedAttendanceAssistant, syncFutureUnreportedAttendanceCategory, syncFutureUnreportedAttendanceTime } from "@/lib/attendanceTime";
+import { pruneFutureUnreportedAttendanceDates, stampAttendanceTime, syncFutureUnreportedAttendanceAssistant, syncFutureUnreportedAttendanceCategory, syncFutureUnreportedAttendanceHours, syncFutureUnreportedAttendanceTime, syncUnreportedWaitingTeacherAttendance } from "@/lib/attendanceTime";
 import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
-import { coursePayrollHoursForAttendance, parsePayrollHours, setCoursePayrollHours } from "@/lib/payrollHours";
+import { coursePayrollHoursForAttendance, coursePayrollHoursMap, parsePayrollHours, setCoursePayrollHours } from "@/lib/payrollHours";
 import { recurrenceFields } from "@/lib/courseRecurrence";
+import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 
 // GET /api/courses/[id] — returns single course with scheduledDates (for edit form)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -39,12 +40,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const courseId = Number(id);
     const code = String(data.code ?? "").trim();
 
-    const existing = code
-      ? await prisma.course.findFirst({
-          where: { code },
-          include: { teacher: { select: { name: true } } },
-        })
-      : null;
+    const [existing, currentCourse] = await Promise.all([
+      code
+        ? prisma.course.findFirst({
+            where: { code },
+            include: { teacher: { select: { name: true } } },
+          })
+        : null,
+      prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          teacher: { select: { id: true, name: true } },
+          assistantTeacher: { select: { id: true, name: true } },
+          attendances: { select: { date: true }, orderBy: { date: "asc" } },
+        },
+      }),
+    ]);
     if (existing && existing.id !== courseId) {
       return NextResponse.json(
         {
@@ -67,6 +78,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const newTime = String(data.time ?? "");
     const payrollHours = parsePayrollHours(data.payrollHours);
     const recurrence = recurrenceFields(data, allScheduled);
+    const oldPayrollMap = await coursePayrollHoursMap([courseId]);
+    const oldPayrollHours = oldPayrollMap.get(courseId) ?? null;
+    const currentDates = [...new Set((currentCourse?.attendances ?? []).map((attendance) => attendance.date.toISOString().slice(0, 10)))].sort();
+    const datesChanged = allScheduled.length > 0 && (
+      allScheduled.length !== currentDates.length
+      || allScheduled.some((date, index) => date !== currentDates[index])
+    );
+    const teacherChanged = currentCourse?.teacherId !== Number(data.teacherId);
+    const assistantChanged = (currentCourse?.assistantTeacherId ?? null) !== (data.assistantTeacherId ? Number(data.assistantTeacherId) : null);
+    const categoryChanged = normalizeCategory(currentCourse?.category ?? "") !== normalizeCategory(data.category);
+    const timeChanged = String(currentCourse?.time ?? "") !== newTime;
+    const payrollChanged = (oldPayrollHours ?? null) !== (payrollHours ?? null);
 
     const course = await prisma.course.update({
       where: { id: courseId },
@@ -91,31 +114,77 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       include: { teacher: true, assistantTeacher: true },
     });
     await setCoursePayrollHours(course.id, payrollHours);
+    await writeAuditLog(req, {
+      action: "update",
+      targetType: "Course",
+      targetId: course.id,
+      targetLabel: `${course.code} ${course.school} ${course.courseType}`,
+      beforeData: currentCourse,
+      afterData: { ...course, payrollHours },
+      diffSummary: diffSummary(currentCourse as unknown as Record<string, unknown>, { ...course, payrollHours } as unknown as Record<string, unknown>, {
+        teacherId: "主教",
+        assistantTeacherId: "助教",
+        time: "上課時間",
+        school: "園所",
+        courseType: "課程",
+        payrollHours: "計薪時數",
+      }) || `修改課程：${course.code}`,
+    });
 
     const warnings: string[] = [];
-    try {
-      await syncFutureUnreportedAttendanceAssistant(course.id, course.assistantTeacherId ?? null, undefined, course.department);
-    } catch (syncError) {
-      const message = (syncError as Error).message || "未來助教同步失敗";
-      console.warn("course attendance assistant sync skipped", { courseId: course.id, message });
-      warnings.push(`助教同步略過：${message}`);
+    if (teacherChanged) {
+      try {
+        await syncUnreportedWaitingTeacherAttendance(course.id, course.teacherId);
+      } catch (syncError) {
+        const message = (syncError as Error).message || "待排老師同步失敗";
+        console.warn("course waiting teacher attendance sync skipped", { courseId: course.id, message });
+        warnings.push(`待排老師同步略過：${message}`);
+      }
     }
-    try {
-      await syncFutureUnreportedAttendanceCategory(course.id, course.category, undefined, course.department);
-    } catch (syncError) {
-      const message = (syncError as Error).message || "未來課程類別同步失敗";
-      console.warn("course attendance category sync skipped", { courseId: course.id, message });
-      warnings.push(`課程類別同步略過：${message}`);
+    if (assistantChanged) {
+      try {
+        await syncFutureUnreportedAttendanceAssistant(
+          course.id,
+          course.assistantTeacherId ?? null,
+          undefined,
+          course.department,
+          currentCourse?.assistantTeacherId ?? null,
+        );
+      } catch (syncError) {
+        const message = (syncError as Error).message || "未來助教同步失敗";
+        console.warn("course attendance assistant sync skipped", { courseId: course.id, message });
+        warnings.push(`助教同步略過：${message}`);
+      }
     }
-    try {
-      await syncFutureUnreportedAttendanceTime(course.id, newTime, payrollHours, undefined, course.department);
-    } catch (syncError) {
-      const message = (syncError as Error).message || "未來出勤時間同步失敗";
-      console.warn("course attendance time sync skipped", { courseId: course.id, message });
-      warnings.push(`出勤時間同步略過：${message}`);
+    if (categoryChanged) {
+      try {
+        await syncFutureUnreportedAttendanceCategory(course.id, course.category, undefined, course.department);
+      } catch (syncError) {
+        const message = (syncError as Error).message || "未來課程類別同步失敗";
+        console.warn("course attendance category sync skipped", { courseId: course.id, message });
+        warnings.push(`課程類別同步略過：${message}`);
+      }
+    }
+    if (payrollChanged && !timeChanged) {
+      try {
+        await syncFutureUnreportedAttendanceHours(course.id, newTime, payrollHours);
+      } catch (syncError) {
+        const message = (syncError as Error).message || "未來計薪時數同步失敗";
+        console.warn("course attendance hours sync skipped", { courseId: course.id, message });
+        warnings.push(`計薪時數同步略過：${message}`);
+      }
+    }
+    if (timeChanged || payrollChanged) {
+      try {
+        await syncFutureUnreportedAttendanceTime(course.id, newTime, payrollHours, undefined, course.department);
+      } catch (syncError) {
+        const message = (syncError as Error).message || "未來出勤時間同步失敗";
+        console.warn("course attendance time sync skipped", { courseId: course.id, message });
+        warnings.push(`出勤時間同步略過：${message}`);
+      }
     }
 
-    if (allScheduled.length > 0) {
+    if (allScheduled.length > 0 && datesChanged) {
       const calculatedHours = coursePayrollHoursForAttendance(payrollHours, newTime);
       await createAttendancesForUniqueDays(allScheduled, {
         courseId: course.id,
@@ -149,10 +218,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const courseId = Number(id);
+    const before = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: { teacher: { select: { id: true, name: true } }, assistantTeacher: { select: { id: true, name: true } } },
+    });
     const lockedCount = await prisma.attendance.count({
       where: { courseId, isPayrollLocked: true },
     });
@@ -165,6 +238,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     await prisma.$transaction(async (tx) => {
       await tx.attendance.deleteMany({ where: { courseId } });
       await tx.course.delete({ where: { id: courseId } });
+    });
+    await writeAuditLog(req, {
+      action: "delete",
+      targetType: "Course",
+      targetId: courseId,
+      targetLabel: before ? `${before.code} ${before.school} ${before.courseType}` : String(courseId),
+      beforeData: before,
+      diffSummary: before ? `刪除課程：${before.code} ${before.school} ${before.courseType}` : `刪除課程：${courseId}`,
+      sensitive: true,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

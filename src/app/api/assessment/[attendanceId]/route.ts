@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
-import { assessmentSemester, generateGrowthComment, growthTitle, normalizeScores, parseScores, scoreAverage } from "@/lib/kindergartenAssessment";
+import { assessmentSemester, assessmentSemesterRange, generateGrowthComment, growthTitle, normalizeScores, parseScores, scoreAverage } from "@/lib/kindergartenAssessment";
 import { verifyPublicAccessToken } from "@/lib/publicAccessToken";
+import { writeAuditLog } from "@/lib/auditLog";
 
 type Payload = {
   childName?: string;
@@ -22,8 +23,13 @@ async function ensureAssessmentTable() {
 
 async function isFinalAttendance(attendance: { id: number; date: Date; courseId: number; course: { department: string } }) {
   if (!isKindergarten(attendance.course.department)) return false;
+  const semester = assessmentSemesterRange(attendance.date);
   const latest = await prisma.attendance.findFirst({
-    where: { courseId: attendance.courseId },
+    where: {
+      courseId: attendance.courseId,
+      cancelled: false,
+      date: { gte: semester.start, lt: semester.end },
+    },
     orderBy: { date: "desc" },
     select: { id: true, date: true },
   });
@@ -83,7 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ att
     const verified = verifyPublicAccessToken(decodeURIComponent(attendanceId), "assessment");
     const attendance = await prisma.attendance.findUnique({
       where: { id: verified.attendanceId },
-      include: { course: true },
+      include: { course: true, actualTeacher: true },
     });
     if (!attendance) return NextResponse.json({ error: "找不到評量課程" }, { status: 404 });
     if (!isKindergarten(attendance.course.department)) return NextResponse.json({ error: "此功能只開放幼兒園課程使用" }, { status: 400 });
@@ -119,7 +125,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ att
       certificatePayload,
     );
     const rows = await prisma.$queryRawUnsafe<{ id: number }[]>("SELECT id FROM KindergartenAssessment ORDER BY id DESC LIMIT 1");
-    return NextResponse.json({ ok: true, id: Number(rows[0]?.id), comment, title });
+    const assessmentId = Number(rows[0]?.id);
+    await writeAuditLog(req, {
+      actorName: attendance.actualTeacher.name,
+      actorRole: "teacher",
+      action: "create",
+      targetType: "KindergartenAssessment",
+      targetId: assessmentId,
+      targetLabel: `${attendance.course.school} ${courseName} ${childName}`,
+      afterData: { attendanceId: attendance.id, childName, semester, courseName, scores, title },
+      diffSummary: `新增學期評量：${childName} ${courseName}`,
+    });
+    return NextResponse.json({ ok: true, id: assessmentId, comment, title });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
       return NextResponse.json({ error: "評量連結無效或已過期" }, { status: 401 });

@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
+import { TeacherCombobox } from "@/components/TeacherCombobox";
 import { Toast } from "@/components/Toast";
-import { ensureOk } from "@/lib/clientApi";
+import { ensureOk, readApiError } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
 import { CATEGORY_OPTIONS, courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHoursCore";
@@ -16,6 +17,7 @@ type Attendance = {
   id: number; date: string; course: Course; actualTeacher: Teacher; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   studentCount: number | null; cancelled: boolean; cancelReason: string; makeupDate: string | null; makeupDone: boolean;
   category: string; hours: number; notes: string; scheduledTime?: string; reportContent?: string;
+  substitutes?: Array<{ role: string }>;
   reportFillable?: boolean; reportExpired?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
@@ -49,15 +51,21 @@ export default function AttendancePage() {
   const [filterCategory, setFilterCategory] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 20;
+  const pageSize = 80;
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [loadingRecords, setLoadingRecords] = useState(false);
+  const [loadingOptions, setLoadingOptions] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const { toast, showToast } = useToast();
+  const showToastRef = useRef(showToast);
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
-  const load = useCallback(() => {
+  useEffect(() => { showToastRef.current = showToast; }, [showToast]);
+
+  const loadRecords = useCallback(async () => {
     const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth), page: String(page), pageSize: String(pageSize) });
     if (dept) params.set("dept", dept);
     if (filterSchool) params.set("school", filterSchool);
@@ -65,14 +73,44 @@ export default function AttendancePage() {
     if (filterDate) params.set("date", filterDate);
     if (filterCategory) params.set("category", filterCategory);
     if (statusFilter !== "all" && statusFilter !== "substitute") params.set("status", statusFilter);
-    Promise.all([
-      fetch(`/api/attendance?${params}`).then((r) => r.json() as Promise<PageResult<Attendance>>),
-      fetch(`/api/courses${dept ? `?dept=${encodeURIComponent(dept)}&includeDates=0` : "?includeDates=0"}`).then((r) => r.json()),
-      fetch("/api/teachers").then((r) => r.json()),
-    ]).then(([a, c, t]) => { setRecords(a.items); setTotal(a.total); setCourses(c); setTeachers(t); });
+    setLoadingRecords(true);
+    try {
+      const res = await fetch(`/api/attendance?${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await readApiError(res, "出勤紀錄載入失敗"));
+      const data = await res.json() as PageResult<Attendance>;
+      setRecords(Array.isArray(data.items) ? data.items : []);
+      setTotal(Number(data.total) || 0);
+    } catch (error) {
+      showToastRef.current("error", (error as Error).message || "出勤紀錄載入失敗", 3000);
+    } finally {
+      setLoadingRecords(false);
+    }
   }, [filterYear, filterMonth, page, dept, filterSchool, filterTeacher, filterDate, filterCategory, statusFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadOptions = useCallback(async () => {
+    setLoadingOptions(true);
+    try {
+      const courseParams = new URLSearchParams({ includeDates: "0", includeConfirmation: "0" });
+      if (dept) courseParams.set("dept", dept);
+      const [courseRes, teacherRes] = await Promise.all([
+        fetch(`/api/courses?${courseParams}`, { cache: "no-store" }),
+        fetch("/api/teachers", { cache: "no-store" }),
+      ]);
+      const courseError = courseRes.ok ? "" : await readApiError(courseRes, "課程清單載入失敗");
+      const teacherError = teacherRes.ok ? "" : await readApiError(teacherRes, "老師清單載入失敗");
+      if (courseError || teacherError) throw new Error(courseError || teacherError);
+      const [courseData, teacherData] = await Promise.all([courseRes.json(), teacherRes.json()]);
+      setCourses(Array.isArray(courseData) ? courseData : []);
+      setTeachers(Array.isArray(teacherData) ? teacherData : []);
+    } catch (error) {
+      showToastRef.current("error", (error as Error).message || "篩選選項載入失敗", 3000);
+    } finally {
+      setLoadingOptions(false);
+    }
+  }, [dept]);
+
+  useEffect(() => { queueMicrotask(() => { void loadRecords(); }); }, [loadRecords]);
+  useEffect(() => { queueMicrotask(() => { void loadOptions(); }); }, [loadOptions]);
 
   const onCourseChange = (courseId: number) => {
     const c = courses.find((x) => x.id === courseId);
@@ -122,7 +160,7 @@ export default function AttendancePage() {
           showToast("success", "上課紀錄已儲存");
         }
       }
-      setForm(EMPTY_FORM); setEditing(null); setShowForm(false); load();
+      setForm(EMPTY_FORM); setEditing(null); setShowForm(false); void loadRecords();
     } catch (e) {
       showToast("error", (e as Error).message || "上課紀錄儲存失敗", 3000);
     } finally {
@@ -133,7 +171,39 @@ export default function AttendancePage() {
   const del = async (id: number) => {
     if (!confirm("確定刪除此筆紀錄？")) return;
     await fetch(`/api/attendance/${id}`, { method: "DELETE" });
-    load();
+    void loadRecords();
+  };
+
+  const exportAttendance = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ year: String(filterYear), month: String(filterMonth) });
+      if (dept) params.set("dept", dept);
+      if (filterSchool) params.set("school", filterSchool);
+      if (filterTeacher) params.set("teacherId", filterTeacher);
+      if (filterDate) params.set("date", filterDate);
+      if (filterCategory) params.set("category", filterCategory);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      const res = await fetch(`/api/export/attendance?${params}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `匯出失敗（${res.status}）`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `attendance-${filterYear}-${String(filterMonth).padStart(2, "0")}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      showToast("error", (error as Error).message || "匯出失敗", 4000);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const edit = (r: Attendance) => {
@@ -160,7 +230,7 @@ export default function AttendancePage() {
     return r.studentCount !== null && hasReport;
   };
   const isMissingReport = (r: Attendance) => Boolean(r.pendingReport);
-  const isSubstitute = (r: Attendance) => r.actualTeacher.id !== r.course.teacherId;
+  const isSubstitute = (r: Attendance) => Boolean(r.substitutes?.some((record) => record.role === "主教"));
   const isUnassigned = (r: Attendance) => r.actualTeacher.name === WAITING_TEACHER;
   const statusLabel = (r: Attendance) => {
     if (r.cancelled) return "停課";
@@ -202,7 +272,12 @@ export default function AttendancePage() {
     if (group) group.rows.push(record);
     else groups.push({ school: key, rows: [record] });
     return groups;
-  }, []).sort((a, b) => a.school.localeCompare(b.school, "zh-Hant"));
+  }, [])
+    .map((group) => ({
+      ...group,
+      rows: group.rows.sort((a, b) => fmt(a.date).localeCompare(fmt(b.date)) || a.id - b.id),
+    }))
+    .sort((a, b) => a.school.localeCompare(b.school, "zh-Hant"));
   const toggleGroup = (school: string) => setExpandedGroups((groups) => ({ ...groups, [school]: !groups[school] }));
 
   return (
@@ -211,13 +286,19 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
-          <p className="text-sm text-slate-500">共 {total} 筆，目前顯示 {filteredRecords.length} 筆</p>
+          <p className="text-sm text-slate-500">
+            {loadingRecords ? "出勤紀錄載入中…" : `共 ${total} 筆，目前顯示 ${filteredRecords.length} 筆`}
+            {loadingOptions && <span className="ml-2 text-xs text-slate-400">課程/老師選項載入中</span>}
+          </p>
         </div>
         <div className="flex gap-2">
-          <a href={`/api/export/attendance?year=${filterYear}&month=${filterMonth}`} download
-            className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
-            匯出 Excel
-          </a>
+          <button
+            onClick={exportAttendance}
+            disabled={exporting}
+            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+          >
+            {exporting ? "匯出中..." : "匯出 Excel"}
+          </button>
           <button onClick={() => { setForm({ ...EMPTY_FORM, date: today(), extraDates: [] }); setEditing(null); setShowForm(true); }}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm">
             + 新增上課紀錄
@@ -263,7 +344,7 @@ export default function AttendancePage() {
             <div className="md:col-span-2">
               <label>課程 *</label>
               <select value={form.courseId} onChange={(e) => onCourseChange(Number(e.target.value))}>
-                <option value={0}>-- 選擇課程 --</option>
+                <option value={0}>{loadingOptions ? "-- 課程載入中 --" : "-- 選擇課程 --"}</option>
                 {courses.map((c) => (
                   <option key={c.id} value={c.id}>[{c.code}] {c.school} {c.courseType} ({c.teacher.name})</option>
                 ))}
@@ -271,19 +352,24 @@ export default function AttendancePage() {
             </div>
             <div>
               <label>上課老師 *（代課時修改）</label>
-              <select value={form.actualTeacherId} onChange={(e) => setForm({ ...form, actualTeacherId: Number(e.target.value) })}>
-                <option value={0}>-- 選擇老師 --</option>
-                {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+              <TeacherCombobox
+                teachers={teachers}
+                value={form.actualTeacherId || null}
+                onChange={(teacherId) => setForm({ ...form, actualTeacherId: teacherId ?? 0 })}
+                placeholder="-- 選擇老師 --"
+              />
             </div>
             <div>
               <label>助教老師（選填）</label>
-              <select value={form.assistantTeacherId ?? ""} onChange={(e) => setForm({ ...form, assistantTeacherId: e.target.value ? Number(e.target.value) : null })}>
-                <option value="">-- 無助教 --</option>
-                {teachers
-                  .filter((t) => t.id !== form.actualTeacherId)
-                  .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+              <TeacherCombobox
+                teachers={teachers}
+                value={form.assistantTeacherId}
+                onChange={(teacherId) => setForm({ ...form, assistantTeacherId: teacherId })}
+                placeholder="-- 無助教 --"
+                allowEmpty
+                emptyLabel="-- 無助教 --"
+                excludeTeacherId={form.actualTeacherId}
+              />
             </div>
             <div>
               <label>出席人數{requiresStudentCount(form.category) ? "" : "（課內免填）"}</label>
@@ -375,11 +461,11 @@ export default function AttendancePage() {
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
           <select value={filterSchool} onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}>
-            <option value="">全部園所</option>
+            <option value="">{loadingOptions ? "園所載入中…" : "全部園所"}</option>
             {schoolOptions.map((school) => <option key={school}>{school}</option>)}
           </select>
           <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}>
-            <option value="">全部老師</option>
+            <option value="">{loadingOptions ? "老師載入中…" : "全部老師"}</option>
             {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
           </select>
           <input type="date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setPage(1); }} />
@@ -542,7 +628,9 @@ export default function AttendancePage() {
           );
         })}
         {groupedRecords.length === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-slate-400">目前篩選沒有上課紀錄</div>
+          <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-slate-400">
+            {loadingRecords ? "出勤紀錄載入中…" : "目前篩選沒有上課紀錄"}
+          </div>
         )}
       </div>
     </div>

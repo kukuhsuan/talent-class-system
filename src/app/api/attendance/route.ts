@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays, parseAttendanceDay } from "@/lib/attendanceBatch";
-import { attendanceScheduledTimeMap, stampAttendanceTime } from "@/lib/attendanceTime";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime } from "@/lib/attendanceTime";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
 import { attendanceMissingItems, attendanceReportWindow, isPendingReport } from "@/lib/reportWindow";
 import { coursePayrollHoursForAttendance, coursePayrollHoursMap } from "@/lib/payrollHours";
 import { resolvePayrollHours } from "@/lib/payrollHoursCore";
+import { writeAuditLog } from "@/lib/auditLog";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
   const month = searchParams.get("month");
   const page = Math.max(1, Number(searchParams.get("page") ?? "0") || 0);
   const pageSizeRaw = Number(searchParams.get("pageSize") ?? "0") || 0;
-  const pageSize = pageSizeRaw ? Math.min(50, Math.max(20, pageSizeRaw)) : 0;
+  const pageSize = pageSizeRaw ? Math.min(500, Math.max(20, pageSizeRaw)) : 0;
 
   const dept = searchParams.get("dept") ?? "";
   const school = searchParams.get("school") ?? "";
@@ -43,22 +44,17 @@ export async function GET(req: NextRequest) {
     where.date = { gte: start, lt: end };
   }
 
-  const tomorrowStart = utcStartOfNextIsoDay(taipeiDateIso());
-  const currentDateFilter = (where.date ?? {}) as { gte?: Date; lt?: Date };
-  where.date = {
-    ...currentDateFilter,
-    lt: currentDateFilter.lt && currentDateFilter.lt < tomorrowStart ? currentDateFilter.lt : tomorrowStart,
-  };
-
   if (status === "missing") {
     where.cancelled = false;
     const todayIso = taipeiDateIso();
+    const tomorrowStart = utcStartOfNextIsoDay(todayIso);
     const twoDaysAgo = utcStartOfIsoDay(todayIso);
     twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
     const dateFilter = (where.date ?? {}) as { gte?: Date; lt?: Date };
     where.date = {
       ...dateFilter,
       gte: dateFilter.gte && dateFilter.gte > twoDaysAgo ? dateFilter.gte : twoDaysAgo,
+      lt: dateFilter.lt && dateFilter.lt < tomorrowStart ? dateFilter.lt : tomorrowStart,
     };
     const missingProgress = { reportContent: "" };
     if (normalizedCategory === "課內") {
@@ -87,8 +83,29 @@ export async function GET(req: NextRequest) {
 
   const query = {
     where: where as Prisma.AttendanceWhereInput,
-    include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
-    orderBy: { date: "desc" as const },
+    include: {
+      course: {
+        select: {
+          id: true,
+          code: true,
+          school: true,
+          courseType: true,
+          time: true,
+          teacherId: true,
+          assistantTeacherId: true,
+          category: true,
+          assistantTeacher: { select: { id: true, name: true } },
+        },
+      },
+      actualTeacher: { select: { id: true, name: true } },
+      assistantTeacher: { select: { id: true, name: true } },
+      substitutes: { select: { role: true } },
+    },
+    orderBy: [
+      { course: { school: "asc" as const } },
+      { date: "asc" as const },
+      { id: "asc" as const },
+    ],
   } satisfies Prisma.AttendanceFindManyArgs;
   const paginateInDatabase = pageSize > 0 && status !== "missing";
   const [records, databaseTotal] = await Promise.all([
@@ -98,13 +115,23 @@ export async function GET(req: NextRequest) {
   const scheduledTimeMap = await attendanceScheduledTimeMap(records.map((record) => record.id));
   const payrollMap = await coursePayrollHoursMap(records.map((record) => record.courseId));
   const annotatedRecords = records.map((record) => {
-    const scheduledTime = scheduledTimeMap.get(record.id) || record.course.time || "";
+    const scheduledTime = effectiveAttendanceTime({
+      scheduledTime: scheduledTimeMap.get(record.id),
+      courseTime: record.course.time,
+      attendanceHours: record.hours,
+      isPayrollLocked: record.isPayrollLocked,
+      reportContent: record.reportContent,
+      reportSentAt: record.reportSentAt,
+      studentCount: record.studentCount,
+      studentCountA: record.studentCountA,
+      studentCountB: record.studentCountB,
+    });
     const payrollHours = resolvePayrollHours(record.hours, payrollMap.get(record.courseId), scheduledTime);
     const reportWindow = attendanceReportWindow({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     const missingItems = attendanceMissingItems({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     return {
       ...record,
-      scheduledTime: scheduledTimeMap.get(record.id) ?? "",
+      scheduledTime,
       course: { ...record.course, payrollHours: payrollMap.get(record.courseId) ?? null },
       hours: payrollHours.payableHours,
       hoursNeedsReview: payrollHours.needsReview,
@@ -173,6 +200,14 @@ export async function POST(req: NextRequest) {
   if (created > 0) {
     await stampAttendanceTime(fields.courseId, dates, course?.time ?? "");
   }
+  await writeAuditLog(req, {
+    action: "create",
+    targetType: "Attendance",
+    targetId: records.map((record) => record.id).join(","),
+    targetLabel: dates.length === 1 ? dates[0] : `${dates.length} 筆出勤`,
+    afterData: records,
+    diffSummary: dates.length === 1 ? `新增出勤紀錄：${dates[0]}` : `新增 ${created} 筆出勤紀錄`,
+  });
   if (dates.length === 1) {
     return NextResponse.json(
       records[0] ?? { created, skipped, records },

@@ -1,8 +1,9 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { requiredAuthSecret } from "@/lib/authSecret";
 
 const secret = new TextEncoder().encode(
-  process.env.AUTH_SECRET ?? "talent-class-secret-change-in-prod"
+  requiredAuthSecret()
 );
 
 export async function signToken(payload: Record<string, unknown>) {

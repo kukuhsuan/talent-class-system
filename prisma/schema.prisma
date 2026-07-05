@@ -19,6 +19,53 @@ model School {
   lineBindCode       String?  @unique
   createdAt          DateTime @default(now())
   courses            Course[]
+  invoices           SchoolInvoice[]
+  startConfirmations SchoolStartConfirmation[]
+}
+
+model SchoolStartConfirmation {
+  id                 Int      @id @default(autoincrement())
+  school             School   @relation(fields: [schoolId], references: [id])
+  schoolId           Int
+  academicYear       Int
+  semester           String
+  smallClassCount    String   @default("")
+  middleClassCount   String   @default("")
+  bigClassCount      String   @default("")
+  classLocation      String   @default("")
+  classLocationOther String   @default("")
+  rainyDayLocation   String   @default("")
+  teachingStyles     String   @default("[]")
+  classNotes         String   @default("")
+  otherNotes         String   @default("")
+  submittedAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  history            SchoolStartConfirmationHistory[]
+
+  @@unique([schoolId, academicYear, semester])
+  @@index([schoolId])
+  @@index([academicYear, semester])
+}
+
+model SchoolStartConfirmationHistory {
+  id                         Int      @id @default(autoincrement())
+  confirmation               SchoolStartConfirmation @relation(fields: [confirmationId], references: [id])
+  confirmationId             Int
+  updatedByTeacherId         Int?
+  updatedByAdminId           Int?
+  previousSmallClassCount    String   @default("")
+  previousMiddleClassCount   String   @default("")
+  previousLargeClassCount    String   @default("")
+  newSmallClassCount         String   @default("")
+  newMiddleClassCount        String   @default("")
+  newLargeClassCount         String   @default("")
+  note                       String   @default("")
+  createdAt                  DateTime @default(now())
+
+  @@index([confirmationId])
+  @@index([updatedByTeacherId])
+  @@index([createdAt])
 }
 
 model CourseProgress {
@@ -86,11 +133,37 @@ model UserAccount {
   id           Int      @id @default(autoincrement())
   username     String   @unique
   name         String
+  email        String   @default("")
   passwordHash String
   role         String   @default("admin")
   isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  actorUserId Int?
+  actorName   String   @default("")
+  actorRole   String   @default("")
+  action      String
+  targetType  String
+  targetId    String   @default("")
+  targetLabel String   @default("")
+  beforeData  String   @default("")
+  afterData   String   @default("")
+  diffSummary String   @default("")
+  ipAddress   String   @default("")
+  userAgent   String   @default("")
+  sensitive   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([targetType])
+  @@index([createdAt])
+  @@index([sensitive])
 }
 
 model Teacher {
@@ -120,6 +193,31 @@ model Teacher {
   assistantAttendances Attendance[] @relation("AssistantAttendance")
   substitutions        Substitute[] @relation("SubstituteTeacher")
   absences             Substitute[] @relation("OriginalTeacher")
+  salaryAdjustments    SalaryAdjustment[]
+  leaveRequests        TeacherLeaveRequest[] @relation("LeaveTeacher")
+  substituteInquiries  SubstituteInquiry[]   @relation("InquiryCandidateTeacher")
+}
+
+model SalaryAdjustment {
+  id          Int      @id @default(autoincrement())
+  teacher     Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId   Int
+  targetMonth String
+  payoutMonth String
+  type        String   @default("補發")
+  amount      Int
+  reason      String
+  notes       String   @default("")
+  isPaid      Boolean  @default(false)
+  paidAt      DateTime?
+  createdBy   String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([teacherId, payoutMonth])
+  @@index([payoutMonth])
+  @@index([targetMonth])
+  @@index([isPaid])
 }
 
 model Course {
@@ -149,6 +247,7 @@ model Course {
   createdAt          DateTime     @default(now())
   attendances        Attendance[]
   scheduleExceptions CourseScheduleException[]
+  leaveRequests      TeacherLeaveRequest[]
 
   @@index([schoolId])
   @@index([teacherId])
@@ -209,6 +308,9 @@ model Attendance {
   aiTeachingNote     String                   @default("")
   createdAt          DateTime                 @default(now())
   assessments        KindergartenAssessment[]
+  substitutes        Substitute[]
+  leaveRequests      TeacherLeaveRequest[]
+  substituteInquiries SubstituteInquiry[]
 
   @@unique([courseId, date])
   @@index([date])
@@ -237,16 +339,137 @@ model KindergartenAssessment {
 }
 
 model Substitute {
-  id                  Int      @id @default(autoincrement())
+  id                  Int         @id @default(autoincrement())
+  attendance          Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  attendanceId        Int?
+  role                String      @default("主教")
   date                DateTime
   school              String
-  courseType          String   @default("")
-  originalTeacher     Teacher  @relation("OriginalTeacher", fields: [originalTeacherId], references: [id])
+  courseType          String      @default("")
+  originalTeacher     Teacher     @relation("OriginalTeacher", fields: [originalTeacherId], references: [id])
   originalTeacherId   Int
-  substituteTeacher   Teacher? @relation("SubstituteTeacher", fields: [substituteTeacherId], references: [id])
+  substituteTeacher   Teacher?    @relation("SubstituteTeacher", fields: [substituteTeacherId], references: [id])
   substituteTeacherId Int?
-  confirmed           Boolean  @default(false)
+  confirmed           Boolean     @default(false)
   fee                 Int?
-  notes               String   @default("")
-  createdAt           DateTime @default(now())
+  notes               String      @default("")
+  createdAt           DateTime    @default(now())
+
+  @@unique([attendanceId, role])
+  @@index([attendanceId])
+}
+
+model TeacherLeaveRequest {
+  id                         Int                 @id @default(autoincrement())
+  teacher                    Teacher             @relation("LeaveTeacher", fields: [teacherId], references: [id])
+  teacherId                  Int
+  attendance                 Attendance          @relation(fields: [attendanceId], references: [id])
+  attendanceId               Int
+  course                     Course              @relation(fields: [courseId], references: [id])
+  courseId                   Int
+  role                       String              @default("主教")
+  leaveDate                  DateTime
+  startTime                  String              @default("")
+  endTime                    String              @default("")
+  reason                     String
+  notes                      String              @default("")
+  status                     String              @default("待審核")
+  semesterLeaveCountAtSubmit Int                 @default(0)
+  reviewedBy                 String              @default("")
+  reviewedAt                 DateTime?
+  rejectedReason             String              @default("")
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
+  inquiries                  SubstituteInquiry[]
+
+  @@index([teacherId, leaveDate])
+  @@index([attendanceId])
+  @@index([courseId])
+  @@index([status])
+}
+
+model SubstituteInquiry {
+  id                 Int                 @id @default(autoincrement())
+  leaveRequest       TeacherLeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  leaveRequestId     Int
+  attendance         Attendance          @relation(fields: [attendanceId], references: [id])
+  attendanceId       Int
+  candidateTeacher   Teacher             @relation("InquiryCandidateTeacher", fields: [candidateTeacherId], references: [id])
+  candidateTeacherId Int
+  status             String              @default("pending")
+  sentAt             DateTime?
+  respondedAt        DateTime?
+  lineMessageId      String              @default("")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([leaveRequestId, candidateTeacherId])
+  @@index([attendanceId])
+  @@index([candidateTeacherId])
+  @@index([status])
+}
+
+model SchoolInvoice {
+  id           Int                 @id @default(autoincrement())
+  school       School              @relation(fields: [schoolId], references: [id])
+  schoolId     Int
+  schoolName   String
+  brandName    String
+  invoiceMonth String
+  invoiceDate  DateTime            @default(now())
+  status       String              @default("已產生")
+  totalAmount  Int                 @default(0)
+  taxType      String              @default("未稅")
+  notes        String              @default("")
+  companyName  String              @default("威斯博國際股份有限公司")
+  phone        String              @default("")
+  fax          String              @default("")
+  bankName     String              @default("")
+  bankAccount  String              @default("")
+  accountName  String              @default("威斯博國際股份有限公司")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  items        SchoolInvoiceItem[]
+
+  @@index([schoolId, invoiceMonth])
+  @@index([invoiceMonth])
+  @@index([status])
+}
+
+model SchoolInvoiceItem {
+  id          Int                   @id @default(autoincrement())
+  invoice    SchoolInvoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId  Int
+  courseType String
+  courseName String
+  periodLabel String
+  billingType String                 @default("perClass")
+  unitPrice  Int                   @default(0)
+  minChargeCount Int                @default(0)
+  quantity   Int                   @default(0)
+  quantityLabel String              @default("堂")
+  actualStudentCount Int            @default(0)
+  billableCount Int                 @default(0)
+  subtotal   Int                   @default(0)
+  note       String                @default("")
+  details    SchoolInvoiceDetail[]
+
+  @@index([invoiceId])
+}
+
+model SchoolInvoiceDetail {
+  id            Int               @id @default(autoincrement())
+  invoiceItem   SchoolInvoiceItem @relation(fields: [invoiceItemId], references: [id], onDelete: Cascade)
+  invoiceItemId Int
+  attendanceId  Int?
+  date          DateTime
+  weekday       String
+  time          String            @default("")
+  hours         Float             @default(0)
+  studentCount  Int?
+  billableCount Int?
+  note          String            @default("")
+
+  @@index([invoiceItemId])
+  @@index([attendanceId])
 }

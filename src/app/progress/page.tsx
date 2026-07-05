@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
 import { Toast } from "@/components/Toast";
+import { parseAbilities } from "@/lib/abilityMap";
 import { ensureOk } from "@/lib/clientApi";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
@@ -163,13 +164,7 @@ export default function ProgressPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   function parseList(value: string | undefined) {
-    if (!value) return [];
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
-    } catch {
-      return value.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
-    }
+    return parseAbilities(value);
   }
 
   function primaryReportText(value: string | undefined) {
@@ -366,19 +361,21 @@ export default function ProgressPage() {
                           {r.reportSentAt && (
                             <span className="px-1.5 py-0.5 bg-green-100 text-green-600 rounded text-xs">已發送</span>
                           )}
-                          <span className={`px-1.5 py-0.5 rounded text-xs ${
-                            r.schoolNotifyStatus === "通知成功" ? "bg-green-100 text-green-700" :
-                              r.schoolNotifyStatus === "通知失敗" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"
-                          }`}>
-                            園所{r.schoolNotifyStatus || "未通知"}
-                          </span>
-                          {r.schoolNotifyStatus === "通知失敗" && (
+                          {!r.course.department.includes("安親") && (
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${
+                              r.schoolNotifyStatus === "通知成功" ? "bg-green-100 text-green-700" :
+                                r.schoolNotifyStatus === "通知失敗" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"
+                            }`}>
+                              園所{r.schoolNotifyStatus || "未通知"}
+                            </span>
+                          )}
+                          {!r.course.department.includes("安親") && r.schoolNotifyStatus === "通知失敗" && (
                             <button onClick={() => resendSchoolNotify(r.id)} className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
                               重新發送
                             </button>
                           )}
                         </div>
-                        {r.schoolNotifyStatus === "通知失敗" && r.schoolNotifyError && (
+                        {!r.course.department.includes("安親") && r.schoolNotifyStatus === "通知失敗" && r.schoolNotifyError && (
                           <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
                             園所通知失敗原因：{r.schoolNotifyError}
                           </div>

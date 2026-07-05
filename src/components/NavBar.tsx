@@ -26,6 +26,7 @@ const GROUPS = [
     title: "課程管理",
     items: [
       { href: "/courses", label: "課程排班" },
+      { href: "/teacher-leaves", label: "老師請假" },
       { href: "/progress", label: "課程進度" },
       { href: "/substitutes", label: "代課紀錄" },
       { href: "/equipment", label: "器材管理" },
@@ -36,6 +37,7 @@ const GROUPS = [
     items: [
       { href: "/schools", label: "園所管理" },
       { href: "/school-stats", label: "園所人數" },
+      { href: "/school-invoices", label: "園所請款單" },
       { href: "/notify", label: "LINE 通知" },
     ],
   },
@@ -58,6 +60,7 @@ const GROUPS = [
     title: "系統設定",
     items: [
       { href: "/users", label: "帳號管理" },
+      { href: "/admin/audit-logs", label: "操作歷程" },
     ],
   },
 ];

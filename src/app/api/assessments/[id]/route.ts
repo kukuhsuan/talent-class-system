@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateGrowthComment, growthTitle, parseScores } from "@/lib/kindergartenAssessment";
+import { writeAuditLog } from "@/lib/auditLog";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -38,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-export async function PUT(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const rows = await prisma.$queryRawUnsafe<Array<{
@@ -46,7 +47,9 @@ export async function PUT(_req: NextRequest, { params }: { params: Promise<{ id:
       childName: string;
       courseName: string;
       scores: string;
-    }>>("SELECT id, childName, courseName, scores FROM KindergartenAssessment WHERE id = ?", Number(id));
+      comment: string;
+      title: string;
+    }>>("SELECT id, childName, courseName, scores, comment, title FROM KindergartenAssessment WHERE id = ?", Number(id));
     const row = rows[0];
     if (!row) return NextResponse.json({ error: "找不到評量紀錄" }, { status: 404 });
     const scores = parseScores(row.scores);
@@ -58,6 +61,15 @@ export async function PUT(_req: NextRequest, { params }: { params: Promise<{ id:
       title,
       Number(id),
     );
+    await writeAuditLog(req, {
+      action: "update",
+      targetType: "KindergartenAssessment",
+      targetId: row.id,
+      targetLabel: `${row.courseName} ${row.childName}`,
+      beforeData: row,
+      afterData: { ...row, comment, title },
+      diffSummary: `重新產生學期評量評語：${row.childName} ${row.courseName}`,
+    });
     return NextResponse.json({ ok: true, comment, title });
   } catch (e) {
     console.error("assessment regenerate failed", e);
@@ -65,10 +77,27 @@ export async function PUT(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      id: number;
+      childName: string;
+      courseName: string;
+      scores: string;
+      comment: string;
+      title: string;
+    }>>("SELECT id, childName, courseName, scores, comment, title FROM KindergartenAssessment WHERE id = ?", Number(id));
+    const row = rows[0];
     await prisma.$executeRawUnsafe("DELETE FROM KindergartenAssessment WHERE id = ?", Number(id));
+    await writeAuditLog(req, {
+      action: "delete",
+      targetType: "KindergartenAssessment",
+      targetId: Number(id),
+      targetLabel: row ? `${row.courseName} ${row.childName}` : String(id),
+      beforeData: row,
+      diffSummary: row ? `刪除學期評量：${row.childName} ${row.courseName}` : `刪除學期評量：${id}`,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("assessment delete failed", e);

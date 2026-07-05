@@ -6,7 +6,9 @@ import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, courseLabel, normalizeCategory,
 type Teacher = { id: number; name: string };
 type Course = {
   id: number; courseId?: number; code: string; school: string; courseType: string; teacher: Teacher; teacherId: number;
+  originalTeacher?: Teacher | null; isSubstitute?: boolean;
   assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
+  originalAssistantTeacher?: Teacher | null; isAssistantSubstitute?: boolean;
   category: string; dayOfWeek: string; date: string; dateLabel: string; time: string; region: string; enrollCount: string; address: string;
 };
 
@@ -41,6 +43,16 @@ function formatShort(iso: string) {
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
+function weekdayLabel(iso: string) {
+  const labels = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
+  return labels[new Date(`${iso}T00:00:00.000Z`).getUTCDay()];
+}
+
+function formatEnrollCount(count?: string) {
+  if (!count) return "";
+  return count.endsWith("人") ? count : `${count}人`;
+}
+
 export default function SchedulePage() {
   const { dept } = useDepartment();
   const [courses, setCourses] = useState<Course[]>([]);
@@ -50,6 +62,9 @@ export default function SchedulePage() {
   const weekEnd = addDays(weekStart, 6);
   const weekDates = DAYS.map((_, i) => addDays(weekStart, i));
   const todayIso = toIsoDate(new Date());
+  const isAfterSchool = dept === "安親班";
+  const schoolColumnLabel = dept === "國小" ? "學校" : dept === "" ? "園所／學校" : "園所";
+  const scheduleTitle = isAfterSchool ? "安親班日期課表" : `${dept || "全系統"}日期課表`;
 
   useEffect(() => {
     setLoading(true);
@@ -85,14 +100,26 @@ export default function SchedulePage() {
       .filter((c) => c.dayOfWeek === day && (!c.date || c.date === weekDates[i]))
       .sort((a, b) => (a.time || "").localeCompare(b.time || "")),
   }));
+  const dateGroups = Object.entries(courses.reduce<Record<string, Course[]>>((acc, course) => {
+    const date = course.date || "";
+    if (!date) return acc;
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(course);
+    return acc;
+  }, {}))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, items]) => ({
+      date,
+      courses: items.sort((a, b) => (a.time || "").localeCompare(b.time || "") || a.school.localeCompare(b.school, "zh-Hant")),
+    }));
 
   return (
     <div>
       <div className="flex items-center justify-between mb-5 md:mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">週課表</h1>
+          <h1 className="text-xl font-bold text-slate-800">{scheduleTitle}</h1>
           <p className="text-sm text-slate-500">
-            共 {totalCourses} 筆{hasActualDates ? "實際上課日期" : "固定週排班"}
+            共 {totalCourses} 筆課程，依日期與時間排列
           </p>
         </div>
       </div>
@@ -100,7 +127,7 @@ export default function SchedulePage() {
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="text-sm font-semibold text-slate-800">查看週次</div>
+            <div className="text-sm font-semibold text-slate-800">查看日期區間</div>
             <div className="text-sm text-slate-500">{formatSlash(weekStart)} ~ {formatSlash(weekEnd)}</div>
           </div>
           <div className="grid grid-cols-3 gap-2 md:flex md:flex-wrap">
@@ -122,109 +149,79 @@ export default function SchedulePage() {
       {loading ? (
         <div className="py-20 text-center text-slate-400">載入中...</div>
       ) : (
-        <>
-        <div className="space-y-4 md:hidden">
-          {mobileDayGroups.map((group) => (
-            <section key={group.day} className={`rounded-xl border bg-white shadow-sm ${group.date === todayIso ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <div>
-                  <h2 className="font-semibold text-slate-800">{group.day}</h2>
-                  <p className="text-xs text-slate-500">{formatShort(group.date)}</p>
+        <div className="space-y-4">
+          {dateGroups.map((group) => (
+            <section key={group.date} className={`overflow-hidden rounded-xl border bg-white shadow-sm ${group.date === todayIso ? "border-blue-300 ring-2 ring-blue-50" : "border-slate-200"}`}>
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+                <div className="flex items-baseline gap-2">
+                  <h2 className="font-bold text-slate-900">{group.date}</h2>
+                  <span className="text-sm font-medium text-slate-500">{weekdayLabel(group.date)}</span>
                 </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{group.courses.length} 堂</span>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">{group.courses.length} 堂</span>
               </div>
-              {group.courses.length === 0 ? (
-                <div className="px-4 py-6 text-center text-sm text-slate-400">沒有課程</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {group.courses.map((c) => (
-                    <div key={`${c.id}-${c.date || group.date}`} className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-slate-900">{courseLabel(c.courseType)}</div>
-                          <div className="mt-1 text-sm text-slate-600">{c.school}</div>
-                          <div className="mt-1 text-xs text-slate-500">主教 {c.teacher.name}{c.time ? ` · ${c.time}` : ""}</div>
-                          {c.assistantTeacher && <div className="mt-1 text-xs text-blue-600">助教 {c.assistantTeacher.name}</div>}
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
+              <div className="hidden min-w-[1040px] grid-cols-[150px_minmax(260px,1fr)_180px_280px_84px_72px] items-center gap-x-6 border-b border-slate-100 bg-white px-4 py-2 text-xs font-semibold text-slate-400 md:grid">
+                <div>時間</div>
+                <div>{schoolColumnLabel} / 地區</div>
+                <div>課程 / 編號</div>
+                <div>老師</div>
+                <div className="text-right">類別</div>
+                <div className="text-right">人數</div>
+              </div>
+              <div className="divide-y divide-slate-100 overflow-x-auto">
+                {group.courses.map((course) => (
+                  <div key={`${course.id}-${course.date}`} className="grid gap-3 px-4 py-4 md:min-w-[1040px] md:grid-cols-[150px_minmax(260px,1fr)_180px_280px_84px_72px] md:items-center md:gap-x-6">
+                    <div className="flex items-center justify-between gap-3 md:block">
+                      <div className="shrink-0 text-base font-bold text-blue-700">{course.time || "時間待確認"}</div>
+                      <div className="flex shrink-0 items-center gap-2 md:hidden">
+                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(course.category)]}`}>{normalizeCategory(course.category)}</span>
+                        {course.enrollCount && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{formatEnrollCount(course.enrollCount)}</span>}
                       </div>
-                      {(c.address || c.enrollCount || c.region) && (
-                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                          {c.region && <span className="rounded-full bg-slate-50 px-2 py-1">{normalizeRegion(c.region)}</span>}
-                          {c.enrollCount && <span className="rounded-full bg-slate-50 px-2 py-1">{c.enrollCount}</span>}
-                          {c.address && <span className="w-full leading-5">{c.address}</span>}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-slate-900" title={course.school}>{course.school}</div>
+                      <div className="mt-1 text-xs text-slate-500">{normalizeRegion(course.region) || "未填地區"}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-slate-800" title={courseLabel(course.courseType)}>{courseLabel(course.courseType)}</div>
+                      {course.code && <div className="mt-1 text-xs text-slate-400">{course.code}</div>}
+                    </div>
+                    <div className="min-w-0 text-sm text-slate-600">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span>主教：{course.teacher.name}</span>
+                        {course.isSubstitute && <span className="rounded-full bg-orange-50 px-1.5 py-0.5 text-[11px] font-bold text-orange-600">代</span>}
+                      </div>
+                      {course.isSubstitute && course.originalTeacher && (
+                        <div className="mt-1 text-xs text-orange-600">原老師：{course.originalTeacher.name}</div>
+                      )}
+                      {course.assistantTeacher && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1 text-blue-600">
+                          <span>助教：{course.assistantTeacher.name}</span>
+                          {course.isAssistantSubstitute && <span className="rounded-full bg-orange-50 px-1.5 py-0.5 text-[11px] font-bold text-orange-600">代</span>}
                         </div>
                       )}
+                      {course.isAssistantSubstitute && course.originalAssistantTeacher && (
+                        <div className="mt-1 text-xs text-orange-600">原助教：{course.originalAssistantTeacher.name}</div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="hidden md:flex md:justify-end">
+                      <span className={`rounded-full px-2 py-1 text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(course.category)]}`}>{normalizeCategory(course.category)}</span>
+                    </div>
+                    <div className="hidden md:flex md:justify-end">
+                      {course.enrollCount ? (
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{formatEnrollCount(course.enrollCount)}</span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
           ))}
+          {dateGroups.length === 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white py-16 text-center text-slate-400">此日期區間尚無課程</div>
+          )}
         </div>
-        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 shadow-sm bg-white md:block">
-          <table className="w-full text-sm border-collapse" style={{ minWidth: "900px" }}>
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="text-left px-4 py-3 font-semibold text-slate-600 border-b border-r border-slate-200 w-36 sticky left-0 bg-slate-50">園所</th>
-                {DAYS.map((d, i) => (
-                  <th key={d} className={`min-w-[180px] px-3 py-3 font-semibold text-slate-600 border-b border-r border-slate-200 text-center ${weekDates[i] === todayIso ? "bg-blue-50 text-blue-700" : ""}`}>
-                    <div>{d}</div>
-                    <div className="text-xs font-normal text-slate-500">{formatShort(weekDates[i])}</div>
-                    <div className="text-xs font-normal text-slate-400">{dayCounts[i]} 堂</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {schools.map((school) => {
-                const schoolCourses = DAYS.map((d, i) => getCourses(school, d, weekDates[i]));
-                const hasAny = schoolCourses.some((arr) => arr.length > 0);
-                if (!hasAny) return null;
-
-                const firstCourse = courses.find((c) => c.school === school);
-                const region = normalizeRegion(firstCourse?.region ?? "");
-
-                return (
-                  <tr key={school} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-3 border-r border-slate-200 sticky left-0 bg-white hover:bg-slate-50/50">
-                      <div className="font-medium text-slate-800">{school}</div>
-                      {region && <div className="text-xs text-slate-400">{region}</div>}
-                    </td>
-                    {DAYS.map((d, i) => {
-                      const cells = getCourses(school, d, weekDates[i]);
-                      return (
-                        <td key={d} className={`px-2 py-2 border-r border-slate-200 align-top ${weekDates[i] === todayIso ? "bg-blue-50/40" : ""}`}>
-                          <div className="space-y-2">
-                            {cells.map((c) => (
-                              <div key={c.id} className={`rounded-lg px-3 py-2 text-xs leading-5 ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>
-                                <div className="text-[11px] font-semibold opacity-75">{c.dateLabel || formatShort(weekDates[i])} {d.replace("星期", "週")}</div>
-                                <div className="font-semibold">{courseLabel(c.courseType)}</div>
-                                {courseLabel(c.courseType) !== c.courseType && <div className="text-[10px] opacity-60">{c.courseType}</div>}
-                                <div className="text-[11px] opacity-75">{c.school}</div>
-                                <div className="text-[11px] opacity-75">主教：{c.teacher.name}</div>
-                                {c.assistantTeacher && <div className="text-[11px] font-medium text-blue-700">助教：{c.assistantTeacher.name}</div>}
-                                {c.time && <div className="text-[11px] opacity-80 whitespace-nowrap">{c.time}</div>}
-                                {c.address && <div className="text-[11px] opacity-60 break-words">{c.address}</div>}
-                                {c.enrollCount && <div className="text-[11px] opacity-60">{c.enrollCount}</div>}
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-              {schools.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center py-16 text-slate-400">尚無課程資料</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        </>
       )}
 
       {/* Legend */}
@@ -232,7 +229,7 @@ export default function SchedulePage() {
         {CATEGORY_OPTIONS.map((cat) => (
           <span key={cat} className={`text-xs px-2 py-1 rounded-full ${CATEGORY_BADGE_CLASS[cat]}`}>{cat}</span>
         ))}
-        <span className="text-xs text-slate-400">藍色欄位為今天</span>
+        <span className="text-xs text-slate-400">藍色框為今天；橘色「代」代表代課</span>
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 import { SignJWT, jwtVerify } from "jose";
+import { requiredAuthSecret } from "@/lib/authSecret";
 
 const portalSecret = new TextEncoder().encode(
-  process.env.AUTH_SECRET ?? "talent-class-secret-change-in-prod"
+  requiredAuthSecret()
 );
 
 export async function signSchoolPortalToken(schoolId: number) {

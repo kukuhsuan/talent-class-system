@@ -9,10 +9,14 @@ import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 type Teacher = {
   id: number; name: string; email: string; phone: string; rateAfterSchool: number; rateInSchool: number;
   rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number; notes: string; lineUserId: string | null; lineRegion: string;
+  bankName: string; bankCode: string; bankBranch: string; bankAccountMasked: string;
 };
 
-const EMPTY: Omit<Teacher, "id"> = {
+type TeacherForm = Omit<Teacher, "id" | "bankAccountMasked"> & { bankAccountName: string; bankAccountNumber: string };
+
+const EMPTY: TeacherForm = {
   name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, isAssistant: false, assistantFee: 0, notes: "", lineUserId: "", lineRegion: "north",
+  bankName: "", bankCode: "", bankBranch: "", bankAccountName: "", bankAccountNumber: "",
 };
 
 const LINE_REGIONS = [
@@ -62,10 +66,24 @@ export default function TeachersPage() {
     load();
   };
 
-  const edit = (t: Teacher) => {
-    setForm({ name: t.name, email: t.email ?? "", phone: t.phone ?? "", rateAfterSchool: t.rateAfterSchool, rateInSchool: t.rateInSchool, rateDemo: t.rateDemo, travelFee: t.travelFee, isAssistant: Boolean(t.isAssistant), assistantFee: t.assistantFee ?? 0, notes: t.notes, lineUserId: t.lineUserId ?? "", lineRegion: t.lineRegion || "north" });
-    setEditing(t.id); setShowForm(true);
-    scrollToFormOnEdit();
+  const edit = async (t: Teacher) => {
+    try {
+      const res = await fetch(`/api/teachers/${t.id}`);
+      await ensureOk(res, "老師資料載入失敗");
+      const fullTeacher = await res.json() as Teacher & { bankAccountName: string; bankAccountNumber: string };
+      setForm({
+        name: fullTeacher.name, email: fullTeacher.email ?? "", phone: fullTeacher.phone ?? "",
+        rateAfterSchool: fullTeacher.rateAfterSchool, rateInSchool: fullTeacher.rateInSchool, rateDemo: fullTeacher.rateDemo,
+        travelFee: fullTeacher.travelFee, isAssistant: Boolean(fullTeacher.isAssistant), assistantFee: fullTeacher.assistantFee ?? 0,
+        notes: fullTeacher.notes, lineUserId: fullTeacher.lineUserId ?? "", lineRegion: fullTeacher.lineRegion || "north",
+        bankName: fullTeacher.bankName ?? "", bankCode: fullTeacher.bankCode ?? "", bankBranch: fullTeacher.bankBranch ?? "",
+        bankAccountName: fullTeacher.bankAccountName ?? "", bankAccountNumber: fullTeacher.bankAccountNumber ?? "",
+      });
+      setEditing(t.id); setShowForm(true);
+      scrollToFormOnEdit();
+    } catch (e) {
+      showToast("error", (e as Error).message || "老師資料載入失敗", 3000);
+    }
   };
 
   const filtered = teachers.filter((t) => t.name.includes(search));
@@ -140,6 +158,27 @@ export default function TeachersPage() {
               <label>助教費用（元 / 小時）</label>
               <input type="number" value={form.assistantFee} onChange={(e) => setForm({ ...form, assistantFee: Number(e.target.value) })} disabled={!form.isAssistant} />
             </div>
+            <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">匯款資料</div>
+            <div>
+              <label>銀行名稱</label>
+              <input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} placeholder="例如：中國信託" autoComplete="off" />
+            </div>
+            <div>
+              <label>銀行代碼</label>
+              <input value={form.bankCode} onChange={(e) => setForm({ ...form, bankCode: e.target.value })} placeholder="例如：822" inputMode="numeric" autoComplete="off" />
+            </div>
+            <div>
+              <label>分行</label>
+              <input value={form.bankBranch} onChange={(e) => setForm({ ...form, bankBranch: e.target.value })} placeholder="分行名稱或代碼" autoComplete="off" />
+            </div>
+            <div>
+              <label>戶名</label>
+              <input value={form.bankAccountName} onChange={(e) => setForm({ ...form, bankAccountName: e.target.value })} placeholder="收款戶名" autoComplete="off" />
+            </div>
+            <div className="md:col-span-2">
+              <label>匯款帳號</label>
+              <input value={form.bankAccountNumber} onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })} placeholder="銀行帳號" inputMode="numeric" autoComplete="off" />
+            </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">備註</div>
             <div className="md:col-span-4">
               <label>備註</label>
@@ -191,13 +230,18 @@ export default function TeachersPage() {
                   </>
                 )}
               </div>
+              {(t.bankName || t.bankAccountMasked) && (
+                <div className="mt-3 text-xs text-slate-500">
+                  匯款：{[t.bankCode, t.bankName, t.bankBranch, t.bankAccountMasked].filter(Boolean).join(" ")}
+                </div>
+              )}
               {t.notes && <div className="mt-3 text-xs text-slate-500">{t.notes}</div>}
             </div>
           ))}
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無資料</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1180px] text-sm">
+          <table className="w-full min-w-[1280px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="w-36 px-5 py-3 text-left font-semibold">姓名</th>
@@ -210,13 +254,14 @@ export default function TeachersPage() {
                 <th className="px-4 py-3 text-center font-semibold">Demo</th>
                 <th className="px-4 py-3 text-center font-semibold">車費</th>
                 <th className="px-4 py-3 text-center font-semibold">助教費</th>
-                <th className="px-4 py-3 text-left font-semibold">備註</th>
-                <th className="px-4 py-3 text-left font-semibold">操作</th>
+                <th className="w-44 px-4 py-3 text-left font-semibold">匯款資料</th>
+                <th className="w-44 px-4 py-3 text-left font-semibold">備註</th>
+                <th className="sticky right-0 z-10 w-28 border-l border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold shadow-[-6px_0_10px_-8px_rgba(15,23,42,0.35)]">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50/70">
+                <tr key={t.id} className="group hover:bg-slate-50/70">
                   <td className="px-5 py-4 font-medium text-slate-800 whitespace-nowrap">{t.name}</td>
                   <td title={t.email || ""} className="px-5 py-4 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</td>
                   <td title={t.phone || ""} className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{t.phone || "—"}</td>
@@ -234,8 +279,13 @@ export default function TeachersPage() {
                   <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateDemo}`}</td>
                   <td className="px-4 py-4 text-center text-slate-700">{!t.isAssistant && t.travelFee > 0 ? `$${t.travelFee}` : "-"}</td>
                   <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? `$${t.assistantFee}` : "-"}</td>
+                  <td className="px-4 py-4 text-xs text-slate-500">
+                    {t.bankName || t.bankAccountMasked
+                      ? <div><div>{[t.bankCode, t.bankName].filter(Boolean).join(" ")}</div><div>{[t.bankBranch, t.bankAccountMasked].filter(Boolean).join(" ")}</div></div>
+                      : "-"}
+                  </td>
                   <td className="px-4 py-4 max-w-[260px] truncate text-slate-500 text-xs" title={t.notes || ""}>{t.notes || "-"}</td>
-                  <td className="px-4 py-4">
+                  <td className="sticky right-0 z-[5] border-l border-slate-100 bg-white px-4 py-4 shadow-[-6px_0_10px_-8px_rgba(15,23,42,0.35)] group-hover:bg-slate-50">
                     <div className="flex gap-4 whitespace-nowrap">
                       <button onClick={() => edit(t)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
                       <button onClick={() => del(t.id, t.name)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
@@ -244,7 +294,7 @@ export default function TeachersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={12} className="text-center text-slate-400 py-8">尚無資料</td></tr>
+                <tr><td colSpan={13} className="text-center text-slate-400 py-8">尚無資料</td></tr>
               )}
             </tbody>
           </table>

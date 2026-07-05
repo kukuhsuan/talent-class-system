@@ -52,30 +52,41 @@ export async function createAttendancesForUniqueDays(
 
   const records = [];
   let skipped = 0;
+  const createData = [];
+  const createKeys = new Set<string>();
   for (const dateStr of unique) {
     if (existingKeys.has(dateStr)) {
       skipped++;
       continue;
     }
-    const rec = await db.attendance.create({
-      data: {
-        date: parseAttendanceDay(dateStr),
+    createData.push({
+      date: parseAttendanceDay(dateStr),
+      courseId: fields.courseId,
+      actualTeacherId: fields.actualTeacherId,
+      assistantTeacherId: fields.assistantTeacherId ?? null,
+      studentCount: fields.studentCount ?? null,
+      cancelled: fields.cancelled ?? false,
+      cancelReason: fields.cancelReason ?? "",
+      makeupDate: fields.makeupDate ?? null,
+      makeupDone: fields.makeupDone ?? false,
+      category: normalizeCategory(fields.category),
+      hours: fields.hours ?? 0,
+      notes: fields.notes ?? "",
+    });
+    createKeys.add(dateStr);
+    existingKeys.add(dateStr);
+  }
+  if (createData.length > 0) {
+    await db.attendance.createMany({ data: createData });
+    const createdRows = await db.attendance.findMany({
+      where: {
         courseId: fields.courseId,
-        actualTeacherId: fields.actualTeacherId,
-        assistantTeacherId: fields.assistantTeacherId ?? null,
-        studentCount: fields.studentCount ?? null,
-        cancelled: fields.cancelled ?? false,
-        cancelReason: fields.cancelReason ?? "",
-        makeupDate: fields.makeupDate ?? null,
-        makeupDone: fields.makeupDone ?? false,
-        category: normalizeCategory(fields.category),
-        hours: fields.hours ?? 1,
-        notes: fields.notes ?? "",
+        date: { gte: min, lt: maxEnd },
       },
       include: { course: true, actualTeacher: true, assistantTeacher: true },
+      orderBy: { date: "asc" },
     });
-    records.push(rec);
-    existingKeys.add(dateStr);
+    records.push(...createdRows.filter((record) => createKeys.has(dayKey(record.date))));
   }
   return { created: records.length, skipped, records };
 }

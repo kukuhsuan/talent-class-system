@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SaveButton } from "@/components/SaveButton";
+import { TeacherCombobox } from "@/components/TeacherCombobox";
 import { Toast } from "@/components/Toast";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 import { expandIsoDateRange, expandWeeklyDates, formatMonthDay, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
@@ -16,6 +17,7 @@ type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string; payrollHours: number | null;
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
+  courseConfirmationSummary?: string;
   recurrenceType?: string; startDate?: string | null; endDate?: string | null; weekday?: string;
   scheduledDates?: string[];
 };
@@ -75,6 +77,12 @@ function uniqueSortedDates(dates: string[]) {
   return [...new Set(dates.map((d) => d.slice(0, 10)).filter(Boolean))].sort();
 }
 
+function courseDateSummary(dates?: string[]) {
+  const unique = uniqueSortedDates(dates ?? []);
+  if (unique.length === 0) return "—";
+  return `${unique.slice(0, 6).map(formatMonthDay).join("、")}${unique.length > 6 ? ` 等 ${unique.length} 天` : ""}`;
+}
+
 function inferWeeklyDates(dates: string[]) {
   const unique = uniqueSortedDates(dates);
   if (unique.length < 2) return null;
@@ -129,19 +137,30 @@ export default function CoursesPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 20;
+  const [loadingCourses, setLoadingCourses] = useState(false);
+  const [loadingOptions, setLoadingOptions] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
   const [generatingCode, setGeneratingCode] = useState(false);
   const [showCourseOptionForm, setShowCourseOptionForm] = useState(false);
   const [newCourseOption, setNewCourseOption] = useState("");
   const [savingCourseOption, setSavingCourseOption] = useState(false);
   const { toast, showToast } = useToast();
+  const showToastRef = useRef(showToast);
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
-  const load = useCallback(
-    () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), includeDates: "0" });
+  useEffect(() => { showToastRef.current = showToast; }, [showToast]);
+
+  const loadCourses = useCallback(
+    async () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        includeDates: filterMonth ? "1" : "0",
+        includeConfirmation: "0",
+      });
       const effectiveDept = filterDepartment || dept;
       if (effectiveDept) params.set("dept", effectiveDept);
       if (filterRegion) params.set("region", filterRegion);
@@ -151,29 +170,73 @@ export default function CoursesPage() {
         params.set("year", String(filterYear));
       }
       if (search.trim()) params.set("search", search.trim());
-      return (
-      Promise.all([
-        fetch(`/api/courses?${params}`, { cache: "no-store" }).then((r) => r.json() as Promise<PageResult<Course>>),
-        fetch("/api/teachers").then((r) => r.json()),
-        fetch("/api/schools").then((r) => r.json()),
-        fetch("/api/course-options").then((r) => r.json()),
-      ]).then(([c, t, s, o]) => { setCourses(c.items); setTotal(c.total); setTeachers(t); setSchools(s); setCourseOptions(o); })
-      );
+      setLoadingCourses(true);
+      try {
+        const res = await fetch(`/api/courses?${params}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(await readErrorMessage(res, "課程資料載入失敗"));
+        const data = await res.json() as PageResult<Course>;
+        setCourses(Array.isArray(data.items) ? data.items : []);
+        setTotal(Number(data.total) || 0);
+      } catch (e) {
+        showToastRef.current("error", (e as Error).message || "課程資料載入失敗", 3000);
+      } finally {
+        setLoadingCourses(false);
+      }
     },
     [dept, filterDepartment, filterMonth, filterRegion, filterTeacher, filterYear, page, search],
   );
 
-  useEffect(() => { load(); }, [load]);
+  const loadOptions = useCallback(async () => {
+    setLoadingOptions(true);
+    try {
+      const [teacherRes, schoolRes, optionRes] = await Promise.all([
+        fetch("/api/teachers", { cache: "no-store" }),
+        fetch("/api/schools?minimal=1", { cache: "no-store" }),
+        fetch("/api/course-options", { cache: "no-store" }),
+      ]);
+      const errors = await Promise.all([
+        teacherRes.ok ? Promise.resolve("") : readErrorMessage(teacherRes, "老師清單載入失敗"),
+        schoolRes.ok ? Promise.resolve("") : readErrorMessage(schoolRes, "園所清單載入失敗"),
+        optionRes.ok ? Promise.resolve("") : readErrorMessage(optionRes, "課程選項載入失敗"),
+      ]);
+      const firstError = errors.find(Boolean);
+      if (firstError) throw new Error(firstError);
+
+      const [teacherData, schoolData, optionData] = await Promise.all([
+        teacherRes.json(),
+        schoolRes.json(),
+        optionRes.json(),
+      ]);
+      setTeachers(Array.isArray(teacherData) ? teacherData : []);
+      setSchools(Array.isArray(schoolData) ? schoolData : []);
+      setCourseOptions(Array.isArray(optionData) ? optionData : COURSE_OPTIONS.map((option) => ({ ...option })));
+    } catch (e) {
+      showToastRef.current("error", (e as Error).message || "課程選項載入失敗", 3000);
+    } finally {
+      setLoadingOptions(false);
+    }
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => { void loadCourses(); }); }, [loadCourses]);
+  useEffect(() => { queueMicrotask(() => { void loadOptions(); }); }, [loadOptions]);
+  useEffect(() => {
+    queueMicrotask(() => {
+      setFilterDepartment(dept || "");
+      setPage(1);
+    });
+  }, [dept]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const queryDept = params.get("dept");
     const queryTeacher = params.get("teacher");
     const queryMonth = params.get("month");
     const queryYear = params.get("year");
-    if (queryDept) setFilterDepartment(queryDept);
-    if (queryTeacher) setFilterTeacher(queryTeacher);
-    if (queryMonth) setFilterMonth(queryMonth);
-    if (queryYear) setFilterYear(Number(queryYear) || new Date().getFullYear());
+    queueMicrotask(() => {
+      if (queryDept) setFilterDepartment(queryDept);
+      if (queryTeacher) setFilterTeacher(queryTeacher);
+      if (queryMonth) setFilterMonth(queryMonth);
+      if (queryYear) setFilterYear(Number(queryYear) || new Date().getFullYear());
+    });
   }, []);
 
   function selectSchool(schoolId: number) {
@@ -265,11 +328,14 @@ export default function CoursesPage() {
     const body = JSON.stringify({ ...form, region: normalizeRegion(form.region), department: normalizeDepartment(form.department), category: normalizeCategory(form.category), dayOfWeek: autoDay, scheduledDates });
     const headers = { "Content-Type": "application/json" };
     setSaving(true);
+    setSaveStatus(scheduledDates.length > 0 ? `正在儲存課程與 ${scheduledDates.length} 筆上課日期…` : "正在儲存課程…");
     try {
       let res: Response;
       if (editing !== null) {
+        setSaveStatus("正在更新課程與未來出勤紀錄…");
         res = await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
       } else {
+        setSaveStatus("正在建立課程與出勤紀錄…");
         res = await fetch("/api/courses", { method: "POST", headers, body });
       }
       if (!res.ok) {
@@ -279,7 +345,7 @@ export default function CoursesPage() {
       }
       const result = await res.json().catch(() => ({}));
       const wasAfterSchool = form.department === "安親班";
-      setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); load();
+      setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); void loadCourses();
       const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : [];
       const baseMsg = warnings.length > 0 ? `課程已儲存，但${warnings[0]}` : "課程已儲存";
       const afterSchoolHint = wasAfterSchool ? "｜請至「出勤紀錄」設定每天老師" : "";
@@ -288,6 +354,7 @@ export default function CoursesPage() {
       showToast("error", (e as Error).message || "課程儲存失敗", 3500);
     } finally {
       setSaving(false);
+      setSaveStatus("");
     }
   };
 
@@ -300,11 +367,11 @@ export default function CoursesPage() {
       if (message.includes("登入狀態")) window.location.href = "/login";
       return;
     }
-    load();
+    void loadCourses();
   };
 
   const edit = async (c: Course) => {
-    // Fetch full course with scheduledDates on demand (list loads with includeDates=0)
+    // Fetch full course with scheduledDates on demand (edit form needs all saved dates)
     let fullCourse = c;
     try {
       const res = await fetch(`/api/courses/${c.id}`);
@@ -340,7 +407,10 @@ export default function CoursesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
-          <p className="text-sm text-slate-500">共 {total} 門課程，目前顯示 {courses.length} 門</p>
+          <p className="text-sm text-slate-500">
+            {loadingCourses ? "課程載入中…" : `共 ${total} 門課程，目前顯示 ${courses.length} 門`}
+            {loadingOptions && <span className="ml-2 text-xs text-slate-400">老師/園所選項載入中</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           <Link href="/courses/summer-import"
@@ -376,7 +446,7 @@ export default function CoursesPage() {
             <div className="md:col-span-2">
               <label>園所名稱 *</label>
               <select value={form.schoolId ?? ""} onChange={(e) => selectSchool(Number(e.target.value))}>
-                <option value="">-- 從園所管理選擇，或下方手動輸入 --</option>
+                <option value="">{loadingOptions ? "-- 園所載入中 --" : "-- 從園所管理選擇，或下方手動輸入 --"}</option>
                 {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${normalizeRegion(s.region)}] ` : ""}{s.type ? `${normalizeDepartment(s.type)}｜` : ""}{s.name}</option>)}
               </select>
               {form.schoolId && (
@@ -408,10 +478,13 @@ export default function CoursesPage() {
             </div>
             <div>
               <label>{form.department === "安親班" ? "課程主教（佔位）" : "負責老師 *"}</label>
-              <select value={form.teacherId} onChange={(e) => setForm({ ...form, teacherId: Number(e.target.value) })}>
-                <option value={0}>-- 選擇老師 --</option>
-                {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+              <TeacherCombobox
+                teachers={teachers}
+                value={form.teacherId || null}
+                onChange={(teacherId) => setForm({ ...form, teacherId: teacherId ?? 0 })}
+                placeholder="-- 選擇老師 --"
+                displayName={(teacher) => displayTeacherName(teacher.name)}
+              />
               {form.department === "安親班" && (
                 <p className="mt-1 text-xs text-amber-600">安親班每天老師請在「出勤紀錄」逐日設定。此欄選「待排老師」即可。</p>
               )}
@@ -419,16 +492,17 @@ export default function CoursesPage() {
             {form.department !== "安親班" && (
               <div>
                 <label>助教老師（選填）</label>
-                <select
-                  value={form.assistantTeacherId ?? ""}
-                  onChange={(e) => setForm({ ...form, assistantTeacherId: e.target.value ? Number(e.target.value) : null })}
+                <TeacherCombobox
+                  teachers={teachers}
+                  value={form.assistantTeacherId}
+                  onChange={(teacherId) => setForm({ ...form, assistantTeacherId: teacherId })}
+                  placeholder="-- 無助教 --"
+                  allowEmpty
+                  emptyLabel="-- 無助教 --"
+                  excludeTeacherId={form.teacherId}
                   className="bg-blue-50/40"
-                >
-                  <option value="">-- 無助教 --</option>
-                  {teachers
-                    .filter((t) => t.id !== form.teacherId)
-                    .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
+                  displayName={(teacher) => displayTeacherName(teacher.name)}
+                />
                 <p className="mt-1 text-xs text-blue-500">選填，會同步到出勤與助教薪資。</p>
               </div>
             )}
@@ -611,9 +685,10 @@ export default function CoursesPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <SaveButton saving={saving} onClick={save} />
+            <SaveButton saving={saving} onClick={save} savingText="儲存中，請稍候…" />
             <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
+          {saveStatus && <p className="mt-2 text-sm font-medium text-blue-700">{saveStatus}</p>}
         </div>
       )}
 
@@ -632,7 +707,7 @@ export default function CoursesPage() {
             {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-            <option value="">全部老師</option>
+            <option value="">{loadingOptions ? "老師載入中…" : "全部老師"}</option>
             <option value="unassigned">未指派 / 待排老師</option>
             {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
           </select>
@@ -665,7 +740,9 @@ export default function CoursesPage() {
                   </div>
                   <div className="mt-1 text-sm text-slate-600">{courseLabel(c.courseType)} · 主教 {displayTeacherName(c.teacher.name)}</div>
                   {c.assistantTeacher && <div className="mt-1 text-xs text-blue-600">助教 {c.assistantTeacher.name}</div>}
+                  <div className="mt-1 text-xs font-medium text-amber-700">日期：{courseDateSummary(c.scheduledDates)}</div>
                   <div className="mt-1 text-xs text-slate-500">{c.dayOfWeek}{c.time ? ` · ${c.time}` : ""}{c.payrollHours ? ` · 計薪 ${c.payrollHours}h` : ""}</div>
+                  {c.courseConfirmationSummary && <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600 whitespace-pre-line">{c.courseConfirmationSummary}</div>}
                   {(c.scheduledDates?.length ?? 0) > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {c.scheduledDates!.slice(0, 4).map((d) => (
@@ -689,10 +766,10 @@ export default function CoursesPage() {
               </div>
             </div>
           ))}
-          {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無課程資料</div>}
+          {filtered.length === 0 && <div className="py-8 text-center text-slate-400">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1220px] text-sm">
+          <table className="w-full min-w-[1520px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="w-24 px-4 py-3 text-left font-semibold">編號</th>
@@ -700,10 +777,12 @@ export default function CoursesPage() {
                 <th className="w-40 px-4 py-3 text-left font-semibold">學校</th>
                 <th className="w-32 px-4 py-3 text-left font-semibold">老師</th>
                 <th className="w-36 px-4 py-3 text-left font-semibold">項目</th>
+                <th className="w-44 px-4 py-3 text-left font-semibold">日期</th>
                 <th className="w-28 px-4 py-3 text-left font-semibold">星期</th>
                 <th className="w-32 px-4 py-3 text-left font-semibold">時間</th>
                 <th className="w-24 px-4 py-3 text-left font-semibold">計薪</th>
                 <th className="min-w-64 px-4 py-3 text-left font-semibold">地址</th>
+                <th className="w-64 px-4 py-3 text-left font-semibold">開課確認</th>
                 <th className="w-24 px-4 py-3 text-left font-semibold">類別</th>
                 <th className="w-28 px-4 py-3 text-left font-semibold">報名人數</th>
                 <th className="w-20 px-4 py-3 text-left font-semibold">狀態</th>
@@ -726,20 +805,14 @@ export default function CoursesPage() {
                       {courseLabel(c.courseType) !== c.courseType && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{c.courseType}</span>}
                     </div>
                   </td>
+                  <td className="px-4 py-3 text-xs font-medium leading-5 text-amber-700 whitespace-normal">{courseDateSummary(c.scheduledDates)}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                    <div>{c.dayOfWeek}</div>
-                    {(c.scheduledDates?.length ?? 0) > 0 && (
-                      <div className="mt-1 flex max-w-[150px] flex-wrap gap-1 whitespace-normal">
-                        {c.scheduledDates!.slice(0, 3).map((d) => (
-                          <span key={d} className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">{formatMonthDay(d)}</span>
-                        ))}
-                        {c.scheduledDates!.length > 3 && <span className="text-[10px] text-slate-400">+{c.scheduledDates!.length - 3}</span>}
-                      </div>
-                    )}
+                    {c.dayOfWeek}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.time || "—"}</td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.payrollHours ? `${c.payrollHours}h` : "自動估算"}</td>
                   <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-normal break-words">{c.address || "—"}</td>
+                  <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-pre-line">{c.courseConfirmationSummary || "—"}</td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span></td>
                   <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{c.enrollCount || "—"}</td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
@@ -752,7 +825,7 @@ export default function CoursesPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={13} className="text-center text-slate-400 py-8">尚無課程資料</td></tr>
+                <tr><td colSpan={15} className="text-center text-slate-400 py-8">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</td></tr>
               )}
             </tbody>
           </table>

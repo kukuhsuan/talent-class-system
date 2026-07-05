@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, pushMessage } from "@/lib/line";
-import { normalizeCategory } from "@/lib/courseMeta";
+import { calculateSalaryMonth } from "@/lib/salaryCalculation";
+import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 
 type DetailRow = {
   date: string; school: string; courseType: string; category: string;
-  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
+  hours: number; time: string; hoursNeedsReview: boolean; hoursReviewReason: string;
+  rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
 };
 
 function buildTeachingFeeMessage(teacherName: string, year: number, month: number, details: DetailRow[], total: number): object {
@@ -32,7 +34,9 @@ function buildTeachingFeeMessage(teacherName: string, year: number, month: numbe
       },
       {
         type: "text",
-        text: `${r.category} ${r.hours}h × $${fmt(r.rate)}${r.travelFee > 0 ? ` + 車馬 $${fmt(r.travelFee)}` : ""} = $${fmt(r.amount)}`,
+        text: r.hoursNeedsReview
+          ? `${r.category}｜${r.time || r.hoursReviewReason}｜時數需人工確認`
+          : `${r.category} ${r.hours}h × $${fmt(r.rate)}${r.travelFee > 0 ? ` + 車馬 $${fmt(r.travelFee)}` : ""} = $${fmt(r.amount)}`,
         size: "xs",
         color: "#7C7167",
         wrap: true,
@@ -82,48 +86,27 @@ function buildTeachingFeeMessage(teacherName: string, year: number, month: numbe
 export async function POST(req: NextRequest) {
   const { teacherId, year, month } = await req.json();
 
-  const start = new Date(Number(year), Number(month) - 1, 1);
-  const end = new Date(Number(year), Number(month), 1);
-
   const teacher = await prisma.teacher.findUnique({ where: { id: Number(teacherId) } }) as unknown as {
     id: number; name: string; lineUserId: string | null; lineRegion: string;
     rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number;
   } | null;
 
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (isWaitingTeacherName(teacher.name)) return NextResponse.json({ error: "待排老師為系統佔位資料，不能傳送薪資" }, { status: 400 });
   if (!teacher.lineUserId) return NextResponse.json({ error: "老師尚未綁定 LINE" }, { status: 400 });
 
-  const attendances = await prisma.attendance.findMany({
-    where: { OR: [{ actualTeacherId: teacher.id }, { assistantTeacherId: teacher.id }], cancelled: false, date: { gte: start, lt: end } },
-    include: { course: true },
-    orderBy: { date: "asc" },
-  }) as unknown as Array<{
-    id: number; date: Date; hours: number; category: string; notes: string; actualTeacherId: number; assistantTeacherId?: number | null;
-    course: { school: string; courseType: string; teacherId: number };
-  }>;
-
-  const details: DetailRow[] = attendances.map((a) => {
-    const category = normalizeCategory(a.category);
-    const isDemo = category === "Demo";
-    const role = a.assistantTeacherId === teacher.id ? "助教" : "主教";
-    const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
-    const travelFee = role === "助教" || isDemo ? 0 : teacher.travelFee;
-    const amount = a.hours * rate + travelFee;
-    return {
-      date: a.date.toISOString(),
-      school: a.course.school,
-      courseType: a.course.courseType,
-      category,
-      hours: a.hours,
-      rate,
-      travelFee,
-      amount,
-      isSub: role === "主教" && a.course.teacherId !== teacher.id,
-      role,
-    };
-  });
-
-  const total = details.reduce((s, r) => s + r.amount, 0);
+  const salary = await calculateSalaryMonth(Number(year), Number(month), { teacherId: teacher.id, includeDetails: true });
+  const result = salary.results[0];
+  const details: DetailRow[] = [
+    ...(result?.details ?? []).map((item) => ({ ...item, date: item.date.toISOString() })),
+    ...(result?.adjustments ?? []).map((item) => ({
+      date: new Date(Number(year), Number(month) - 1, 1).toISOString(), school: item.reason,
+      courseType: item.type, category: "薪資調整", hours: 1, time: `歸屬 ${item.targetMonth}`,
+      hoursNeedsReview: false, hoursReviewReason: "", rate: item.amount, travelFee: 0,
+      amount: item.amount, isSub: false,
+    })),
+  ];
+  const total = result?.total ?? 0;
   const message = buildTeachingFeeMessage(teacher.name, Number(year), Number(month), details, total);
 
   const region = teacher.lineRegion || "north";

@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
+import { normalizeAbilities } from "@/lib/abilityMap";
 import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { COURSE_CURRICULUM } from "@/lib/line";
 import { notifySchoolReport } from "@/lib/schoolNotification";
 import { getLessonTemplateForReport, listLessonTemplates } from "@/lib/lessonTemplates";
 import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE } from "@/lib/reportWindow";
+import { assessmentSemesterRange } from "@/lib/kindergartenAssessment";
+import {
+  confirmationHistory,
+  courseConfirmationSummary,
+  getSchoolStartConfirmation,
+  parseConfirmationTerm,
+  semesterWesternLabel,
+  termLabel,
+  updateConfirmationCounts,
+} from "@/lib/courseConfirmation";
+import { writeAuditLog } from "@/lib/auditLog";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -28,6 +42,10 @@ function progressText(item: { lesson: number; title: string }) {
 
 function isKindergarten(department: string | null | undefined) {
   return (department ?? "").includes("幼兒園");
+}
+
+function shouldNotifySchool(department: string | null | undefined) {
+  return !(department ?? "").includes("安親");
 }
 
 function firstPhotoUrl(value: string | null | undefined) {
@@ -62,8 +80,13 @@ function sanitizePhotoUrl(value: string) {
 
 async function isFinalKindergartenAttendance(attendance: { id: number; date: Date; courseId: number; course: { department: string } }) {
   if (!isKindergarten(attendance.course.department)) return false;
+  const semester = assessmentSemesterRange(attendance.date);
   const latest = await prisma.attendance.findFirst({
-    where: { courseId: attendance.courseId },
+    where: {
+      courseId: attendance.courseId,
+      cancelled: false,
+      date: { gte: semester.start, lt: semester.end },
+    },
     orderBy: { date: "desc" },
     select: { id: true, date: true },
   });
@@ -95,6 +118,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
     }
+    const timeMap = await attendanceScheduledTimeMap([attendance.id]);
+    const scheduledTime = effectiveAttendanceTime({
+      scheduledTime: timeMap.get(attendance.id),
+      courseTime: attendance.course.time,
+      attendanceHours: attendance.hours,
+      isPayrollLocked: attendance.isPayrollLocked,
+      reportContent: attendance.reportContent,
+      reportSentAt: attendance.reportSentAt,
+      studentCount: attendance.studentCount,
+      studentCountA: attendance.studentCountA,
+      studentCountB: attendance.studentCountB,
+    });
+    const reportWindow = attendanceReportWindow(attendance, scheduledTime);
+    if (reportWindow.expired && !reportWindow.complete) {
+      return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
+    }
     const normalizedCourseType = courseLabel(attendance.course.courseType);
     let progressRows = isKindergarten(attendance.course.department)
       ? await listLessonTemplates(prisma, normalizedCourseType)
@@ -112,6 +151,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       })) as never;
     }
 
+    const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
+    const term = parseConfirmationTerm({});
+    const courseSchoolId = attendance.course.schoolId ?? null;
+    const courseConfirmation = courseSchoolId ? await getSchoolStartConfirmation(courseSchoolId, term) : null;
     return NextResponse.json({
       id: attendance.id,
       date: attendance.date.toISOString().slice(0, 10),
@@ -145,10 +188,28 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
       representativePhotoUrl: reportPhotoUrl(attendance.reportPhotos, id),
-      shouldAskAssessment: await isFinalKindergartenAttendance(attendance),
+      courseConfirmation,
+      courseConfirmationSummary: courseConfirmation ? courseConfirmationSummary(courseConfirmation, { multiline: true, teacher: true }) : "",
+      courseConfirmationHistory: courseConfirmation?.id ? await confirmationHistory(courseConfirmation.id) : [],
+      confirmationTerm: {
+        ...term,
+        label: termLabel(term),
+        westernLabel: semesterWesternLabel(term),
+      },
+      shouldAskAssessment,
+      assessmentUrl: shouldAskAssessment ? `/assessment/${encodeURIComponent(signPublicAccessToken("assessment", attendance.id))}` : "",
       assessmentCount: await assessmentCount(attendance.id),
-      schoolNotifyStatus: (attendance as unknown as { schoolNotifyStatus?: string }).schoolNotifyStatus ?? "未通知",
-      schoolNotifyError: (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? "",
+      schoolNotifyStatus: shouldNotifySchool(attendance.course.department)
+        ? (attendance as unknown as { schoolNotifyStatus?: string }).schoolNotifyStatus ?? "未通知"
+        : "",
+      schoolNotifyError: shouldNotifySchool(attendance.course.department)
+        ? (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? ""
+        : "",
+      reportFillable: reportWindow.fillable,
+      reportExpired: reportWindow.expired,
+      reportLocked: reportWindow.expired,
+      reportPhotoLocked: reportWindow.expired && !reportWindow.complete,
+      reportExpiresAt: reportWindow.expiresAt.toISOString(),
     });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
@@ -159,17 +220,95 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: attendanceId },
+      include: { course: true, actualTeacher: true },
+    });
+    if (!attendance?.course.schoolId) {
+      return NextResponse.json({ error: "找不到園所資料，無法更新班級人數" }, { status: 404 });
+    }
+    const body = await req.json().catch(() => ({}));
+    if (body.type !== "confirmation_counts") {
+      return NextResponse.json({ error: "Unknown update type" }, { status: 400 });
+    }
+    const term = parseConfirmationTerm(body.confirmationTerm ?? body);
+    const previousConfirmation = await getSchoolStartConfirmation(attendance.course.schoolId, term);
+    const courseConfirmation = await updateConfirmationCounts({
+      schoolId: attendance.course.schoolId,
+      term,
+      smallClassCount: body.smallClassCount,
+      middleClassCount: body.middleClassCount,
+      bigClassCount: body.bigClassCount,
+      note: body.note,
+      teacherId: attendance.actualTeacherId,
+    });
+    await writeAuditLog(req, {
+      actorName: attendance.actualTeacher.name,
+      actorRole: "teacher",
+      action: "update",
+      targetType: "SchoolStartConfirmation",
+      targetId: courseConfirmation.id ?? "",
+      targetLabel: `${attendance.course.school} ${termLabel(term)}`,
+      beforeData: previousConfirmation,
+      afterData: {
+        smallClassCount: courseConfirmation.smallClassCount,
+        middleClassCount: courseConfirmation.middleClassCount,
+        bigClassCount: courseConfirmation.bigClassCount,
+        note: body.note ?? "",
+      },
+      diffSummary: `老師更新班級人數：${courseConfirmationSummary(courseConfirmation, { includeTerm: true })}`,
+    });
+    return NextResponse.json({
+      ok: true,
+      courseConfirmation,
+      courseConfirmationSummary: courseConfirmationSummary(courseConfirmation, { multiline: true, teacher: true }),
+      courseConfirmationHistory: courseConfirmation.id ? await confirmationHistory(courseConfirmation.id) : [],
+      confirmationTerm: {
+        ...term,
+        label: termLabel(term),
+        westernLabel: semesterWesternLabel(term),
+      },
+    });
+  } catch (e) {
+    if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
+      return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
+    }
+    console.error("confirmation count update failed", e);
+    return NextResponse.json({ error: `班級人數更新失敗：${(e as Error).message}` }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { course: true },
+      include: { course: true, actualTeacher: true },
     });
 
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
+    }
+    const timeMap = await attendanceScheduledTimeMap([attendance.id]);
+    const scheduledTime = effectiveAttendanceTime({
+      scheduledTime: timeMap.get(attendance.id),
+      courseTime: attendance.course.time,
+      attendanceHours: attendance.hours,
+      isPayrollLocked: attendance.isPayrollLocked,
+      reportContent: attendance.reportContent,
+      reportSentAt: attendance.reportSentAt,
+      studentCount: attendance.studentCount,
+      studentCountA: attendance.studentCountA,
+      studentCountB: attendance.studentCountB,
+    });
+    const reportWindow = attendanceReportWindow(attendance, scheduledTime);
+    if (reportWindow.expired) {
+      return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
     }
 
     const data = (await req.json()) as ReportPayload;
@@ -191,8 +330,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ? await getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
       : null;
     const skillFocus = kindergarten
-      ? safeJsonArray(data.skillFocus).length ? safeJsonArray(data.skillFocus) : (lessonTemplate?.skills ?? [])
+      ? normalizeAbilities(safeJsonArray(data.skillFocus), 4)
       : [];
+    if (kindergarten && skillFocus.length < 3) {
+      return NextResponse.json({ error: "請選擇 3～4 個本堂學習目標" }, { status: 400 });
+    }
     const focusText = kindergarten ? String(lessonTemplate?.focus ?? "").trim() : "";
     const outcomeText = String(data.outcomeText ?? lessonTemplate?.activityDirection ?? "").trim();
 
@@ -222,8 +364,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         aiTeachingNote: "",
       },
     });
+    await writeAuditLog(req, {
+      actorName: attendance.actualTeacher.name,
+      actorRole: "teacher",
+      action: "update",
+      targetType: "Attendance",
+      targetId: attendance.id,
+      targetLabel: `${attendance.date.toISOString().slice(0, 10)} ${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
+      beforeData: {
+        studentCount: attendance.studentCount,
+        reportContent: attendance.reportContent,
+        reportSentAt: attendance.reportSentAt,
+      },
+      afterData: {
+        studentCount: data.studentCount == null ? attendance.studentCount : Number(data.studentCount),
+        reportContent,
+        reportSentAt: "now",
+      },
+      diffSummary: `老師送出課後回報：${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
+    });
 
-    const notify = await notifySchoolReport(attendance.id);
+    const notify = shouldNotifySchool(attendance.course.department)
+      ? await notifySchoolReport(attendance.id)
+      : { status: "", error: "" };
     const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
     return NextResponse.json({
       ok: true,

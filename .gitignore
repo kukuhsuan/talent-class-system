@@ -47,3 +47,13 @@ dev.db-shm
 dev.db-wal
 .env.local
 .env*.local
+
+# 資料備份（含敏感資料，不可進版控）
+talent-class-system-backup-*.json
+
+# macOS 複製產生的重複檔案與暫存
+/.next 2/
+/.next 3/
+/outputs/
+* 2.ts
+* 2/

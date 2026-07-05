@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { requiredAuthSecret } from "@/lib/authSecret";
 
 type PublicTokenPayload = {
   type: "report" | "assessment";
@@ -9,7 +10,7 @@ type PublicTokenPayload = {
 const encoder = new TextEncoder();
 
 function secret() {
-  return process.env.AUTH_SECRET ?? "talent-class-secret-change-in-prod";
+  return requiredAuthSecret();
 }
 
 function base64url(value: string | Buffer) {

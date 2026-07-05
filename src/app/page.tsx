@@ -12,7 +12,6 @@ type DashboardStats = {
   todaySubstituteCount: number;
   pendingFillableCount: number;
   unboundTeacherCount: number;
-  unnotifiedCount: number;
   teacherCount: number;
 };
 type PendingDetail = {
@@ -31,7 +30,6 @@ const EMPTY_STATS: DashboardStats = {
   todaySubstituteCount: 0,
   pendingFillableCount: 0,
   unboundTeacherCount: 0,
-  unnotifiedCount: 0,
   teacherCount: 0,
 };
 
@@ -64,7 +62,6 @@ export default function Home() {
         todaySubstituteCount: Number(data.todaySubstituteCount ?? 0),
         pendingFillableCount: Number(data.pendingFillableCount ?? 0),
         unboundTeacherCount: Number(data.unboundTeacherCount ?? 0),
-        unnotifiedCount: Number(data.unnotifiedCount ?? 0),
         teacherCount: Number(data.teacherCount ?? 0),
       });
       setPendingDetails(Array.isArray(data.pendingDetails) ? data.pendingDetails.slice(0, 5) : []);
@@ -76,12 +73,13 @@ export default function Home() {
 
   const handleRemind = async (attendanceId: number) => {
     setReminding(attendanceId);
-    await fetch("/api/line/push", {
+    const response = await fetch("/api/line/push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "report_request", attendanceId }),
     });
-    setRemindedIds((prev) => new Set(prev).add(attendanceId));
+    if (response.ok) setRemindedIds((prev) => new Set(prev).add(attendanceId));
+    else alert((await response.json().catch(() => ({}))).error ?? "提醒傳送失敗");
     setReminding(null);
   };
 
@@ -97,7 +95,6 @@ export default function Home() {
     { label: "今日代課", value: stats.todaySubstituteCount, href: "/substitutes", tone: "orange" },
     { label: "待回報數量", value: stats.pendingFillableCount, href: "/attendance?status=missing", tone: "amber" },
     { label: "LINE 未綁定", value: stats.unboundTeacherCount, href: "/notify", tone: "slate" },
-    { label: "未通知事項", value: stats.unnotifiedCount, href: "/notify", tone: "rose" },
   ];
 
   const toneClass: Record<string, string> = {
@@ -137,7 +134,7 @@ export default function Home() {
           <h2 className="font-semibold text-slate-800">今日概況</h2>
           <p className="text-sm text-slate-500 mt-1">首頁只顯示必要數量與前 5 筆待處理明細。</p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {cards.map((card) => (
             <Link key={card.label} href={card.href}
               className={`rounded-xl border px-4 py-4 transition-colors ${toneClass[card.tone]}`}>

@@ -2,6 +2,7 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useParams } from "next/navigation";
 import { requiresStudentCount } from "@/lib/courseMeta";
+import { normalizeAbilities } from "@/lib/abilityMap";
 import { SKILL_FOCUS_OPTIONS, normalizeClassStatus } from "@/lib/teachingReport";
 
 type ReportInfo = {
@@ -29,9 +30,33 @@ type ReportInfo = {
   aiTeachingNote: string;
   representativePhotoUrl?: string;
   shouldAskAssessment?: boolean;
+  assessmentUrl?: string;
   assessmentCount?: number;
   schoolNotifyStatus?: string;
   schoolNotifyError?: string;
+  reportLocked?: boolean;
+  reportPhotoLocked?: boolean;
+  courseConfirmation?: {
+    smallClassCount?: string;
+    middleClassCount?: string;
+    bigClassCount?: string;
+    academicYear?: number;
+    semester?: string;
+  } | null;
+  courseConfirmationSummary?: string;
+  courseConfirmationHistory?: Array<{
+    id: number;
+    previousSmallClassCount: string;
+    previousMiddleClassCount: string;
+    previousBigClassCount: string;
+    newSmallClassCount: string;
+    newMiddleClassCount: string;
+    newBigClassCount: string;
+    note: string;
+    teacherName: string;
+    createdAt: string;
+  }>;
+  confirmationTerm?: { academicYear: number; semester: string; label: string; westernLabel: string };
 };
 
 const EMPTY = {
@@ -115,6 +140,10 @@ export default function TeacherReportPage() {
   const [photoPreview, setPhotoPreview] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [countEditorOpen, setCountEditorOpen] = useState(false);
+  const [countSaving, setCountSaving] = useState(false);
+  const [countForm, setCountForm] = useState({ smallClassCount: "", middleClassCount: "", bigClassCount: "", note: "" });
+  const [countMessage, setCountMessage] = useState("");
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -128,12 +157,13 @@ export default function TeacherReportPage() {
         setInfo(data);
         setNotifyStatus(data.schoolNotifyStatus || "");
         setNotifyError(data.schoolNotifyError || "");
+        setAssessmentUrl(data.assessmentUrl || "");
         setPhotoPreview(data.representativePhotoUrl ?? "");
         setForm({
           studentCount: data.studentCount?.toString() ?? "",
           progress: savedProgress,
           outcomeText: extractReportField(data.reportContent ?? "", "成果回報") || data.aiTeachingNote || "",
-          skillFocus: data.skillFocus ?? [],
+          skillFocus: normalizeAbilities(data.skillFocus ?? [], 4),
           classStatus: normalizeClassStatus(data.classStatus),
           representativePhotoUrl: data.representativePhotoUrl ?? "",
           incident: Boolean(data.incident),
@@ -142,6 +172,12 @@ export default function TeacherReportPage() {
           incidentAction: data.incidentAction ?? "",
           incidentNotified: data.incidentNotified || "否",
         });
+        setCountForm({
+          smallClassCount: data.courseConfirmation?.smallClassCount ?? "",
+          middleClassCount: data.courseConfirmation?.middleClassCount ?? "",
+          bigClassCount: data.courseConfirmation?.bigClassCount ?? "",
+          note: "",
+        });
         setCustomProgress(Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress)));
       })
       .catch((e) => setError((e as Error).message || "讀取回報表單失敗，請稍後再試"))
@@ -149,6 +185,11 @@ export default function TeacherReportPage() {
   }, [params.id]);
 
   function toggleSkill(skill: string) {
+    if (!form.skillFocus.includes(skill) && form.skillFocus.length >= 4) {
+      setError("本堂學習目標最多選擇 4 項");
+      return;
+    }
+    setError("");
     setForm((f) => ({
       ...f,
       skillFocus: f.skillFocus.includes(skill) ? f.skillFocus.filter((item) => item !== skill) : [...f.skillFocus, skill],
@@ -201,8 +242,8 @@ export default function TeacherReportPage() {
       setError(kindergarten ? "請選擇或填寫今日課程進度" : "請填寫今天訓練什麼");
       return;
     }
-    if (kindergarten && form.skillFocus.length === 0) {
-      setError("請至少選擇一個今日能力培養");
+    if (kindergarten && (form.skillFocus.length < 3 || form.skillFocus.length > 4)) {
+      setError("請選擇 3～4 個本堂學習目標");
       return;
     }
     setSaving(true);
@@ -234,10 +275,52 @@ export default function TeacherReportPage() {
     }
   }
 
+  async function updateClassCounts() {
+    if (countSaving) return;
+    setCountSaving(true);
+    setCountMessage("");
+    setError("");
+    try {
+      const res = await fetch(`/api/report/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "confirmation_counts",
+          confirmationTerm: info?.confirmationTerm,
+          ...countForm,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "班級人數更新失敗");
+      setInfo((current) => current ? {
+        ...current,
+        courseConfirmation: data.courseConfirmation,
+        courseConfirmationSummary: data.courseConfirmationSummary,
+        courseConfirmationHistory: data.courseConfirmationHistory ?? current.courseConfirmationHistory,
+        confirmationTerm: data.confirmationTerm ?? current.confirmationTerm,
+      } : current);
+      setCountForm({
+        smallClassCount: data.courseConfirmation?.smallClassCount ?? "",
+        middleClassCount: data.courseConfirmation?.middleClassCount ?? "",
+        bigClassCount: data.courseConfirmation?.bigClassCount ?? "",
+        note: "",
+      });
+      setCountMessage("班級人數已更新");
+      setCountEditorOpen(false);
+    } catch (e) {
+      setError((e as Error).message || "班級人數更新失敗");
+    } finally {
+      setCountSaving(false);
+    }
+  }
+
   if (loading) return <div className="mx-auto max-w-md py-16 text-center text-slate-500">載入表單中...</div>;
   if (!info) return <div className="mx-auto max-w-md py-16 text-center text-red-500">{error || "找不到表單"}</div>;
   const isKindergarten = info.reportMode === "kindergarten";
   const needsStudentCount = requiresStudentCount(info.category);
+  const locked = Boolean(info.reportLocked);
+  const photoLocked = Boolean(info.reportPhotoLocked);
+  const showAssessmentEntry = Boolean(assessmentUrl && info.shouldAskAssessment);
 
   return (
     <div className="mx-auto max-w-md pb-10">
@@ -260,24 +343,90 @@ export default function TeacherReportPage() {
               {notifyError ? <div className="mt-1 text-slate-500">{notifyError}</div> : null}
             </div>
           )}
-          {assessmentUrl && (
-            <div className="mt-3 rounded-xl bg-white p-3 text-slate-700">
-              <div className="font-semibold text-[#3F6B55]">這是幼兒園最後一堂課</div>
-              <p className="mt-1 text-xs text-slate-500">是否進行本學期幼兒運動評量？</p>
-              <a href={assessmentUrl} className="mt-3 block rounded-xl bg-[#3F6B55] px-4 py-3 text-center text-sm font-bold text-white">
-                進入學期末運動評量
-              </a>
-            </div>
-          )}
+        </div>
+      )}
+      {showAssessmentEntry && (
+        <div className="mb-4 rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 text-sm text-slate-700">
+          <div className="font-semibold text-[#3F6B55]">這是幼兒園最後一堂課</div>
+          <p className="mt-1 text-xs text-slate-500">
+            {done ? "課程回報已完成，可接著填寫學期末運動評量。" : "若老師忘記填評量，可直接從這裡進入補填。"}
+          </p>
+          {info.assessmentCount ? <div className="mt-2 text-xs font-semibold text-slate-500">目前已完成 {info.assessmentCount} 位評量</div> : null}
+          <a href={assessmentUrl} className="mt-3 block rounded-xl bg-[#3F6B55] px-4 py-3 text-center text-sm font-bold text-white">
+            進入學期末運動評量
+          </a>
         </div>
       )}
       {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
+      {locked && (
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-600">
+          此回報已超過 48 小時補填期限，目前僅供查看。如需修改請聯繫客服。
+        </div>
+      )}
+
+      {info.courseConfirmationSummary && (
+        <section className="mb-4 rounded-2xl border border-blue-100 bg-white p-4 text-sm shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">本學期班級人數</div>
+              <div className="mt-1 text-xs text-slate-500">{info.confirmationTerm?.label}</div>
+            </div>
+            <button type="button" onClick={() => setCountEditorOpen((value) => !value)}
+              className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">
+              更新人數
+            </button>
+          </div>
+          <div className="mt-3 whitespace-pre-line rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+            {info.courseConfirmationSummary}
+          </div>
+          {countEditorOpen && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  ["smallClassCount", "小班"],
+                  ["middleClassCount", "中班"],
+                  ["bigClassCount", "大班"],
+                ].map(([key, label]) => (
+                  <label key={key} className="text-xs font-semibold text-slate-600">
+                    {label}
+                    <input inputMode="numeric" type="number" value={countForm[key as keyof typeof countForm]}
+                      onChange={(e) => setCountForm((current) => ({ ...current, [key]: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm font-bold outline-none focus:border-blue-400" />
+                  </label>
+                ))}
+              </div>
+              <textarea value={countForm.note} onChange={(e) => setCountForm((current) => ({ ...current, note: e.target.value }))}
+                className="mt-3 min-h-16 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                placeholder="備註：例如本週新增1位學生" />
+              <button type="button" disabled={countSaving} onClick={updateClassCounts}
+                className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
+                {countSaving ? "更新中..." : "儲存人數更新"}
+              </button>
+            </div>
+          )}
+          {countMessage && <div className="mt-2 text-xs font-semibold text-green-700">{countMessage}</div>}
+          {info.courseConfirmationHistory?.length ? (
+            <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-semibold text-slate-500">查看更新紀錄</summary>
+              <div className="mt-2 space-y-2">
+                {info.courseConfirmationHistory.slice(0, 5).map((item) => (
+                  <div key={item.id} className="rounded-lg bg-white p-2 text-xs leading-5 text-slate-600">
+                    <div className="font-semibold text-slate-700">{item.teacherName} 更新</div>
+                    <div>小班 {item.previousSmallClassCount || "0"} → {item.newSmallClassCount || "0"}｜中班 {item.previousMiddleClassCount || "0"} → {item.newMiddleClassCount || "0"}｜大班 {item.previousBigClassCount || "0"} → {item.newBigClassCount || "0"}</div>
+                    {item.note && <div className="text-slate-500">備註：{item.note}</div>}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </section>
+      )}
 
       <div className="space-y-4">
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">出席人數{needsStudentCount ? "" : "（免填）"}</label>
           {needsStudentCount ? (
-            <input inputMode="numeric" type="number" value={form.studentCount}
+            <input inputMode="numeric" type="number" value={form.studentCount} disabled={locked}
               onChange={(e) => setForm({ ...form, studentCount: e.target.value })}
               className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-semibold outline-none focus:border-[#7B9E87]"
               placeholder="請輸入人數" />
@@ -298,11 +447,11 @@ export default function TeacherReportPage() {
               {info.progressOptions.map((item) => (
                 <button key={`${item.lesson}-${item.title}`} type="button"
                   onClick={() => {
+                    if (locked) return;
                     setCustomProgress(false);
                     setForm({
                       ...form,
                       progress: item.value,
-                      skillFocus: item.skills?.length ? item.skills : form.skillFocus,
                       outcomeText: item.outcomeText || form.outcomeText,
                     });
                   }}
@@ -311,7 +460,7 @@ export default function TeacherReportPage() {
                   <div className="mt-1 text-sm font-semibold leading-5">{item.title}</div>
                 </button>
               ))}
-              <button type="button" onClick={() => {
+              <button type="button" disabled={locked} onClick={() => {
                 setCustomProgress(true);
                 setForm({ ...form, progress: "" });
               }}
@@ -321,7 +470,7 @@ export default function TeacherReportPage() {
             </div>
           )}
           {(!isKindergarten || customProgress || !info.progressOptions?.length) && (
-            <textarea value={form.progress} onChange={(e) => setForm({ ...form, progress: e.target.value })}
+            <textarea value={form.progress} disabled={locked} onChange={(e) => setForm({ ...form, progress: e.target.value })}
               className="mt-3 min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
               placeholder={isKindergarten ? "例：第 6 堂 側拉球，或自行填寫今日進度" : "例：傳接球、體能循環、分組對抗"} />
           )}
@@ -329,11 +478,19 @@ export default function TeacherReportPage() {
 
         {isKindergarten && (
           <section className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-slate-800">今日能力培養</div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {SKILL_FOCUS_OPTIONS.map((skill) => (
-                <button key={skill} type="button" onClick={() => toggleSkill(skill)}
-                  className={`rounded-full border px-3 py-3 text-sm font-medium transition-colors ${form.skillFocus.includes(skill) ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 bg-white text-slate-600"}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">本堂學習目標</div>
+                <div className="mt-1 text-xs text-slate-500">請勾選本堂達成的 3～4 項能力</div>
+              </div>
+              <div className="rounded-full bg-[#FFF4E6] px-3 py-1 text-xs font-bold text-[#A5672C]">{form.skillFocus.length} / 4</div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              {SKILL_FOCUS_OPTIONS.map((skill, index) => (
+                <button key={skill} type="button" disabled={locked} onClick={() => toggleSkill(skill)}
+                  className={`flex aspect-square flex-col items-center justify-center rounded-full border p-2 text-center text-xs font-bold leading-4 transition-all ${form.skillFocus.includes(skill) ? "scale-[1.03] border-transparent text-[#2E2B27] shadow-md" : "border-slate-200 bg-white text-slate-500"}`}
+                  style={form.skillFocus.includes(skill) ? { backgroundColor: ["#FFE3E3", "#FFF0C7", "#DDF5E7", "#DCEEFF", "#F2E2FF", "#FFE7CF"][index] } : undefined}>
+                  <span className="mb-1 text-lg">{["◎", "✦", "●", "↯", "♥", "◉"][index]}</span>
                   {skill}
                 </button>
               ))}
@@ -344,7 +501,7 @@ export default function TeacherReportPage() {
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">成果回報短文</label>
           <p className="mt-1 text-xs text-slate-500">簡短 2～3 行即可，系統不會自動生成文案。</p>
-          <textarea value={form.outcomeText} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
+          <textarea value={form.outcomeText} disabled={locked} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
             className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#7B9E87]"
             placeholder="例：孩子今天能跟著老師完成挑戰，練習控制方向與力道。課堂中大家參與穩定，也願意嘗試不同任務。" />
         </section>
@@ -354,9 +511,9 @@ export default function TeacherReportPage() {
           <p className="mt-1 text-xs leading-5 text-slate-500">
             每堂課最多 1 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
           </p>
-          <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
-            {photoUploading ? "照片上傳中..." : "選擇或拍攝代表照片"}
-            <input type="file" accept="image/*" className="hidden" disabled={photoUploading} onChange={uploadPhoto} />
+          <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading || photoLocked ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
+            {photoLocked ? "已超過補填期限" : photoUploading ? "照片上傳中..." : "選擇或拍攝代表照片"}
+            <input type="file" accept="image/*" className="hidden" disabled={photoUploading || photoLocked} onChange={uploadPhoto} />
           </label>
           {photoError && (
             <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
@@ -366,9 +523,11 @@ export default function TeacherReportPage() {
           {photoPreview && (
             <div className="mt-3 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50">
               <img src={photoPreview} alt="代表照片預覽" className="h-44 w-full object-cover" />
-              <button type="button" onClick={removePhoto} className="w-full bg-white px-4 py-3 text-sm font-semibold text-red-500">
-                移除照片
-              </button>
+              {!locked && (
+                <button type="button" onClick={removePhoto} className="w-full bg-white px-4 py-3 text-sm font-semibold text-red-500">
+                  移除照片
+                </button>
+              )}
             </div>
           )}
           <details className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
@@ -377,6 +536,7 @@ export default function TeacherReportPage() {
               type="url"
               inputMode="url"
               value={form.representativePhotoUrl}
+              disabled={locked}
               onChange={(e) => {
                 setForm({ ...form, representativePhotoUrl: e.target.value });
                 setPhotoPreview(e.target.value);
@@ -391,7 +551,7 @@ export default function TeacherReportPage() {
           <div className="text-sm font-semibold text-slate-800">今天是否有特殊事件？</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {[false, true].map((value) => (
-              <button key={String(value)} type="button" onClick={() => setForm({ ...form, incident: value })}
+              <button key={String(value)} type="button" disabled={locked} onClick={() => setForm({ ...form, incident: value })}
                 className={`rounded-xl border px-4 py-3 text-sm font-medium ${form.incident === value ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 text-slate-600"}`}>
                 {value ? "有" : "無"}
               </button>
@@ -399,14 +559,14 @@ export default function TeacherReportPage() {
           </div>
           {form.incident && (
             <div className="mt-4 space-y-3">
-              <input value={form.incidentChild} onChange={(e) => setForm({ ...form, incidentChild: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="孩子姓名" />
-              <textarea value={form.incidentProcess} onChange={(e) => setForm({ ...form, incidentProcess: e.target.value })} className="min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="發生經過" />
-              <textarea value={form.incidentAction} onChange={(e) => setForm({ ...form, incidentAction: e.target.value })} className="min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="處理方式" />
+              <input value={form.incidentChild} disabled={locked} onChange={(e) => setForm({ ...form, incidentChild: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="孩子姓名" />
+              <textarea value={form.incidentProcess} disabled={locked} onChange={(e) => setForm({ ...form, incidentProcess: e.target.value })} className="min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="發生經過" />
+              <textarea value={form.incidentAction} disabled={locked} onChange={(e) => setForm({ ...form, incidentAction: e.target.value })} className="min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="處理方式" />
               <div>
                 <div className="mb-2 text-xs font-medium text-slate-500">是否通知{isKindergarten ? "園所" : "現場老師或窗口"}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {["是", "否"].map((v) => (
-                    <button key={v} type="button" onClick={() => setForm({ ...form, incidentNotified: v })}
+                    <button key={v} type="button" disabled={locked} onClick={() => setForm({ ...form, incidentNotified: v })}
                       className={`rounded-xl border px-4 py-3 text-sm font-medium ${form.incidentNotified === v ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 text-slate-600"}`}>
                       {v}
                     </button>
@@ -417,10 +577,12 @@ export default function TeacherReportPage() {
           )}
         </section>
 
-        <button onClick={submit} disabled={saving}
-          className="sticky bottom-4 w-full rounded-2xl bg-[#3F6B55] px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-900/15 disabled:cursor-not-allowed disabled:opacity-60">
-          {saving ? "送出中..." : "送出課程回報"}
-        </button>
+        {!locked && (
+          <button onClick={submit} disabled={saving}
+            className="sticky bottom-4 w-full rounded-2xl bg-[#3F6B55] px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-900/15 disabled:cursor-not-allowed disabled:opacity-60">
+            {saving ? "送出中..." : "送出課程回報"}
+          </button>
+        )}
       </div>
     </div>
   );

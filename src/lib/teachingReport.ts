@@ -2,7 +2,9 @@ import { courseLabel } from "@/lib/courseMeta";
 import { getLessonProfile } from "@/lib/lessonContent";
 import type { LessonTemplateForReport } from "@/lib/lessonTemplates";
 
-export const SKILL_FOCUS_OPTIONS = ["專注力", "團隊合作", "肢體協調", "規則理解", "情緒控制", "手眼協調"] as const;
+import { CORE_ABILITIES, normalizeAbilities } from "@/lib/abilityMap";
+
+export const SKILL_FOCUS_OPTIONS = CORE_ABILITIES;
 export const CLASS_STATUS_OPTIONS = ["積極參與", "穩定學習", "持續練習"] as const;
 export const CLASS_STATUS_META: Record<string, { color: string; description: string }> = {
   積極參與: { color: "🟢", description: "孩子能投入課程活動，願意主動嘗試與互動。" },
@@ -123,7 +125,7 @@ function learningParagraph(course: string, progress: string, skills: string[]) {
   }
 
   const text = `${course} ${progress}`;
-  const skillText = skills.length ? skills.join("、") : "反應能力、身體協調與團隊合作";
+  const skillText = skills.length ? skills.join("、") : "反應力、肢體協調與團隊合作";
   if (text.includes("高爾夫")) {
     return `今天透過「${progress}」活動，孩子開始學習如何控制球的方向與速度，也練習在動作進行中保持身體平衡與專注力。\n課程中搭配遊戲挑戰與分組互動，讓孩子在輕鬆參與的過程中，自然建立${skillText}等能力。`;
   }
@@ -149,7 +151,7 @@ export function generateTeachingReport(input: TeachingReportInput) {
   const emoji = courseEmoji(course);
   const template = input.lessonTemplate ?? null;
   const lessonProfile = template ? null : getLessonProfile(course, progress);
-  const reportSkills = template?.skills?.length ? template.skills : (lessonProfile?.skillFocus ?? []);
+  const reportSkills = normalizeAbilities(template?.skills?.length ? template.skills : (lessonProfile?.skillFocus ?? []));
   const values = template
     ? templateLearningValue(template, emoji)
     : learningValue(course, progress).map((item) => `${emoji} ${item}`).join("\n");

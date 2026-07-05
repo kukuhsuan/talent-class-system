@@ -2,19 +2,57 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
 import { courseLabel, normalizeCategory, normalizeRegion } from "@/lib/courseMeta";
+import { isWaitingTeacherName } from "@/lib/teacherAssignment";
+
+function contentDisposition(year: number, month: number) {
+  const paddedMonth = String(month).padStart(2, "0");
+  const asciiName = `attendance-${year}-${paddedMonth}.xlsx`;
+  const utf8Name = encodeURIComponent(`${year}年${month}月出勤紀錄.xlsx`);
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? new Date().getFullYear());
   const month = Number(searchParams.get("month") ?? new Date().getMonth() + 1);
+  const school = searchParams.get("school") ?? "";
+  const teacherId = searchParams.get("teacherId") ?? "";
+  const date = searchParams.get("date") ?? "";
+  const category = searchParams.get("category") ?? "";
+  const status = searchParams.get("status") ?? "";
+  const dept = searchParams.get("dept") ?? "";
 
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
+  const where: Record<string, unknown> = { date: { gte: start, lt: end } };
+  const courseFilter: Record<string, unknown> = {};
+  if (school) courseFilter.school = school;
+  if (dept) courseFilter.department = dept;
+  if (teacherId) where.actualTeacherId = Number(teacherId);
+  if (category) where.category = normalizeCategory(category);
+  if (date) {
+    const dayStart = new Date(`${date.slice(0, 10)}T00:00:00.000Z`);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+    where.date = { gte: dayStart, lt: dayEnd };
+  }
+  if (status === "cancelled") where.cancelled = true;
+  else if (status) where.cancelled = false;
+  if (Object.keys(courseFilter).length > 0) where.course = courseFilter;
 
   const records = await prisma.attendance.findMany({
-    where: { date: { gte: start, lt: end } },
-    include: { course: { include: { teacher: true } }, actualTeacher: true },
+    where,
+    include: { course: { include: { teacher: true } }, actualTeacher: true, substitutes: { select: { role: true } } },
     orderBy: { date: "asc" },
+  });
+  const filteredRecords = records.filter((r) => {
+    const isSub = r.substitutes.some((record) => record.role === "主教");
+    const hasReport = Boolean(r.reportContent?.trim());
+    const isDone = r.cancelled || hasReport;
+    if (status === "substitute") return isSub;
+    if (status === "done") return isDone;
+    if (status === "missing") return !r.cancelled && !isDone;
+    return true;
   });
 
   const wb = new ExcelJS.Workbook();
@@ -49,8 +87,8 @@ export async function GET(req: NextRequest) {
     cell.border = border;
   });
 
-  records.forEach((r) => {
-    const isSub = r.actualTeacherId !== r.course.teacherId;
+  filteredRecords.forEach((r) => {
+    const isSub = r.actualTeacherId !== r.course.teacherId && !isWaitingTeacherName(r.actualTeacher.name);
     const row = ws.addRow({
       date: r.date.toISOString().slice(0, 10),
       code: r.course.code,
@@ -75,7 +113,8 @@ export async function GET(req: NextRequest) {
   return new NextResponse(buf, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${year}年${month}月出勤紀錄.xlsx"`,
+      "Content-Disposition": contentDisposition(year, month),
+      "Cache-Control": "no-store",
     },
   });
 }

@@ -232,7 +232,7 @@ export function buildCurriculumSelectMessage(
   };
 }
 
-export type LineRegion = "north" | "south" | "school";
+export type LineRegion = "north" | "south" | "school" | "school2";
 
 export function getLineConfig(region: LineRegion) {
   const configs = {
@@ -248,8 +248,16 @@ export function getLineConfig(region: LineRegion) {
       secret: process.env.LINE_SCHOOL_SECRET ?? "",
       token: process.env.LINE_SCHOOL_TOKEN ?? "",
     },
+    school2: {
+      secret: process.env.LINE_SCHOOL2_SECRET ?? "",
+      token: process.env.LINE_SCHOOL2_TOKEN ?? "",
+    },
   };
   return configs[region];
+}
+
+export function isSchoolLineRegion(region: LineRegion) {
+  return region === "school" || region === "school2";
 }
 
 export function verifyLineSignature(body: string, signature: string, secret: string): boolean {
@@ -279,48 +287,87 @@ export async function pushMessage(to: string, messages: object[], token: string)
 // Build a class reminder message for teacher
 export function buildReminderMessage(opts: {
   teacherName: string;
-  school: string;
-  courseType: string;
-  time: string;
-  date: string;
-  dayOfWeek: string;
+  title?: string;
+  school?: string;
+  courseType?: string;
+  time?: string;
+  date?: string;
+  dayOfWeek?: string;
+  courses?: Array<{
+    attendanceId?: number;
+    school: string;
+    time: string;
+    courseType?: string;
+    address?: string;
+    date?: string;
+    dayOfWeek?: string;
+    reportUrl?: string;
+    confirmationSummary?: string;
+  }>;
 }) {
-  const label = courseLabel(opts.courseType);
-  return {
-    type: "flex",
-    altText: `明日課程提醒：${opts.school} ${label}`,
-    contents: {
-      type: "bubble",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#6B8FAB",
-        contents: [{ type: "text", text: "課程提醒", color: "#ffffff", weight: "bold", size: "lg" }],
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
+  const courses = opts.courses?.length ? opts.courses : [{
+    school: opts.school ?? "園所待確認", time: opts.time ?? "待確認",
+    courseType: opts.courseType, date: opts.date, dayOfWeek: opts.dayOfWeek,
+  }];
+  const bubbles = courses.slice(0, 12).map((course) => ({
+    type: "bubble",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: "#6B8FAB", paddingAll: "16px",
+      contents: [{ type: "text", text: opts.title || "課程提醒", color: "#FFFFFF", weight: "bold", size: "xl" }],
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#FFFFFF",
+      contents: [
+        {
+          type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#F5F9FC", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            { type: "text", text: "課程資訊", size: "sm", weight: "bold", color: "#47718F" },
+            { type: "text", text: `老師｜${opts.teacherName}`, size: "sm", weight: "bold", color: "#333333", wrap: true, margin: "sm" },
+            { type: "text", text: `日期｜${course.date || opts.date || "今天"}${course.dayOfWeek || opts.dayOfWeek ? `（${course.dayOfWeek || opts.dayOfWeek}）` : ""}`, size: "sm", color: "#555555", wrap: true },
+            { type: "text", text: `時間｜${course.time || "待確認"}`, size: "sm", color: "#555555", wrap: true },
+            { type: "text", text: `地點｜${course.school}`, size: "sm", color: "#555555", wrap: true },
+            ...(course.address ? [{ type: "text" as const, text: `地址｜${course.address}`, size: "sm" as const, color: "#555555", wrap: true }] : []),
+            { type: "text", text: `課程｜${courseLabel(course.courseType || opts.courseType || "")}`, size: "sm", color: "#555555", wrap: true },
+            ...(course.confirmationSummary ? [{ type: "text" as const, text: course.confirmationSummary, size: "xs" as const, color: "#5F6F83", wrap: true, margin: "sm" as const }] : []),
+          ],
+        },
+        {
+          type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#F3F8F4", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            { type: "text", text: "課後必做", size: "sm", weight: "bold", color: "#4F7A5F" },
+            { type: "text", text: "✓ 回傳紙本點名表\n✓ 完成課程回報", size: "sm", color: "#3F5145", wrap: true, margin: "sm" },
+          ],
+        },
+        {
+          type: "box", layout: "vertical", backgroundColor: "#FFF8E8", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            { type: "text", text: "薪資提醒", size: "sm", weight: "bold", color: "#A16207" },
+            { type: "text", text: "⚠️ 請完成課程回報，否則該堂課暫不列入薪資計算。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
+          ],
+        },
+      ],
+    },
+    ...(course.attendanceId || course.reportUrl ? {
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC",
+        spacing: "sm",
         contents: [
-          { type: "text", text: `老師：${opts.teacherName}`, size: "md", weight: "bold" },
-          { type: "text", text: `日期：${opts.date}（${opts.dayOfWeek}）`, size: "sm", color: "#555555" },
-          { type: "text", text: `時間：${opts.time || "待確認"}`, size: "sm", color: "#555555" },
-          { type: "text", text: `地點：${opts.school}`, size: "sm", color: "#555555" },
-          { type: "text", text: `課程：${label}`, size: "sm", color: "#555555" },
+          {
+            type: "button", style: "primary", color: "#2C82B8", height: "sm",
+            action: { type: "uri", label: "課後回報", uri: course.reportUrl || `${appUrl()}/report/${encodeURIComponent(signPublicAccessToken("report", course.attendanceId!))}` },
+          },
+          ...(course.attendanceId ? [{
+            type: "button" as const, style: "secondary" as const, height: "sm" as const,
+            action: { type: "uri" as const, label: "更新人數", uri: `${appUrl()}/report/${encodeURIComponent(signPublicAccessToken("report", course.attendanceId))}` },
+          }] : []),
         ],
       },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        contents: [{
-          type: "text",
-          text: "請準時出席，謝謝！",
-          size: "xs",
-          color: "#888888",
-          align: "center",
-        }],
-      },
-    },
+    } : {}),
+  }));
+  return {
+    type: "flex",
+    altText: `${opts.teacherName} 老師${opts.title || "課程提醒"}`,
+    contents: bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles },
   };
 }
 
@@ -371,7 +418,268 @@ export function buildReportRequestMessage(opts: {
             color: "#7B9E87",
             action: { type: "uri", label: "🧸 課後回報", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
           },
+          {
+            type: "button",
+            style: "secondary",
+            action: { type: "uri", label: "更新人數", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
+          },
         ],
+      },
+    },
+  };
+}
+
+export function buildLeaveCourseSelectMessage(opts: {
+  teacherName: string;
+  semesterLeaveCount: number;
+  courses: Array<{ attendanceId: number; date: string; time: string; school: string; courseType: string; role?: string }>;
+}) {
+  const courseCards = opts.courses.slice(0, 10).flatMap((course, index) => [
+    ...(index === 0 ? [] : [{ type: "separator", color: "#E8EEF0", margin: "md" }]),
+    {
+      type: "box",
+      layout: "vertical",
+      spacing: "xs",
+      paddingTop: index === 0 ? "0px" : "12px",
+      paddingBottom: "6px",
+      contents: [
+        {
+          type: "box",
+          layout: "horizontal",
+          contents: [
+            { type: "text", text: course.date, size: "sm", color: "#244B52", weight: "bold", flex: 4 },
+            { type: "text", text: course.time || "時間未填", size: "sm", color: "#527C86", align: "end" as const, flex: 5, wrap: true },
+          ],
+        },
+        { type: "text", text: `${course.school}｜${courseLabel(course.courseType)}`, size: "sm", color: "#263B40", weight: "bold", wrap: true, margin: "xs" },
+        { type: "text", text: `身份｜${course.role || "主教"}`, size: "xs", color: "#7B8B90", wrap: true },
+        {
+          type: "button",
+          style: "secondary" as const,
+          height: "sm" as const,
+          color: "#EAF4F2",
+          margin: "sm",
+          action: {
+            type: "postback",
+            label: "選這堂",
+            data: `action=leave_select&id=${course.attendanceId}`,
+            displayText: `我要請假：${course.date} ${course.time} ${course.school} ${courseLabel(course.courseType)}`,
+          },
+        },
+      ],
+    },
+  ]);
+
+  return {
+    type: "flex",
+    altText: `${opts.teacherName} 老師請選擇請假課程`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#DDEDEA",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "申請請假", color: "#244B52", weight: "bold", size: "xl" },
+          { type: "text", text: `${opts.teacherName} 老師`, color: "#5F7F85", size: "sm", margin: "xs" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        paddingAll: "16px",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: `提醒：您本學期已請假 ${opts.semesterLeaveCount} 次，本次送出後將累計為 ${opts.semesterLeaveCount + 1} 次。`,
+            size: "sm",
+            color: "#52656A",
+            wrap: true,
+          },
+          { type: "separator", color: "#E8EEF0" },
+          { type: "text", text: "請選擇要請假的課程：", size: "sm", color: "#244B52", weight: "bold" },
+          ...courseCards,
+        ],
+      },
+    },
+  };
+}
+
+export function buildLeaveCancelSelectMessage(opts: {
+  teacherName: string;
+  leaves: Array<{ id: number; date: string; time: string; school: string; courseType: string; role?: string; status: string }>;
+}) {
+  const leaveCards = opts.leaves.slice(0, 10).flatMap((leave, index) => [
+    ...(index === 0 ? [] : [{ type: "separator", color: "#E8EEF0", margin: "md" }]),
+    {
+      type: "box",
+      layout: "vertical",
+      spacing: "xs",
+      paddingTop: index === 0 ? "0px" : "12px",
+      paddingBottom: "6px",
+      contents: [
+        {
+          type: "box",
+          layout: "horizontal",
+          contents: [
+            { type: "text", text: leave.date, size: "sm", color: "#244B52", weight: "bold", flex: 4 },
+            { type: "text", text: leave.time || "時間未填", size: "sm", color: "#527C86", align: "end" as const, flex: 5, wrap: true },
+          ],
+        },
+        { type: "text", text: `${leave.school}｜${courseLabel(leave.courseType)}`, size: "sm", color: "#263B40", weight: "bold", wrap: true, margin: "xs" },
+        { type: "text", text: `身份｜${leave.role || "主教"}　狀態｜${leave.status}`, size: "xs", color: "#7B8B90", wrap: true },
+        {
+          type: "button",
+          style: "secondary" as const,
+          height: "sm" as const,
+          color: "#FDECEC",
+          margin: "sm",
+          action: {
+            type: "postback",
+            label: "取消這筆請假",
+            data: `action=leave_cancel&id=${leave.id}`,
+            displayText: `取消請假：${leave.date} ${leave.time} ${leave.school}`,
+          },
+        },
+      ],
+    },
+  ]);
+
+  return {
+    type: "flex",
+    altText: `${opts.teacherName} 老師取消請假`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FDECEC",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "取消請假", color: "#8A2D2D", weight: "bold", size: "xl" },
+          { type: "text", text: `${opts.teacherName} 老師`, color: "#9A5A5A", size: "sm", margin: "xs" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        paddingAll: "16px",
+        spacing: "md",
+        contents: [
+          { type: "text", text: "請選擇要取消的請假申請：", size: "sm", color: "#8A2D2D", weight: "bold" },
+          { type: "text", text: "已找到代課老師的申請，需聯絡行政重新處理。", size: "xs", color: "#A16207", wrap: true },
+          ...leaveCards,
+        ],
+      },
+    },
+  };
+}
+
+export function buildSubstituteInquiryMessage(opts: {
+  inquiryId: number;
+  date: string;
+  time: string;
+  school: string;
+  courseType: string;
+  address?: string;
+}) {
+  return {
+    type: "flex",
+    altText: `代課詢問 ${opts.date} ${opts.school}`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#DDEDEA",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "代課詢問", color: "#244B52", weight: "bold", size: "xl" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        paddingAll: "16px",
+        spacing: "sm",
+        contents: [
+          { type: "text", text: "老師您好，請問您是否可以協助以下課程代課？", size: "sm", color: "#52656A", wrap: true },
+          { type: "separator", margin: "md", color: "#E8EEF0" },
+          { type: "text", text: `日期｜${opts.date}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `時間｜${opts.time}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `園所｜${opts.school}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `課程｜${courseLabel(opts.courseType)}`, size: "sm", color: "#263B40", wrap: true },
+          ...(opts.address ? [{ type: "text", text: `地點｜${opts.address}`, size: "sm", color: "#52656A", wrap: true }] : []),
+          { type: "text", text: "回覆後需由行政最後確認，才會正式安排代課。", size: "xs", color: "#7B8B90", wrap: true, margin: "md" },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        spacing: "sm",
+        contents: [
+          { type: "button", style: "primary", color: "#5E9C7B", action: { type: "postback", label: "可以代課", data: `action=sub_available&inquiryId=${opts.inquiryId}`, displayText: "可以代課" } },
+          { type: "button", style: "secondary", color: "#EEF2F3", action: { type: "postback", label: "無法代課", data: `action=sub_unavailable&inquiryId=${opts.inquiryId}`, displayText: "無法代課" } },
+          { type: "button", style: "secondary", color: "#FDECEC", action: { type: "postback", label: "取消代課", data: `action=sub_cancel&inquiryId=${opts.inquiryId}`, displayText: "取消代課" } },
+        ],
+      },
+    },
+  };
+}
+
+export function buildSubstituteConfirmedMessage(opts: {
+  inquiryId: number;
+  date: string;
+  time: string;
+  school: string;
+  courseType: string;
+}) {
+  return {
+    type: "flex",
+    altText: `已確認代課 ${opts.date} ${opts.school}`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#DDEDEA",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "已確認代課", color: "#244B52", weight: "bold", size: "xl" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        paddingAll: "16px",
+        spacing: "sm",
+        contents: [
+          { type: "text", text: "行政已確認由您協助以下課程代課：", size: "sm", color: "#52656A", wrap: true },
+          { type: "separator", margin: "md", color: "#E8EEF0" },
+          { type: "text", text: `日期｜${opts.date}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `時間｜${opts.time}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `園所｜${opts.school}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `課程｜${courseLabel(opts.courseType)}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: "若臨時無法代課，請點下方取消代課，行政會重新確認安排。", size: "xs", color: "#A16207", wrap: true, margin: "md" },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        contents: [{
+          type: "button",
+          style: "secondary",
+          color: "#FDECEC",
+          action: { type: "postback", label: "取消代課", data: `action=sub_cancel&inquiryId=${opts.inquiryId}`, displayText: "取消代課" },
+        }],
       },
     },
   };
@@ -582,27 +890,32 @@ export function buildStudentCountBoard(
 export function buildScheduleMessage(opts: {
   teacherName: string;
   weekLabel: string; // e.g. "5/13 ~ 5/17"
-  courses: Array<{ school: string; courseType: string; dayOfWeek: string; time: string; dateLabel?: string; address?: string }>;
+  courses: Array<{ school: string; courseType: string; dayOfWeek: string; time: string; dateLabel?: string; address?: string; confirmationSummary?: string }>;
 }) {
-  const rows = opts.courses.map((c) => ({
+  const rows = opts.courses.flatMap((c, index) => [
+    ...(index === 0 ? [] : [{ type: "separator", margin: "md", color: "#E8EEF0" }]),
+    {
     type: "box",
     layout: "vertical",
-    paddingTop: "8px",
-    paddingBottom: "8px",
+    paddingTop: index === 0 ? "0px" : "12px",
+    paddingBottom: "12px",
     spacing: "xs",
     contents: [
       {
         type: "box",
         layout: "horizontal",
+        spacing: "md",
         contents: [
-          { type: "text", text: `${c.dateLabel ? `${c.dateLabel} ` : ""}${c.dayOfWeek.replace("星期", "週")}`, size: "xs", color: "#6B6358", flex: 3, weight: "bold" },
-          { type: "text", text: c.time || "時間未填", size: "xs", color: "#8B8176", flex: 3, align: "end" as const, wrap: true },
+          { type: "text", text: `${c.dateLabel ? `${c.dateLabel} ` : ""}${c.dayOfWeek.replace("星期", "週")}`, size: "xs", color: "#4F6F73", flex: 3, weight: "bold" },
+          { type: "text", text: c.time || "時間未填", size: "xs", color: "#527C86", flex: 4, align: "end" as const, wrap: true },
         ],
       },
-      { type: "text", text: `${courseLabel(c.courseType)}｜${c.school}`, size: "sm", color: "#2E2B27", weight: "bold", wrap: true },
-      ...(c.address ? [{ type: "text", text: c.address, size: "xs", color: "#8B8176", wrap: true }] : []),
+      { type: "text", text: `${courseLabel(c.courseType)}｜${c.school}`, size: "sm", color: "#263B40", weight: "bold", wrap: true, margin: "sm" },
+      ...(c.address ? [{ type: "text", text: c.address, size: "xs", color: "#7B8B90", wrap: true, margin: "xs" }] : []),
+      ...(c.confirmationSummary ? [{ type: "text", text: c.confirmationSummary, size: "xxs", color: "#5F7F85", wrap: true, margin: "xs" }] : []),
     ],
-  }));
+    },
+  ]);
 
   return {
     type: "flex",
@@ -612,18 +925,18 @@ export function buildScheduleMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#7B9E87",
+        backgroundColor: "#DDEDEA",
         paddingAll: "16px",
         contents: [
-          { type: "text", text: "📅 本週課程表", color: "#F6F3EE", weight: "bold", size: "lg" },
-          { type: "text", text: `${opts.teacherName} 老師　${opts.weekLabel}`, color: "#DDD8D0", size: "sm", margin: "xs" },
+          { type: "text", text: "本週課程表", color: "#244B52", weight: "bold", size: "xl" },
+          { type: "text", text: `${opts.teacherName} 老師　${opts.weekLabel}`, color: "#5F7F85", size: "sm", margin: "xs" },
         ],
       },
       body: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#F6F3EE",
-        paddingAll: "14px",
+        backgroundColor: "#FBFCFA",
+        paddingAll: "16px",
         spacing: "none",
         contents: [
           ...rows,
@@ -632,12 +945,16 @@ export function buildScheduleMessage(opts: {
       footer: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#F6F3EE",
+        backgroundColor: "#FBFCFA",
+        paddingTop: "0px",
+        paddingBottom: "14px",
+        paddingStart: "16px",
+        paddingEnd: "16px",
         contents: [{
           type: "text",
-          text: "祝教學順利，謝謝您！☕",
+          text: "祝教學順利，謝謝您",
           size: "xs",
-          color: "#8BA4B2",
+          color: "#8AA1A6",
           align: "center" as const,
         }],
       },
@@ -651,7 +968,7 @@ export function buildTwoMonthScheduleMessage(opts: {
   weeks: Array<{
     label: string;       // e.g. "5/12（一）~ 5/16（五）"
     month: string;       // e.g. "5月"
-    entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string }>;
+    entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string; confirmationSummary?: string }>;
   }>;
 }): object {
   const bubbles = opts.weeks.map((week) => ({
@@ -679,6 +996,7 @@ export function buildTwoMonthScheduleMessage(opts: {
             },
             { type: "text", text: `${courseLabel(e.courseType)}｜${e.school}`, size: "xs", color: "#2E2B27", weight: "bold", wrap: true },
             ...(e.address ? [{ type: "text", text: e.address, size: "xxs", color: "#9A9088", wrap: true }] : []),
+            ...(e.confirmationSummary ? [{ type: "text", text: e.confirmationSummary, size: "xxs", color: "#6B6358", wrap: true }] : []),
           ],
         }))
         : [{ type: "text", text: "本週無課", size: "sm", color: "#9A9088", align: "center" as const }],

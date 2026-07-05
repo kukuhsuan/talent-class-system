@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/prisma";
-import { courseLabel, normalizeDepartment } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory, normalizeDepartment } from "@/lib/courseMeta";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { coursePayrollHoursMap } from "@/lib/payrollHours";
+import { salaryHoursFromValues } from "@/lib/salaryHours";
 
 export const runtime = "nodejs";
 
@@ -26,21 +29,139 @@ function countOf(row: { studentCount?: number | null; studentCountA?: number | n
   return safeCount(row.studentCount);
 }
 
+function hasStudentCount(row: { studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
+  return row.studentCount != null || row.studentCountA != null || row.studentCountB != null;
+}
+
 function contentDisposition(year: number, month: number) {
   const paddedMonth = String(month).padStart(2, "0");
-  const asciiName = `school-attendance-${year}-${paddedMonth}.xlsx`;
-  const utf8Name = encodeURIComponent(`${year}年${month}月園所上課人數.xlsx`);
+  const asciiName = `school-lesson-details-${year}-${paddedMonth}.xlsx`;
+  const utf8Name = encodeURIComponent(`${year}年${month}月園所上課明細.xlsx`);
   return `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
 }
 
-function styleSheet(ws: ExcelJS.Worksheet) {
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+const thinBorder: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FFD7DEE8" } },
+  bottom: { style: "thin", color: { argb: "FFD7DEE8" } },
+  left: { style: "thin", color: { argb: "FFD7DEE8" } },
+  right: { style: "thin", color: { argb: "FFD7DEE8" } },
+};
+
+function cellText(value: ExcelJS.CellValue) {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") return "text" in value ? String(value.text) : String(value);
+  return String(value);
+}
+
+function fitColumns(ws: ExcelJS.Worksheet) {
+  ws.columns.forEach((column) => {
+    let width = 10;
+    column.eachCell?.({ includeEmpty: true }, (cell) => {
+      width = Math.max(width, cellText(cell.value).length + 3);
+    });
+    column.width = Math.min(32, width);
+  });
+}
+
+function styleSectionTitle(ws: ExcelJS.Worksheet, rowNumber: number, title: string, color: string) {
+  ws.mergeCells(rowNumber, 1, rowNumber, 6);
+  const row = ws.getRow(rowNumber);
+  row.height = 26;
+  const cell = row.getCell(1);
+  cell.value = title;
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
+  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 13 };
+  cell.alignment = { vertical: "middle", horizontal: "left" };
+  cell.border = thinBorder;
+}
+
+function styleSectionHeader(ws: ExcelJS.Worksheet, rowNumber: number) {
+  const header = ws.getRow(rowNumber);
+  header.height = 24;
+  header.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E40AF" } };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = thinBorder;
+  });
+}
+
+function styleSectionRows(ws: ExcelJS.Worksheet, startRow: number, endRow: number) {
+  let previousSchool = "";
+  let schoolGroup = -1;
+  const categoryFills: Record<string, string> = {
+    課內: "FFE8F5E9",
+    課後: "FFE8F0FE",
+    營隊: "FFF3E8FF",
+    Demo: "FFFFF1D6",
+  };
+
+  for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
+    const row = ws.getRow(rowNumber);
+    row.height = 21;
+    const school = cellText(row.getCell(2).value);
+    if (school !== previousSchool) {
+      schoolGroup += 1;
+      previousSchool = school;
+    }
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.alignment = { vertical: "middle" };
+      cell.border = thinBorder;
+      if (schoolGroup % 2 === 1) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      }
+    });
+
+    const categoryCell = row.getCell(5);
+    const category = cellText(categoryCell.value);
+    categoryCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: categoryFills[category] ?? "FFF1F5F9" },
+    };
+    categoryCell.font = { bold: true };
+    categoryCell.alignment = { vertical: "middle", horizontal: "center" };
+    row.getCell(6).alignment = { vertical: "middle", horizontal: "right" };
+  }
+}
+
+function formatMetric(value: number) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+}
+
+function styleSummarySheet(ws: ExcelJS.Worksheet) {
+  styleSectionHeader(ws, 1);
+  let previousSchool = "";
+  let schoolGroup = -1;
+
+  for (let rowNumber = 2; rowNumber <= ws.rowCount; rowNumber += 1) {
+    const row = ws.getRow(rowNumber);
+    row.height = 34;
+    const school = cellText(row.getCell(1).value);
+    if (school !== previousSchool) {
+      schoolGroup += 1;
+      previousSchool = school;
+    }
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.alignment = { vertical: "middle", wrapText: true };
+      cell.border = thinBorder;
+      if (schoolGroup % 2 === 1) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      }
+    });
+    row.getCell(3).alignment = { vertical: "middle", horizontal: "center" };
+    row.getCell(6).alignment = { vertical: "middle", horizontal: "right", wrapText: true };
+  }
+
   ws.views = [{ state: "frozen", ySplit: 1 }];
   ws.autoFilter = {
     from: { row: 1, column: 1 },
-    to: { row: 1, column: ws.columnCount },
+    to: { row: 1, column: 6 },
   };
+  fitColumns(ws);
+  ws.getColumn(5).width = 48;
+  ws.getColumn(6).width = Math.max(ws.getColumn(6).width ?? 10, 18);
 }
 
 export async function GET(req: NextRequest) {
@@ -73,14 +194,30 @@ export async function GET(req: NextRequest) {
     studentCount: number | null;
     studentCountA: number | null;
     studentCountB: number | null;
+    category: string | null;
+    hours: number | null;
+    isPayrollLocked?: boolean | null;
+    reportContent?: string | null;
+    reportSentAt?: Date | string | null;
     actualTeacher: { name: string } | null;
     course: {
+      id: number;
       school: string | null;
+      region: string | null;
       courseType: string | null;
       department: string | null;
+      time: string | null;
+      category: string | null;
       schoolRel: { type: string } | null;
     } | null;
   }>;
+
+  const scheduledTimes = format === "xlsx"
+    ? await attendanceScheduledTimeMap(records.map((record) => record.id))
+    : new Map<number, string>();
+  const coursePayrollHours = format === "xlsx"
+    ? await coursePayrollHoursMap(records.flatMap((record) => record.course?.id ? [record.course.id] : []))
+    : new Map<number, number | null>();
 
   const rows = records
     .map((r) => {
@@ -90,6 +227,21 @@ export async function GET(req: NextRequest) {
       const schoolType = course?.schoolRel?.type
         ? normalizeDepartment(course.schoolRel.type)
         : (course?.department ? normalizeDepartment(course.department) : "未分類");
+      const category = normalizeCategory(course?.category ?? r.category);
+      const time = effectiveAttendanceTime({
+        scheduledTime: scheduledTimes.get(r.id),
+        courseTime: safeText(course?.time),
+        attendanceHours: r.hours,
+        isPayrollLocked: r.isPayrollLocked,
+        reportContent: r.reportContent,
+        reportSentAt: r.reportSentAt,
+        studentCount: r.studentCount,
+        studentCountA: r.studentCountA,
+        studentCountB: r.studentCountB,
+      });
+      const payrollHours = course?.id
+        ? salaryHoursFromValues(r.hours, coursePayrollHours.get(course.id), time)
+        : null;
       return {
         id: r.id,
         school: rawSchool,
@@ -98,7 +250,11 @@ export async function GET(req: NextRequest) {
         courseName: courseLabel(rawCourseType),
         date: safeDate(r.date),
         studentCount: countOf(r),
+        hasStudentCount: hasStudentCount(r),
         teacherName: safeText(r.actualTeacher?.name, "未填老師"),
+        category,
+        time,
+        payrollHours,
       };
     })
     .filter((r) => !type || r.schoolType === type);
@@ -120,108 +276,153 @@ export async function GET(req: NextRequest) {
   }
 
   if (format === "xlsx") {
-    const detailRows = rows
+    const sortLessonRows = <T extends {
+      school: string;
+      date: string;
+      courseName: string;
+      teacherName: string;
+    }>(lessonRows: T[]) => lessonRows.sort((a, b) => (
+      a.school.localeCompare(b.school, "zh-Hant")
+      || a.date.localeCompare(b.date)
+      || a.courseName.localeCompare(b.courseName, "zh-Hant")
+      || a.teacherName.localeCompare(b.teacherName, "zh-Hant")
+    ));
+
+    const inSchoolRows = sortLessonRows(rows
+      .filter((row) => row.category === "課內")
       .map((row) => ({
+        date: row.date,
         school: row.school,
         courseName: row.courseName,
         teacherName: row.teacherName,
+        category: row.category,
+        metric: !row.payrollHours || row.payrollHours.needsReview
+          ? "需人工確認"
+          : row.payrollHours.payableHours,
+      })));
+    const afterSchoolRows = sortLessonRows(rows
+      .filter((row) => row.category !== "課內")
+      .map((row) => ({
         date: row.date,
-        studentCount: safeCount(row.studentCount),
-        lessonCount: 1,
-      }))
+        school: row.school,
+        courseName: row.courseName,
+        teacherName: row.teacherName,
+        category: row.category,
+        metric: row.hasStudentCount ? safeCount(row.studentCount) : "未填",
+      })));
+
+    const summaryRows = Array.from(rows.reduce<Map<string, {
+      school: string;
+      courseName: string;
+      category: string;
+      teacherName: string;
+      details: Array<{ date: string; metric: number | null; needsReview: boolean }>;
+    }>>((groups, row) => {
+      const key = JSON.stringify([row.school, row.courseName, row.category, row.teacherName]);
+      const group = groups.get(key) ?? {
+        school: row.school,
+        courseName: row.courseName,
+        category: row.category,
+        teacherName: row.teacherName,
+        details: [],
+      };
+      const isInSchool = row.category === "課內";
+      group.details.push({
+        date: row.date,
+        metric: isInSchool
+          ? row.payrollHours?.payableHours ?? null
+          : row.hasStudentCount ? safeCount(row.studentCount) : null,
+        needsReview: isInSchool
+          ? !row.payrollHours || row.payrollHours.needsReview
+          : !row.hasStudentCount,
+      });
+      groups.set(key, group);
+      return groups;
+    }, new Map()).values())
+      .map((group) => {
+        const isInSchool = group.category === "課內";
+        const sortedDetails = group.details.sort((a, b) => a.date.localeCompare(b.date));
+        const validTotal = sortedDetails.reduce((sum, detailRow) => (
+          sum + (detailRow.needsReview || detailRow.metric == null ? 0 : detailRow.metric)
+        ), 0);
+        const missingCount = sortedDetails.filter((detailRow) => detailRow.needsReview || detailRow.metric == null).length;
+        const unit = isInSchool ? "小時" : "人";
+        const totalText = `${formatMetric(validTotal)}${unit}${missingCount ? `（另有${missingCount}筆需確認）` : ""}`;
+
+        return {
+          school: group.school,
+          courseName: group.courseName,
+          category: group.category,
+          teacherName: group.teacherName,
+          dateDetails: sortedDetails.map((detailRow) => (
+            detailRow.needsReview || detailRow.metric == null
+              ? `${detailRow.date}：${isInSchool ? "需人工確認" : "未填"}`
+              : `${detailRow.date}：${formatMetric(detailRow.metric)}${unit}`
+          )).join("、"),
+          monthlyTotal: totalText,
+        };
+      })
       .sort((a, b) => (
         a.school.localeCompare(b.school, "zh-Hant")
         || a.courseName.localeCompare(b.courseName, "zh-Hant")
-        || a.date.localeCompare(b.date)
         || a.teacherName.localeCompare(b.teacherName, "zh-Hant")
+        || a.category.localeCompare(b.category, "zh-Hant")
       ));
 
-    const summaryRows = Object.values(detailRows.reduce<Record<string, {
-      school: string;
-      courseName: string;
-      teacherNames: Set<string>;
-      dates: Set<string>;
-      studentCount: number;
-      lessonCount: number;
-    }>>((acc, row) => {
-      const key = `${row.school}::${row.courseName}`;
-      if (!acc[key]) {
-        acc[key] = {
-          school: row.school,
-          courseName: row.courseName,
-          teacherNames: new Set<string>(),
-          dates: new Set<string>(),
-          studentCount: 0,
-          lessonCount: 0,
-        };
-      }
-      acc[key].studentCount += row.studentCount;
-      acc[key].lessonCount += row.lessonCount;
-      if (row.teacherName) acc[key].teacherNames.add(row.teacherName);
-      if (row.date) acc[key].dates.add(row.date);
-      return acc;
-    }, {})).map((row) => ({
-      school: row.school,
-      courseName: row.courseName,
-      teacherName: Array.from(row.teacherNames).join("、") || "未填老師",
-      dates: Array.from(row.dates).sort().join("、"),
-      studentCount: row.studentCount,
-      lessonCount: row.lessonCount,
-    })).sort((a, b) => (
-      a.school.localeCompare(b.school, "zh-Hant")
-      || a.courseName.localeCompare(b.courseName, "zh-Hant")
-    ));
-
-    if (summaryRows.length === 0) {
-      summaryRows.push({
-        school: school || "全部園所",
-        courseName: courseType ? courseLabel(courseType) : "全部課程",
-        teacherName: "未填老師",
-        dates: "",
-        studentCount: total,
-        lessonCount: totalLessons,
-      });
-    }
-
     const wb = new ExcelJS.Workbook();
-    const summarySheet = wb.addWorksheet("園所課程統計");
+    const summarySheet = wb.addWorksheet("園所課程總表");
     summarySheet.columns = [
       { header: "園所名稱", key: "school", width: 22 },
       { header: "課程名稱", key: "courseName", width: 16 },
-      { header: "出席總人數", key: "studentCount", width: 12 },
-      { header: "堂數", key: "lessonCount", width: 8 },
-      { header: "老師", key: "teacherName", width: 22 },
-      { header: "上課日期", key: "dates", width: 42 },
+      { header: "類別", key: "category", width: 10 },
+      { header: "老師", key: "teacherName", width: 16 },
+      { header: "日期明細", key: "dateDetails", width: 48 },
+      { header: "本月合計", key: "monthlyTotal", width: 18 },
     ];
     summarySheet.addRows(summaryRows);
-    summarySheet.addRow({});
-    summarySheet.addRow({ school: "本月總計", studentCount: total, lessonCount: totalLessons });
-    summarySheet.getColumn("studentCount").numFmt = "0";
-    summarySheet.getColumn("lessonCount").numFmt = "0";
-    styleSheet(summarySheet);
+    styleSummarySheet(summarySheet);
 
-    const detailSheet = wb.addWorksheet("日期明細");
+    const detailSheet = wb.addWorksheet("園所上課明細");
     detailSheet.columns = [
-      { header: "園所名稱", key: "school", width: 22 },
-      { header: "課程名稱", key: "courseName", width: 16 },
-      { header: "日期", key: "date", width: 14 },
-      { header: "出席人數", key: "studentCount", width: 10 },
-      { header: "老師", key: "teacherName", width: 14 },
-      { header: "堂數", key: "lessonCount", width: 8 },
+      { key: "date", width: 14 },
+      { key: "school", width: 22 },
+      { key: "courseName", width: 16 },
+      { key: "teacherName", width: 16 },
+      { key: "category", width: 10 },
+      { key: "metric", width: 14 },
     ];
-    detailSheet.addRows(detailRows.length > 0 ? detailRows : [{
-      school: school || "全部園所",
-      courseName: courseType ? courseLabel(courseType) : "全部課程",
-      date: "",
-      studentCount: total,
-      teacherName: "未填老師",
-      lessonCount: totalLessons,
-    }]);
-    detailSheet.addRow({});
-    detailSheet.addRow({ school: "本月總計", studentCount: total, lessonCount: totalLessons });
-    detailSheet.getColumn("studentCount").numFmt = "0";
-    detailSheet.getColumn("lessonCount").numFmt = "0";
-    styleSheet(detailSheet);
+    const headers = ["日期", "園所名稱", "課程名稱", "老師", "類別", "人數 / 時數"];
+    const addSection = (
+      title: string,
+      titleColor: string,
+      lessonRows: Array<{
+        date: string;
+        school: string;
+        courseName: string;
+        teacherName: string;
+        category: string;
+        metric: number | string;
+      }>,
+    ) => {
+      const titleRowNumber = detailSheet.rowCount + 1;
+      detailSheet.addRow([title]);
+      styleSectionTitle(detailSheet, titleRowNumber, title, titleColor);
+
+      const headerRowNumber = detailSheet.rowCount + 1;
+      detailSheet.addRow(headers);
+      styleSectionHeader(detailSheet, headerRowNumber);
+
+      const startRow = detailSheet.rowCount + 1;
+      detailSheet.addRows(lessonRows);
+      const endRow = detailSheet.rowCount;
+      if (startRow <= endRow) styleSectionRows(detailSheet, startRow, endRow);
+    };
+
+    addSection("課內課", "FF2E7D32", inSchoolRows);
+    detailSheet.addRow([]);
+    addSection("課後課 / 營隊", "FF6D28D9", afterSchoolRows);
+    detailSheet.views = [{ state: "frozen", ySplit: 2 }];
+    fitColumns(detailSheet);
 
     const body = await wb.xlsx.writeBuffer();
     return new NextResponse(body, {

@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/cron/reminder?dayOffset=0",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/reminder?dayOffset=1",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/cron/backup",
       "schedule": "0 18 * * *"
     }

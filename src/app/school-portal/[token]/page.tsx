@@ -2,9 +2,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
+import { ABILITY_ICON_MAP, CORE_ABILITIES, parseAbilities, type CoreAbility } from "@/lib/abilityMap";
+import { courseBearImage } from "@/lib/courseBearMap";
 
 type PortalData = {
   school: { name: string; type: string; region: string; address: string; contact: string; phone: string };
+  courseConfirmation?: CourseConfirmation;
+  courseConfirmationHistory?: Array<{ id: number; teacherName: string; note: string; createdAt: string }>;
+  confirmationTerm?: { academicYear: number; semester: string; label: string; westernLabel: string };
   year: number;
   month: number;
   summary: { reports: number; lessons: number; totalPeople: number; assessments: number };
@@ -21,6 +26,20 @@ type PortalData = {
 };
 
 type Tab = "home" | "outcomes" | "progress" | "certificates";
+type CourseConfirmation = {
+  smallClassCount?: string;
+  middleClassCount?: string;
+  bigClassCount?: string;
+  location?: string;
+  otherLocation?: string;
+  rainyLocation?: string;
+  teachingStyles?: string[];
+  classNotes?: string;
+  otherReminders?: string;
+  submittedAt?: string | null;
+  reopenedAt?: string | null;
+  canSchoolEdit?: boolean;
+};
 
 const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: "home", label: "首頁", icon: "⌂" },
@@ -29,22 +48,25 @@ const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: "certificates", label: "證書", icon: "◇" },
 ];
 
-type SkillMeta = { icon: string; description: string; image?: string };
-
-const SKILL_MAP: Record<string, SkillMeta> = {
-  專注力: { icon: "◎", image: "/skill-cards/focus.png", description: "提升專注判斷" },
-  團隊合作: { icon: "◇", image: "/skill-cards/teamwork.png", description: "練習合作互動" },
-  團隊互動: { icon: "◇", image: "/skill-cards/teamwork.png", description: "培養互動默契" },
-  肢體協調: { icon: "🏃", image: "/skill-cards/body-coordination.png", description: "提升動作流暢" },
-  肌肉發展: { icon: "💪", image: "/skill-cards/muscle.png", description: "強化基礎肌力" },
-  規則理解: { icon: "📘", image: "/skill-cards/rules.png", description: "理解課堂規則" },
-  情緒控制: { icon: "😊", image: "/skill-cards/confidence.png", description: "練習穩定參與" },
-  手眼協調: { icon: "👀", image: "/skill-cards/focus.png", description: "提升反應配合" },
-  反應力: { icon: "↯", image: "/skill-cards/reaction.png", description: "提升敏銳反應" },
-  敏捷速度: { icon: "↗", description: "練習快速移動" },
-  自信心建立: { icon: "♡", image: "/skill-cards/confidence.png", description: "建立自信表現" },
-  自信表現: { icon: "♡", image: "/skill-cards/confidence.png", description: "建立自信表現" },
+const LOCATION_OPTIONS = ["教室", "禮堂 / 活動中心", "操場", "其他"];
+const TEACHING_STYLE_OPTIONS = ["活潑互動", "注重秩序", "依班級狀況調整"];
+const EMPTY_CONFIRMATION: CourseConfirmation = {
+  smallClassCount: "",
+  middleClassCount: "",
+  bigClassCount: "",
+  location: "",
+  otherLocation: "",
+  rainyLocation: "",
+  teachingStyles: [],
+  classNotes: "",
+  otherReminders: "",
 };
+
+type SkillMeta = { image: string };
+
+const SKILL_MAP: Record<CoreAbility, SkillMeta> = Object.fromEntries(
+  CORE_ABILITIES.map((ability) => [ability, { image: ABILITY_ICON_MAP[ability] }]),
+) as Record<CoreAbility, SkillMeta>;
 
 export default function SchoolPortalPage() {
   const params = useParams<{ token: string }>();
@@ -55,6 +77,9 @@ export default function SchoolPortalPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState<CourseConfirmation>(EMPTY_CONFIRMATION);
+  const [savingConfirmation, setSavingConfirmation] = useState(false);
+  const [confirmationMessage, setConfirmationMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +92,12 @@ export default function SchoolPortalPage() {
           if (!res.ok) throw new Error(body.error || "讀取園所資料失敗");
           return body;
         })
-        .then((body) => { if (!cancelled) setData(body); })
+        .then((body) => {
+          if (!cancelled) {
+            setData(body);
+            setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? {}) });
+          }
+        })
         .catch((e) => { if (!cancelled) setError((e as Error).message || "讀取園所資料失敗"); })
         .finally(() => { if (!cancelled) setLoading(false); });
     });
@@ -79,6 +109,51 @@ export default function SchoolPortalPage() {
   const recentReports = useMemo(() => (data?.reports ?? []).slice(0, 3), [data]);
   const learningMaps = useMemo(() => buildLearningMaps(data?.reports ?? [], data?.curriculum ?? []), [data]);
   const skillMap = useMemo(() => buildSkillMap(data?.skillCards ?? []), [data]);
+
+  async function saveConfirmation() {
+    if (confirmation.canSchoolEdit === false) return;
+    const confirmed = window.confirm("送出後園所端將無法自行修改，若資料有異動，請聯繫行政協助調整。\n確定要送出嗎？");
+    if (!confirmed) return;
+    setSavingConfirmation(true);
+    setConfirmationMessage("");
+    try {
+      const res = await fetch(`/api/school-portal/${encodeURIComponent(params.token)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseConfirmation: confirmation, confirmationTerm: data?.confirmationTerm }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "送出失敗");
+      setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? confirmation) });
+      setData((current) => current ? { ...current, ...body } : current);
+      setConfirmationMessage("已送出確認");
+    } catch (e) {
+      setConfirmationMessage((e as Error).message || "送出失敗");
+    } finally {
+      setSavingConfirmation(false);
+    }
+  }
+
+  async function copyPreviousConfirmation() {
+    setSavingConfirmation(true);
+    setConfirmationMessage("");
+    try {
+      const res = await fetch(`/api/school-portal/${encodeURIComponent(params.token)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "copyPrevious", confirmationTerm: data?.confirmationTerm }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "複製失敗");
+      setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? {}) });
+      setData((current) => current ? { ...current, ...body } : current);
+      setConfirmationMessage("已複製上一學期資料，可再微調後送出");
+    } catch (e) {
+      setConfirmationMessage((e as Error).message || "複製失敗");
+    } finally {
+      setSavingConfirmation(false);
+    }
+  }
 
   if (error) {
     return <div className="min-h-screen bg-[#F2F8FF] px-5 py-16 text-center text-rose-500">{error}</div>;
@@ -133,6 +208,20 @@ export default function SchoolPortalPage() {
           ) : (
             <>
               <Hero data={data} year={year} month={month} setYear={setYear} setMonth={setMonth} />
+
+              <section className="mt-5">
+                <CourseConfirmationForm
+                  value={confirmation}
+                  onChange={setConfirmation}
+                  onSave={saveConfirmation}
+                  onCopyPrevious={copyPreviousConfirmation}
+                  saving={savingConfirmation}
+                  message={confirmationMessage}
+                  termLabel={data.confirmationTerm?.label ?? ""}
+                  westernLabel={data.confirmationTerm?.westernLabel ?? ""}
+                  locked={confirmation.canSchoolEdit === false}
+                />
+              </section>
 
               <section className="mt-5">
                 <PanelTitle title="本學期進度" subtitle="目前學到哪、已完成多少堂，一眼就能看懂。" />
@@ -228,6 +317,165 @@ function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year
   );
 }
 
+function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, saving, message, termLabel, westernLabel, locked }: {
+  value: CourseConfirmation;
+  onChange: (value: CourseConfirmation) => void;
+  onSave: () => void;
+  onCopyPrevious: () => void;
+  saving: boolean;
+  message: string;
+  termLabel: string;
+  westernLabel: string;
+  locked: boolean;
+}) {
+  const update = (patch: Partial<CourseConfirmation>) => onChange({ ...value, ...patch });
+  const toggleStyle = (style: string) => {
+    const current = value.teachingStyles ?? [];
+    update({
+      teachingStyles: current.includes(style)
+        ? current.filter((item) => item !== style)
+        : [...current, style],
+    });
+  };
+  return (
+    <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-black text-slate-900">開課前確認</h2>
+          {locked && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">已送出確認</span>}
+        </div>
+        {termLabel && <p className="mt-1 text-sm font-black text-blue-700">{termLabel}</p>}
+        {westernLabel && <p className="mt-0.5 text-xs text-slate-500">{westernLabel}</p>}
+        <p className="mt-2 text-sm text-slate-500">{locked ? "如需修改，請聯繫行政協助調整。" : "簡單填寫即可，讓老師上課前快速掌握重點。"}</p>
+      </div>
+
+      {locked ? (
+        <CourseConfirmationReadOnly value={value} />
+      ) : (
+      <div className="space-y-4">
+        <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
+          <div className="mb-3 text-sm font-bold text-slate-700">班級人數</div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <NumberField label="小班" value={value.smallClassCount ?? ""} onChange={(v) => update({ smallClassCount: v })} />
+            <NumberField label="中班" value={value.middleClassCount ?? ""} onChange={(v) => update({ middleClassCount: v })} />
+            <NumberField label="大班" value={value.bigClassCount ?? ""} onChange={(v) => update({ bigClassCount: v })} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
+          <div className="mb-3 text-sm font-bold text-slate-700">上課地點</div>
+          <div className="grid gap-2 sm:grid-cols-4">
+            {LOCATION_OPTIONS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => update({ location: item })}
+                className={`rounded-xl border px-3 py-2 text-sm font-bold ${value.location === item ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          {value.location === "其他" && (
+            <input value={value.otherLocation ?? ""} onChange={(e) => update({ otherLocation: e.target.value })} placeholder="其他地點" className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          )}
+          <input value={value.rainyLocation ?? ""} onChange={(e) => update({ rainyLocation: e.target.value })} placeholder="雨天備用地點" className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400" />
+        </div>
+
+        <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
+          <div className="mb-3 text-sm font-bold text-slate-700">希望老師教學方式</div>
+          <div className="flex flex-wrap gap-2">
+            {TEACHING_STYLE_OPTIONS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => toggleStyle(item)}
+                className={`rounded-full border px-3 py-2 text-sm font-bold ${value.teachingStyles?.includes(item) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <SimpleTextarea label="班級注意事項" value={value.classNotes ?? ""} onChange={(v) => update({ classNotes: v })} placeholder="例如：班級較活潑、較害羞、需注意特殊需求幼兒等" />
+        <SimpleTextarea label="其他提醒" value={value.otherReminders ?? ""} onChange={(v) => update({ otherReminders: v })} placeholder="例如：入校動線、停車位置、器材擺放、聯絡窗口等" />
+      </div>
+      )}
+
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        {locked ? (
+          <button disabled className="rounded-xl bg-emerald-50 px-5 py-3 text-sm font-black text-emerald-700">
+            已送出確認
+          </button>
+        ) : (
+          <>
+            <button disabled={saving} onClick={onSave} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white disabled:opacity-50">
+              {saving ? "送出中..." : "送出確認"}
+            </button>
+            <button disabled={saving} onClick={onCopyPrevious} className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 disabled:opacity-50">
+              複製上一學期資料
+            </button>
+          </>
+        )}
+        {message && <div className={`text-sm font-bold ${message.includes("失敗") || message.includes("無效") || message.includes("已送出，如需修改") ? "text-rose-500" : "text-emerald-600"}`}>{message}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CourseConfirmationReadOnly({ value }: { value: CourseConfirmation }) {
+  const people = [
+    `小班 ${value.smallClassCount || "0"} 人`,
+    `中班 ${value.middleClassCount || "0"} 人`,
+    `大班 ${value.bigClassCount || "0"} 人`,
+  ].join("｜");
+  const location = value.location === "其他" ? (value.otherLocation || "其他") : (value.location || "未填寫");
+  const rows = [
+    { label: "班級人數", value: people },
+    { label: "上課地點", value: location },
+    { label: "雨天備用地點", value: value.rainyLocation || "未填寫" },
+    { label: "教學方式", value: value.teachingStyles?.length ? value.teachingStyles.join("、") : "未填寫" },
+    { label: "班級注意事項", value: value.classNotes || "未填寫" },
+    { label: "其他提醒", value: value.otherReminders || "未填寫" },
+  ];
+  return (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-sm font-black text-slate-800">已送出開課前確認</div>
+      <div className="mt-3 grid gap-2">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-xl bg-white px-3 py-2 text-sm leading-6 ring-1 ring-slate-100">
+            <span className="font-black text-slate-700">{row.label}：</span>
+            <span className="text-slate-600">{row.value}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-sm font-bold text-slate-500">如需修改，請聯繫行政協助調整。</p>
+    </div>
+  );
+}
+
+function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="text-sm font-bold text-slate-600">
+      {label}
+      <div className="mt-1 flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <input inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))} className="min-w-0 flex-1 bg-transparent text-base font-black text-slate-800 outline-none" />
+        <span className="text-sm text-slate-400">人</span>
+      </div>
+    </label>
+  );
+}
+
+function SimpleTextarea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <label className="block rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-700 sm:p-4">
+      {label}
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} placeholder={placeholder} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-blue-400" />
+    </label>
+  );
+}
+
 type LearningMap = {
   courseName: string;
   currentLesson: number;
@@ -273,15 +521,9 @@ function extractLesson(value: string) {
   return match ? Number(match[1]) : 0;
 }
 
-function buildSkillMap(rows: PortalData["skillCards"]) {
-  return rows.reduce<Record<string, SkillMeta>>((acc, row) => {
-    acc[row.name] = {
-      icon: row.icon || SKILL_MAP[row.name]?.icon || "•",
-      image: row.imageUrl || SKILL_MAP[row.name]?.image,
-      description: row.description || SKILL_MAP[row.name]?.description || "",
-    };
-    return acc;
-  }, { ...SKILL_MAP });
+function buildSkillMap(rows: PortalData["skillCards"]): Record<string, SkillMeta> {
+  void rows;
+  return { ...SKILL_MAP } as Record<string, SkillMeta>;
 }
 
 function OutcomeList({ rows, skillMap }: { rows: PortalData["reports"]; skillMap: Record<string, SkillMeta> }) {
@@ -300,15 +542,16 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   const [copied, setCopied] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
   const [shareImageUrl, setShareImageUrl] = useState("");
-  const skills = parseSkillFocus(row.skillFocus || reportField(row.reportContent, "能力培養") || row.aiSkillFocus);
+  const skills = parseAbilities(row.skillFocus || reportField(row.reportContent, "能力培養") || row.aiSkillFocus);
   const progressText = reportField(row.reportContent, "課程進度") || reportField(row.reportContent, "訓練內容") || cleanProgressText(row.reportContent);
   const focusText = reportField(row.reportContent, "本堂重點");
   const learningPoints = focusText.split(/\n|、|，/).map((item) => item.trim()).filter(Boolean).slice(0, 3);
   const outcomeText = reportField(row.reportContent, "成果回報") || row.aiTeachingNote || row.aiSummary || "";
-  const mainText = outcomeText || "本堂課已完成成果回報。";
+  const mainText = outcomeText || progressText || "本堂課已完成成果回報。";
   const shareText = buildParentShareText(row, mainText, skills);
   const canExpand = mainText.length > 95;
   const lesson = extractLesson(progressText);
+  const courseBear = courseBearImage(`${row.courseName} ${progressText}`);
 
   async function copyShareText() {
     try {
@@ -348,17 +591,22 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
             <span className="hidden w-fit rounded-2xl bg-slate-50 px-4 py-2 text-sm font-black text-slate-500 ring-1 ring-slate-100 sm:inline-flex">{lesson ? `進度第 ${lesson} 堂` : "成果紀錄"}</span>
           </div>
 
-          {row.representativePhotoUrl && (
-            <div className="mt-3 overflow-hidden rounded-[20px] border border-slate-200 bg-slate-50 sm:mt-5 sm:rounded-[22px]">
-              <Image src={row.representativePhotoUrl} alt={`${row.courseName}代表照片`} width={960} height={540} sizes="(max-width: 640px) 92vw, (max-width: 1024px) 70vw, 760px" loading="lazy" quality={68} className="h-[240px] w-full object-cover sm:h-72" />
+          <div className="mt-3 grid overflow-hidden rounded-[18px] border border-blue-100 bg-[#f5f8fd] sm:mt-5 sm:grid-cols-[minmax(0,1fr)_220px] sm:rounded-[20px]">
+            <div className="p-4 text-sm leading-7 text-[#142452] sm:p-6 sm:text-[15px] sm:leading-8">
+              <div className="mb-3 text-base font-black text-[#315E9F] sm:text-lg">今日課堂紀錄</div>
+              <p className={`whitespace-pre-line ${expanded ? "" : "line-clamp-6"}`}>{mainText}</p>
+              {canExpand && (
+                <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-3 text-sm font-black text-blue-600">
+                  {expanded ? "收合內容" : "查看更多"}
+                </button>
+              )}
             </div>
-          )}
-
-          {progressText && (
-            <div className="mt-3 rounded-[18px] border border-slate-100 bg-slate-50 px-3 py-2 text-sm font-black text-[#142452] sm:mt-5">
-              今天上了：{progressText}
-            </div>
-          )}
+            {courseBear && (
+              <div className="flex min-h-[190px] items-center justify-center border-t border-blue-100 bg-white/70 p-3 sm:min-h-[240px] sm:border-l sm:border-t-0">
+                <Image data-course-bear-id={String(row.id)} src={courseBear} alt={`${row.courseName}優比熊`} width={420} height={420} sizes="(max-width: 640px) 55vw, 220px" loading="lazy" quality={70} className="h-44 w-44 object-contain sm:h-52 sm:w-52" />
+              </div>
+            )}
+          </div>
 
           {learningPoints.length > 0 && (
             <div className="mt-3 rounded-[18px] border border-blue-100 bg-white p-3 sm:mt-5 sm:rounded-[20px] sm:p-4">
@@ -372,15 +620,6 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
               </div>
             </div>
           )}
-
-          <div className="mt-3 rounded-[18px] border border-blue-100 bg-[#f8fafc] p-3 text-sm leading-7 text-[#142452] sm:mt-5 sm:rounded-[20px] sm:p-4 sm:text-[15px] sm:leading-8">
-            <p className={`whitespace-pre-line ${expanded ? "" : "line-clamp-3"}`}>{mainText}</p>
-            {canExpand && (
-              <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 text-sm font-black text-blue-600">
-                {expanded ? "收合內容" : "查看更多"}
-              </button>
-            )}
-          </div>
 
           <SkillCards skills={skills} skillMap={skillMap} />
 
@@ -418,17 +657,6 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
       </div>
     </article>
   );
-}
-
-function parseSkillFocus(value: string) {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed.map(String).map((item) => item.trim()).filter(Boolean);
-  } catch {
-    // Existing records may be plain text; split them below.
-  }
-  return value.split(/[、,，\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
 function reportField(content: string, label: string) {
@@ -627,14 +855,10 @@ async function createParentShareImage({
   mainText: string;
   skillMap: Record<string, SkillMeta>;
 }) {
-  try {
-    return await renderShareCanvas({ row, skills, mainText, skillMap, includePhoto: true });
-  } catch {
-    return await renderShareCanvas({ row, skills, mainText, skillMap, includePhoto: false });
-  }
+  return renderShareCanvas({ row, skills, mainText, skillMap });
 }
 
-async function renderShareCanvas({ row, skills, mainText, skillMap, includePhoto }: { row: PortalData["reports"][number]; skills: string[]; mainText: string; skillMap: Record<string, SkillMeta>; includePhoto: boolean }) {
+async function renderShareCanvas({ row, skills, mainText, skillMap }: { row: PortalData["reports"][number]; skills: string[]; mainText: string; skillMap: Record<string, SkillMeta> }) {
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   canvas.height = 1350;
@@ -651,11 +875,8 @@ async function renderShareCanvas({ row, skills, mainText, skillMap, includePhoto
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  const header = ctx.createLinearGradient(20, 20, 1060, 20);
-  header.addColorStop(0, "#60A5FA");
-  header.addColorStop(1, "#2563EB");
-  ctx.fillStyle = header;
-  roundRect(ctx, 20, 20, 1040, 205, 34);
+  ctx.fillStyle = "#4F86D9";
+  roundRect(ctx, 20, 20, 1040, 175, 34);
   ctx.fill();
 
   const logo = await loadCanvasImage(`${window.location.origin}/upbear-logo.png`).catch(() => null);
@@ -673,171 +894,123 @@ async function renderShareCanvas({ row, skills, mainText, skillMap, includePhoto
 
   ctx.fillStyle = "#FFFFFF";
   ctx.font = "900 52px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("WaysLeader AI", 220, 112);
-  ctx.font = "800 34px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("幼兒園學習成果分享卡", 220, 162);
+  ctx.fillText("WaysLeader AI", 220, 100);
+  ctx.font = "800 30px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText("幼兒園學習成果卡", 220, 145);
 
-  ctx.font = "800 28px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText(`📅 ${row.date.replaceAll("-", ".")}`, 805, 100);
+  ctx.font = "800 25px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText(row.date.replaceAll("-", "."), 820, 84);
   ctx.fillStyle = "#FFFFFF";
-  roundRect(ctx, 806, 132, 188, 52, 26);
+  roundRect(ctx, 790, 108, 210, 48, 24);
   ctx.fill();
-  ctx.fillStyle = "#2563EB";
-  ctx.font = "900 28px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText(row.courseName.slice(0, 5), 846, 167);
+  ctx.fillStyle = "#315E9F";
+  ctx.font = "900 23px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(row.category || row.department || "幼兒園課程", 895, 140);
+  ctx.textAlign = "start";
 
   ctx.fillStyle = "#FFFFFF";
-  roundRect(ctx, 20, 205, 1040, 1125, 32);
+  roundRect(ctx, 20, 175, 1040, 1155, 32);
   ctx.fill();
 
   ctx.fillStyle = "#142452";
-  ctx.font = "900 54px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText(row.courseName, 70, 305);
-  ctx.font = "700 29px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("今天的學習表現很棒！", 70, 360);
-
-  ctx.strokeStyle = "#A7CBFF";
-  ctx.lineWidth = 6;
-  ctx.setLineDash([4, 14]);
-  ctx.beginPath();
-  ctx.moveTo(70, 400);
-  ctx.lineTo(455, 400);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.fillStyle = "#3B82F6";
-  roundRect(ctx, 70, 438, 430, 64, 8);
-  ctx.fill();
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = "900 30px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("今天孩子學習", 142, 480);
-  ctx.font = "900 34px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText(courseEmoji(row.courseName), 104, 481);
+  ctx.font = "900 50px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText(row.courseName, 70, 260);
+  ctx.fillStyle = "#64748B";
+  ctx.font = "700 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText(`${row.teacherName}老師｜${row.time || "課程紀錄"}`, 70, 300);
 
   const points = shareLearningPoints(row, skills);
-  let pointY = 526;
+  ctx.fillStyle = "#F6F9FE";
+  roundRect(ctx, 70, 335, 570, 235, 24);
+  ctx.fill();
+  ctx.fillStyle = "#315E9F";
+  ctx.font = "900 27px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText("本堂課程內容", 102, 380);
+  let pointY = 405;
   points.forEach((point, index) => {
-    ctx.fillStyle = "#FFFFFF";
-    roundRect(ctx, 70, pointY, 430, 82, 41);
-    ctx.fill();
-    ctx.strokeStyle = "#EEF4FF";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = index === 0 ? "#FEE2E2" : index === 1 ? "#DBEAFE" : "#FEF3C7";
-    circle(ctx, 96, pointY + 15, 52);
+    ctx.fillStyle = ["#DCEBFF", "#E3F4EA", "#FFF0D6"][index] || "#DCEBFF";
+    circle(ctx, 102, pointY, 42);
     ctx.fill();
     ctx.fillStyle = "#142452";
-    ctx.font = "800 26px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText(stripLeadingIcon(point), 178, pointY + 51);
-    ctx.font = "900 30px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText(firstIcon(point), 110, pointY + 51);
-    pointY += 96;
+    ctx.font = "800 23px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+    ctx.fillText(stripLeadingIcon(point), 160, pointY + 30);
+    ctx.font = "900 22px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+    ctx.fillText(firstIcon(point), 111, pointY + 29);
+    pointY += 55;
   });
 
-  if (includePhoto && row.representativePhotoUrl) {
-    const photo = await loadCanvasImage(row.representativePhotoUrl);
-    ctx.save();
-    roundRect(ctx, 555, 280, 445, 585, 42);
-    ctx.clip();
-    drawCover(ctx, photo, 555, 280, 445, 585);
-    ctx.restore();
-  } else {
-    const photoGrad = ctx.createLinearGradient(555, 280, 1000, 865);
-    photoGrad.addColorStop(0, "#EFF6FF");
-    photoGrad.addColorStop(1, "#DCEBFF");
-    ctx.fillStyle = photoGrad;
-    roundRect(ctx, 555, 280, 445, 585, 42);
-    ctx.fill();
-    ctx.fillStyle = "#2563EB";
-    ctx.font = "900 96px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText(courseEmoji(row.courseName), 720, 575);
-  }
-
-  ctx.strokeStyle = "#FFFFFF";
-  ctx.lineWidth = 14;
-  roundRect(ctx, 555, 280, 445, 585, 42);
-  ctx.stroke();
-
-  ctx.fillStyle = "#EEF6FF";
-  roundRect(ctx, 70, 900, 940, 165, 28);
+  ctx.fillStyle = "#FFF9F0";
+  roundRect(ctx, 665, 335, 345, 235, 24);
   ctx.fill();
-  ctx.fillStyle = "#142452";
-  ctx.font = "700 27px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  drawWrappedText(ctx, shareStory(row, mainText), 108, 952, 800, 42, 3);
-  ctx.fillStyle = "#9ACB63";
-  ctx.beginPath();
-  ctx.ellipse(915, 1020, 70, 28, -0.1, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#EF4444";
-  ctx.font = "900 48px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("⛳", 885, 1012);
-
-  ctx.fillStyle = "#F8FBFF";
-  roundRect(ctx, 70, 1100, 545, 178, 26);
-  ctx.fill();
-  ctx.fillStyle = "#1D4ED8";
-  ctx.font = "900 30px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("能力培養", 112, 1140);
-  const shownSkills = skills.slice(0, 4);
-  for (let index = 0; index < shownSkills.length; index += 1) {
-    const skill = shownSkills[index];
-    const meta = skillMap[skill];
+  ctx.fillStyle = "#8A6845";
+  ctx.font = "900 27px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText("能力培養", 695, 380);
+  for (let index = 0; index < skills.slice(0, 4).length; index += 1) {
+    const skill = skills[index];
     const col = index % 2;
     const rowIndex = Math.floor(index / 2);
-    const cellX = 105 + col * 250;
-    const cellY = 1160 + rowIndex * 56;
-    const iconX = cellX;
-    const iconY = cellY + 2;
-    ctx.fillStyle = ["#DBEAFE", "#DCFCE7", "#F3E8FF", "#FEF3C7"][index % 4];
-    circle(ctx, iconX, iconY, 42);
-    ctx.fill();
+    const x = 695 + col * 150;
+    const y = 410 + rowIndex * 72;
+    const meta = skillMap[skill];
     if (meta?.image) {
-      const icon = await loadCanvasImage(meta.image).catch(() => null);
-      if (icon) {
+      const abilityImage = await loadCanvasImage(`${window.location.origin}${meta.image}`).catch(() => null);
+      if (abilityImage) {
         ctx.save();
-        circleClip(ctx, iconX, iconY, 42);
-        drawCover(ctx, icon, iconX, iconY, 42, 42);
+        circleClip(ctx, x, y, 45);
+        drawCover(ctx, abilityImage, x, y, 45, 45);
         ctx.restore();
-      } else {
-        ctx.fillStyle = "#2563EB";
-        ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-        ctx.fillText(meta.icon || "•", iconX + 8, iconY + 30);
       }
-    } else {
-      ctx.fillStyle = "#2563EB";
-      ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-      ctx.fillText(meta?.icon || "•", iconX + 8, iconY + 30);
     }
-    ctx.fillStyle = "#142452";
-    ctx.font = "800 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText(skill, cellX + 58, cellY + 34);
+    ctx.font = "800 19px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+    ctx.fillText(skill.slice(0, 5), x + 52, y + 29);
+  }
+
+  ctx.fillStyle = "#F3F7FD";
+  roundRect(ctx, 70, 600, 940, 535, 28);
+  ctx.fill();
+  ctx.fillStyle = "#315E9F";
+  ctx.font = "900 30px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText("今日課堂紀錄", 108, 650);
+  ctx.fillStyle = "#64748B";
+  ctx.font = "700 20px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText("老師回報", 108, 682);
+  ctx.fillStyle = "#142452";
+  ctx.font = "700 28px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  drawWrappedText(ctx, mainText, 108, 735, 525, 43, 9);
+
+  const bearPath = courseBearImage(`${row.courseName} ${row.reportContent}`);
+  if (bearPath) {
+    ctx.fillStyle = "#FFFFFF";
+    roundRect(ctx, 655, 685, 330, 410, 24);
+    ctx.fill();
+    const loadedBear = Array.from(document.images).find((image) => image.alt === `${row.courseName}優比熊`);
+    const optimizedBearPath = `/_next/image?url=${encodeURIComponent(bearPath)}&w=640&q=85`;
+    const bearImage = loadedBear?.complete && loadedBear.naturalWidth > 0
+      ? loadedBear
+      : await fetchCanvasImage(optimizedBearPath).catch(() => null);
+    if (bearImage) ctx.drawImage(bearImage, 675, 705, 290, 370);
   }
 
   const status = shortClassStatus(row.classStatus);
   if (status) {
-    ctx.fillStyle = "#F8FBFF";
-    roundRect(ctx, 640, 1100, 370, 178, 26);
+    ctx.fillStyle = "#FFF9F0";
+    roundRect(ctx, 70, 1160, 940, 105, 24);
     ctx.fill();
+    ctx.fillStyle = "#8A6845";
+    ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+    ctx.fillText("課堂狀況", 108, 1203);
     ctx.fillStyle = "#142452";
-    ctx.font = "900 30px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText("課堂狀況", 680, 1140);
-    ctx.fillStyle = "#FFFFFF";
-    roundRect(ctx, 680, 1168, 290, 82, 30);
-    ctx.fill();
-    ctx.fillStyle = "#142452";
-    ctx.font = "900 28px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText(status.title, 750, 1204);
-    ctx.font = "700 20px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillStyle = "#475569";
-    ctx.fillText(status.caption, 750, 1236);
-    ctx.font = "900 48px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-    ctx.fillText(status.icon, 696, 1231);
+    ctx.font = "900 27px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+    ctx.fillText(`${status.icon} ${status.title}`, 280, 1204);
+    ctx.fillStyle = "#64748B";
+    ctx.font = "700 21px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+    ctx.fillText(status.caption, 520, 1203);
   }
 
   ctx.fillStyle = "#64748B";
-  ctx.font = "700 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
-  ctx.fillText("用心陪伴・快樂學習・一起成長", 350, 1302);
+  ctx.font = "700 21px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
+  ctx.fillText("用心陪伴・快樂學習・一起成長", 372, 1302);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => {
@@ -902,11 +1075,20 @@ function shortClassStatus(value: string) {
 function loadCanvasImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    if (/^https?:\/\//.test(src) && !src.startsWith(window.location.origin)) {
+      img.crossOrigin = "anonymous";
+    }
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("圖片無法載入"));
     img.src = src;
   });
+}
+
+async function fetchCanvasImage(src: string) {
+  const response = await fetch(src, { cache: "reload" });
+  if (!response.ok) throw new Error("圖片無法載入");
+  const objectUrl = URL.createObjectURL(await response.blob());
+  return loadCanvasImage(objectUrl);
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -940,6 +1122,13 @@ function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: numb
   const sx = (img.naturalWidth - sw) / 2;
   const sy = (img.naturalHeight - sh) / 2;
   ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+function drawContain(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+  const width = img.naturalWidth * scale;
+  const height = img.naturalHeight * scale;
+  ctx.drawImage(img, x + (w - width) / 2, y + (h - height) / 2, width, height);
 }
 
 function drawWrappedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines = 99) {
@@ -984,11 +1173,7 @@ function SkillCards({ skills, skillMap }: { skills: string[]; skillMap: Record<s
           const meta = skillMap[skill];
           return (
             <div key={skill} className="flex aspect-square w-full flex-col items-center justify-center rounded-[20px] bg-[#f8fafc] p-3 text-center shadow-[0_8px_20px_rgba(30,64,175,0.04)] ring-1 ring-slate-200/80 sm:rounded-[24px] sm:p-5">
-              {meta?.image ? (
-                <Image src={meta.image} alt={skill} width={96} height={96} sizes="(max-width: 640px) 64px, 86px" loading="lazy" quality={70} className="h-16 w-16 rounded-full object-cover ring-4 ring-white shadow-sm sm:h-20 sm:w-20 lg:h-[86px] lg:w-[86px]" />
-              ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-4xl font-black text-blue-600 shadow-inner sm:h-20 sm:w-20 sm:text-5xl lg:h-[86px] lg:w-[86px]">{meta?.icon ?? "•"}</div>
-              )}
+              {meta?.image && <Image src={meta.image} alt={skill} width={96} height={96} sizes="(max-width: 640px) 64px, 86px" loading="lazy" quality={70} className="h-16 w-16 rounded-full object-cover shadow-sm sm:h-20 sm:w-20 lg:h-[86px] lg:w-[86px]" />}
               <div className="mt-2 text-sm font-black leading-tight text-[#142452] sm:mt-3 sm:text-lg">{skill}</div>
             </div>
           );

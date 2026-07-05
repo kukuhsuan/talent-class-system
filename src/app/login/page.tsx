@@ -30,7 +30,8 @@ export default function LoginPage() {
         return;
       }
 
-      setError("帳號或密碼錯誤，請重試");
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "帳號或密碼錯誤，請重試");
     } catch {
       setError("登入失敗，請稍後再試");
     } finally {
@@ -47,7 +48,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             type="text"
-            placeholder="帳號"
+            placeholder="帳號（管理密碼登入可留空）"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"

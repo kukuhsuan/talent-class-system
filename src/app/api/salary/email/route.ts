@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
-import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
+import { courseLabel } from "@/lib/courseMeta";
+import { calculateSalaryMonth } from "@/lib/salaryCalculation";
+import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 
 type DetailRow = {
   date: Date; school: string; courseType: string; category: string;
-  hours: number; rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
+  hours: number; time: string; hoursNeedsReview: boolean; hoursReviewReason: string;
+  rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
 };
 
 function buildHtml(teacherName: string, year: number, month: number, details: DetailRow[], total: number): string {
@@ -18,7 +21,7 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-weight:500;">${r.school}${r.isSub ? ' <span style="color:#f97316;font-size:12px">代</span>' : ""}${r.role === "助教" ? ' <span style="color:#2563eb;font-size:12px">助教</span>' : ""}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${courseLabel(r.courseType)}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.category}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.hours}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.hoursNeedsReview ? `需人工確認<br><span style="color:#ef4444;font-size:11px">${r.time || r.hoursReviewReason}</span>` : `${r.hours}`}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">$${r.rate}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.travelFee > 0 ? `$${r.travelFee}` : "—"}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:500;">$${fmt(r.amount)}</td>
@@ -42,7 +45,7 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
             <th style="padding:8px 10px;text-align:left;font-weight:600;color:#475569;">學校</th>
             <th style="padding:8px 10px;text-align:left;font-weight:600;color:#475569;">項目</th>
             <th style="padding:8px 10px;text-align:center;font-weight:600;color:#475569;">類別</th>
-            <th style="padding:8px 10px;text-align:center;font-weight:600;color:#475569;">時數</th>
+            <th style="padding:8px 10px;text-align:center;font-weight:600;color:#475569;">計薪時數</th>
             <th style="padding:8px 10px;text-align:right;font-weight:600;color:#475569;">時薪</th>
             <th style="padding:8px 10px;text-align:right;font-weight:600;color:#475569;">車費</th>
             <th style="padding:8px 10px;text-align:right;font-weight:600;color:#475569;">金額</th>
@@ -68,47 +71,27 @@ function buildHtml(teacherName: string, year: number, month: number, details: De
 export async function POST(req: NextRequest) {
   const { teacherId, year, month } = await req.json();
 
-  const start = new Date(Number(year), Number(month) - 1, 1);
-  const end = new Date(Number(year), Number(month), 1);
-
   const teacher = await prisma.teacher.findUnique({ where: { id: Number(teacherId) } }) as unknown as {
     id: number; name: string; email: string;
     rateAfterSchool: number; rateInSchool: number; rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number;
   } | null;
 
   if (!teacher) return NextResponse.json({ error: "Teacher not found" }, { status: 404 });
+  if (isWaitingTeacherName(teacher.name)) return NextResponse.json({ error: "待排老師為系統佔位資料，不能寄送薪資" }, { status: 400 });
   if (!teacher.email) return NextResponse.json({ error: "老師尚未設定 Email" }, { status: 400 });
 
-  const attendances = await prisma.attendance.findMany({
-    where: { OR: [{ actualTeacherId: teacher.id }, { assistantTeacherId: teacher.id }], cancelled: false, date: { gte: start, lt: end } },
-    include: { course: true },
-    orderBy: { date: "asc" },
-  }) as unknown as Array<{
-    id: number; date: Date; hours: number; category: string; actualTeacherId: number; assistantTeacherId?: number | null;
-    course: { school: string; courseType: string; teacherId: number };
-  }>;
-
-  const details: DetailRow[] = attendances.map((a) => {
-    const category = normalizeCategory(a.category);
-    const isDemo = category === "Demo";
-    const role = a.assistantTeacherId === teacher.id ? "助教" : "主教";
-    const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
-    const travelFee = role === "助教" || isDemo ? 0 : teacher.travelFee;
-    return {
-      date: a.date,
-      school: a.course.school,
-      courseType: a.course.courseType,
-      category,
-      hours: a.hours,
-      rate,
-      travelFee,
-      amount: a.hours * rate + travelFee,
-      isSub: role === "主教" && a.course.teacherId !== teacher.id,
-      role,
-    };
-  });
-
-  const total = details.reduce((s, r) => s + r.amount, 0);
+  const salary = await calculateSalaryMonth(Number(year), Number(month), { teacherId: teacher.id, includeDetails: true });
+  const result = salary.results[0];
+  const details: DetailRow[] = [
+    ...(result?.details ?? []),
+    ...(result?.adjustments ?? []).map((item) => ({
+      date: new Date(Number(year), Number(month) - 1, 1), school: item.reason,
+      courseType: item.type, category: "薪資調整", hours: 1, time: `歸屬 ${item.targetMonth}`,
+      hoursNeedsReview: false, hoursReviewReason: "", rate: item.amount, travelFee: 0,
+      amount: item.amount, isSub: false,
+    })),
+  ];
+  const total = result?.total ?? 0;
   const html = buildHtml(teacher.name, Number(year), Number(month), details, total);
   const subject = `【${teacher.name}】${year}年${month}月薪資明細單`;
 

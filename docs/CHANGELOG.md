@@ -1,0 +1,44 @@
+# WaysLeader AI System Manual Changelog
+
+## 2026-06-18
+
+- 重新擷取 `docs/assets/manual/*.png` 12 個主要頁面截圖。
+- 更新 `docs/System-Manual.md` 版本與截圖日期。
+- 更新課程匯入章節：支援主教老師、助教老師、計薪時數、類別、備註、略過/覆蓋模式與 Dry Run 動作預覽。
+- 補充匯入安全規則：已回報、已鎖薪、已通知園所、已取消、已有代課紀錄的出勤不覆蓋。
+- 補充 Dry Run 與正式匯入使用同一套重複判斷，避免 schoolId/address 不完整造成重複課程。
+- 補充 Excel 圖片/繪圖物件會被忽略，只讀取表格資料。
+- 補充老師可搜尋下拉選單、待排老師同步、計薪時數同步與薪資資料來源注意事項。
+- 補充成果分享卡、能力培養與課程熊圖示規則。
+- 重新產生 `docs/System-Manual.pdf`。
+
+## 2026-06-08
+
+- 建立 `docs/System-Manual.md`。
+- 建立 `docs/System-Manual.pdf` 輸出流程。
+- 建立 `docs/capture-manual.mjs`，可重新擷取目前系統頁面截圖。
+- 建立 `docs/render-manual-pdf.mjs`，可由 Markdown 重新產生 PDF。
+- 新增 12 個指定章節：今日概況、週課表、出勤紀錄、課程排班、學期評量、園所管理、老師管理、薪資計算、LINE 通知、課程匯入、園所上課報表、系統設定。
+- 新增角色操作手冊：客服人員、排課人員、會計、主管。
+- 新增常見問題 FAQ，涵蓋待回報、薪資、LINE、老師修改、園所報表與學期評量。
+
+## 後續更新規則
+
+每次系統功能、欄位、頁面名稱、操作流程或權限規則變更時，請同步更新：
+
+1. `docs/System-Manual.md`
+2. `docs/System-Manual.pdf`
+3. `docs/assets/manual/*.png`
+4. 本 `docs/CHANGELOG.md`
+
+建議更新格式：
+
+```md
+## YYYY-MM-DD
+
+- 更新頁面：
+- 變更原因：
+- 影響角色：
+- 是否已重新截圖：
+- 是否已重新產生 PDF：
+```

@@ -2,77 +2,118 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage, buildReminderMessage, buildReportRequestMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
-import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
-import { attendanceScheduledTimeMap } from "@/lib/attendanceTime";
+import { courseDateWindowWhere, courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime } from "@/lib/attendanceTime";
+import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
+import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { isPendingReport } from "@/lib/reportWindow";
+import { taipeiDateIso } from "@/lib/courseDates";
+import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
+
+function addIsoDays(iso: string, days: number) {
+  const date = new Date(`${iso}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
+type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string };
 
 // POST /api/line/push
-// body: { type: "reminder" | "report_request", teacherId?, date?, attendanceId? }
+// body: { type: "reminder" | "report_request", teacherId?, date?, dayOffset?, attendanceId? }
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
   if (body.type === "reminder") {
-    // Send tomorrow's class reminders to all teachers (or specific teacher)
-    const targetDate = body.date ? new Date(body.date) : (() => {
-      const d = new Date(); d.setDate(d.getDate() + 1); return d;
-    })();
-    const dateStr = targetDate.toISOString().slice(0, 10);
+    // Send class/report reminders to all teachers (or a specific teacher).
+    // Default is today in Taiwan; dayOffset=1 sends tomorrow's classes.
+    const dayOffset = Number(body.dayOffset ?? 0);
+    const dateStr = body.date ? String(body.date).slice(0, 10) : addIsoDays(taipeiDateIso(), Number.isFinite(dayOffset) ? dayOffset : 0);
+    const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
     const dayName = dayNameOfIso(dateStr);
     const { start, end } = dayBounds(dateStr);
-    const teacherFilter = body.teacherId ? { teacherId: Number(body.teacherId) } : {};
-    const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...teacherFilter }, targetDate);
+    const targetTeacherId = body.teacherId ? Number(body.teacherId) : null;
+    const courseTeacherFilter = targetTeacherId ? { OR: [{ teacherId: targetTeacherId }, { assistantTeacherId: targetTeacherId }] } : {};
+    const targetCourseWindow = courseDateWindowWhere(dateStr);
+    const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...targetCourseWindow, ...courseTeacherFilter }, targetDate);
 
     const [scheduledAttendances, weekdayCourses] = await Promise.all([
       prisma.attendance.findMany({
         where: {
           cancelled: false,
           date: { gte: start, lt: end },
-          ...(body.teacherId ? { actualTeacherId: Number(body.teacherId) } : {}),
-          course: { isActive: true },
+          ...(targetTeacherId ? { OR: [{ actualTeacherId: targetTeacherId }, { assistantTeacherId: targetTeacherId }] } : {}),
+          course: { isActive: true, ...targetCourseWindow },
         },
-        include: { course: true, actualTeacher: true },
+        include: { course: { include: { schoolRel: true } }, actualTeacher: true, assistantTeacher: true },
       }),
       prisma.course.findMany({
         where: {
           isActive: true,
+          ...targetCourseWindow,
           dayOfWeek: dayName,
-          ...teacherFilter,
+          ...courseTeacherFilter,
           ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
         },
-        include: { teacher: true },
+        include: { teacher: true, assistantTeacher: true, schoolRel: true },
       }),
     ]);
     const scheduledTimeMap = await attendanceScheduledTimeMap(scheduledAttendances.map((attendance) => attendance.id));
+    const confirmationMap = await courseConfirmationMapBySchoolIds([
+      ...scheduledAttendances.map((att) => att.course.schoolId ?? 0),
+      ...weekdayCourses.map((course) => course.schoolId ?? 0),
+    ]);
+    const confirmationSummaryFor = (schoolId?: number | null) => schoolId
+      ? courseConfirmationSummary(confirmationMap.get(schoolId), { multiline: true, teacher: true })
+      : "";
 
-    let sent = 0, skipped = 0;
+    const grouped = new Map<number, { teacher: ReminderTeacher; courses: ReminderCourse[] }>();
+    const addCourse = (teacher: ReminderTeacher | null | undefined, course: { attendanceId?: number; school: string; time: string; courseType: string; address?: string; confirmationSummary?: string }) => {
+      if (!teacher) return;
+      const item = grouped.get(teacher.id) ?? { teacher, courses: [] };
+      item.courses.push({ ...course, date: dateStr, dayOfWeek: dayName });
+      grouped.set(teacher.id, item);
+    };
     for (const att of scheduledAttendances) {
-      const teacher = att.actualTeacher;
-      if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
-
-      const cfg = getLineConfig(teacher.lineRegion as LineRegion);
-      const msg = buildReminderMessage({
-        teacherName: teacher.name,
-        school: att.course.school,
-        courseType: att.course.courseType,
-        time: scheduledTimeMap.get(att.id) || att.course.time,
-        date: dateStr,
-        dayOfWeek: dayName,
+      const time = effectiveAttendanceTime({
+        scheduledTime: scheduledTimeMap.get(att.id),
+        courseTime: att.course.time,
+        attendanceHours: att.hours,
+        isPayrollLocked: att.isPayrollLocked,
+        reportContent: att.reportContent,
+        reportSentAt: att.reportSentAt,
+        studentCount: att.studentCount,
+        studentCountA: att.studentCountA,
+        studentCountB: att.studentCountB,
       });
-      await pushMessage(teacher.lineUserId, [msg], cfg.token);
-      sent++;
+      addCourse(att.actualTeacher, { attendanceId: att.id, school: att.course.school, time, courseType: att.course.courseType, address: att.course.address || att.course.schoolRel?.address || "", confirmationSummary: confirmationSummaryFor(att.course.schoolId) });
+      if (att.assistantTeacher?.id !== att.actualTeacher.id) {
+        addCourse(att.assistantTeacher, { attendanceId: att.id, school: att.course.school, time, courseType: att.course.courseType, address: att.course.address || att.course.schoolRel?.address || "", confirmationSummary: confirmationSummaryFor(att.course.schoolId) });
+      }
     }
     for (const course of weekdayCourses) {
-      const teacher = course.teacher;
-      if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
+      const calculated = attendanceHoursFromCourseTime(course.time || "");
+      const result = await createAttendancesForUniqueDays([dateStr], {
+        courseId: course.id, actualTeacherId: course.teacherId, assistantTeacherId: course.assistantTeacherId,
+        category: course.category, hours: calculated.hours,
+        notes: calculated.needsReview ? `上課時間需人工確認：${calculated.reason}` : "",
+      });
+      const attendance = result.records[0] ?? await prisma.attendance.findFirst({ where: { courseId: course.id, date: { gte: start, lt: end } } });
+      await stampAttendanceTime(course.id, [dateStr], course.time || "").catch(() => undefined);
+      addCourse(course.teacher, { attendanceId: attendance?.id, school: course.school, time: course.time, courseType: course.courseType, address: course.address || course.schoolRel?.address || "", confirmationSummary: confirmationSummaryFor(course.schoolId) });
+      if (course.assistantTeacher?.id !== course.teacher.id) {
+        addCourse(course.assistantTeacher, { attendanceId: attendance?.id, school: course.school, time: course.time, courseType: course.courseType, address: course.address || course.schoolRel?.address || "", confirmationSummary: confirmationSummaryFor(course.schoolId) });
+      }
+    }
 
+    let sent = 0, skipped = 0;
+    for (const { teacher, courses } of grouped.values()) {
+      if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
       const cfg = getLineConfig(teacher.lineRegion as LineRegion);
       const msg = buildReminderMessage({
         teacherName: teacher.name,
-        school: course.school,
-        courseType: course.courseType,
-        time: course.time,
-        date: dateStr,
-        dayOfWeek: dayName,
+        title: dayOffset === 1 && !body.date ? "明日課程提醒" : "課程提醒",
+        courses,
       });
       await pushMessage(teacher.lineUserId, [msg], cfg.token);
       sent++;
@@ -90,7 +131,18 @@ export async function POST(req: NextRequest) {
     if (!att) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const scheduledTimeMap = await attendanceScheduledTimeMap([att.id]);
-    if (!isPendingReport(att, scheduledTimeMap.get(att.id) || att.course.time || "")) {
+    const time = effectiveAttendanceTime({
+      scheduledTime: scheduledTimeMap.get(att.id),
+      courseTime: att.course.time,
+      attendanceHours: att.hours,
+      isPayrollLocked: att.isPayrollLocked,
+      reportContent: att.reportContent,
+      reportSentAt: att.reportSentAt,
+      studentCount: att.studentCount,
+      studentCountA: att.studentCountA,
+      studentCountB: att.studentCountB,
+    });
+    if (!isPendingReport(att, time)) {
       return NextResponse.json({ error: "此課程已完成回報或不在回報期限內" }, { status: 409 });
     }
 

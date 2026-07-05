@@ -83,3 +83,36 @@ export function assessmentSemester(dateValue: string | Date) {
   if (month >= 9 || month === 1) return `${month === 1 ? year - 1 : year}秋季學期`;
   return `${year}學期`;
 }
+
+export function assessmentSemesterRange(dateValue: string | Date) {
+  const date = new Date(dateValue);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+
+  if (month >= 3 && month <= 6) {
+    return {
+      start: new Date(year, 2, 1),
+      end: new Date(year, 6, 1),
+    };
+  }
+
+  if (month >= 9) {
+    return {
+      start: new Date(year, 8, 1),
+      end: new Date(year + 1, 1, 1),
+    };
+  }
+
+  if (month === 1) {
+    return {
+      start: new Date(year - 1, 8, 1),
+      end: new Date(year, 1, 1),
+    };
+  }
+
+  const start = new Date(year, month - 1, 1);
+  return {
+    start,
+    end: new Date(year, month, 1),
+  };
+}

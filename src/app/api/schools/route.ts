@@ -1,9 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
+import {
+  courseConfirmationMapBySchoolIds,
+  courseConfirmationSummary,
+  ensureCourseConfirmationColumn,
+  currentConfirmationTerm,
+  parseCourseConfirmation,
+  parseConfirmationTerm,
+  termLabel,
+  upsertSchoolStartConfirmation,
+} from "@/lib/courseConfirmation";
+import { writeAuditLog } from "@/lib/auditLog";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  const minimal = searchParams.get("minimal") === "1";
+  const term = parseConfirmationTerm({
+    academicYear: searchParams.get("academicYear"),
+    semester: searchParams.get("semester"),
+  });
   const page = Math.max(1, Number(searchParams.get("page") ?? "0") || 0);
   const pageSizeRaw = Number(searchParams.get("pageSize") ?? "0") || 0;
   const pageSize = pageSizeRaw ? Math.min(50, Math.max(20, pageSizeRaw)) : 0;
@@ -22,16 +38,43 @@ export async function GET(req: NextRequest) {
     ];
   }
   const query = { where, orderBy: [{ region: "asc" }, { name: "asc" }] } as const;
+  if (minimal) {
+    const [schools, total] = await Promise.all([
+      prisma.school.findMany({
+        ...query,
+        ...(pageSize ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
+        select: { id: true, name: true, type: true, region: true, address: true },
+      }),
+      pageSize ? prisma.school.count({ where }) : Promise.resolve(0),
+    ]);
+    if (pageSize) return NextResponse.json({ items: schools, total, page, pageSize });
+    return NextResponse.json(schools);
+  }
+
+  await ensureCourseConfirmationColumn();
   const [schools, total] = await Promise.all([
     prisma.school.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
     pageSize ? prisma.school.count({ where }) : Promise.resolve(0),
   ]);
-  if (pageSize) return NextResponse.json({ items: schools, total, page, pageSize });
-  return NextResponse.json(schools);
+  const ids = schools.map((school) => school.id);
+  const confirmationMap = await courseConfirmationMapBySchoolIds(ids, term);
+  const items = schools.map((school) => {
+    const courseConfirmation = confirmationMap.get(school.id) ?? parseCourseConfirmation({});
+    return {
+      ...school,
+      courseConfirmation,
+      courseConfirmationSummary: courseConfirmationSummary(courseConfirmation, { includeTerm: true, multiline: true }),
+      confirmationTerm: { ...term, label: termLabel(term) },
+    };
+  });
+  if (pageSize) return NextResponse.json({ items, total, page, pageSize });
+  return NextResponse.json(items);
 }
 
 export async function POST(req: NextRequest) {
+  await ensureCourseConfirmationColumn();
   const data = await req.json();
+  const term = parseConfirmationTerm(data.confirmationTerm ?? currentConfirmationTerm());
   const school = await prisma.school.create({
     data: {
       name: data.name,
@@ -45,5 +88,22 @@ export async function POST(req: NextRequest) {
       lineBindCode: data.lineBindCode ?? undefined,
     },
   });
-  return NextResponse.json(school);
+  let courseConfirmation = parseCourseConfirmation(data.courseConfirmation);
+  if (data.courseConfirmation) {
+    courseConfirmation = await upsertSchoolStartConfirmation(school.id, term, data.courseConfirmation, { submit: false });
+  }
+  await writeAuditLog(req, {
+    action: "create",
+    targetType: "School",
+    targetId: school.id,
+    targetLabel: `園所：${school.name}`,
+    afterData: { ...school, courseConfirmation },
+    diffSummary: `新增園所：${school.name}`,
+  });
+  return NextResponse.json({
+    ...school,
+    courseConfirmation,
+    courseConfirmationSummary: courseConfirmationSummary(courseConfirmation, { includeTerm: true, multiline: true }),
+    confirmationTerm: { ...term, label: termLabel(term) },
+  });
 }

@@ -3,15 +3,29 @@ import { prisma } from "@/lib/prisma";
 import { notifySchoolReport } from "@/lib/schoolNotification";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
-  replyMessage, pushMessage,
+  replyMessage,
   buildReportRequestMessage, buildCurriculumSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
+  buildLeaveCourseSelectMessage, buildLeaveCancelSelectMessage,
+  isSchoolLineRegion,
 } from "@/lib/line";
 import { formatMonthDay, taipeiDateIso, weekdayOfIso } from "@/lib/courseDates";
 import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
-import { attendanceScheduledTimeMap, stampAttendanceTime } from "@/lib/attendanceTime";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime } from "@/lib/attendanceTime";
 import { courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { isPendingReport } from "@/lib/reportWindow";
+import { recordTeacherArrival } from "@/lib/attendanceArrival";
+import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
+import {
+  cancellableLeaveChoices,
+  cancelLeaveRequestByTeacher,
+  createLeaveRequestFromAttendance,
+  getInquiryWithLeave,
+  INQUIRY_STATUS,
+  semesterLeaveCount,
+  updateInquiryResponse,
+  upcomingLeaveCourseChoices,
+} from "@/lib/teacherLeaves";
 
 type LineEvent = {
   type: string;
@@ -25,6 +39,46 @@ type LineEvent = {
 const pendingDetails = new Map<string, number>();
 // Track teachers who've submitted A班, now awaiting B班 (userId -> attendanceId)
 const pendingGroupB = new Map<string, number>();
+// Track teachers who selected a leave course and now need to type a reason.
+const pendingLeaveApplications = new Map<string, number>();
+const UNAUTHORIZED_ATTENDANCE_REPLY = "此課程資料無法由您的帳號回報，請聯繫行政確認。";
+
+async function teacherCanAccessAttendance(lineUserId: string, attendanceId: number) {
+  if (!Number.isFinite(attendanceId) || attendanceId <= 0) return false;
+  const teacher = await prisma.teacher.findFirst({
+    where: { lineUserId },
+    select: { id: true },
+  });
+  if (!teacher) return false;
+
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+    select: {
+      actualTeacherId: true,
+      assistantTeacherId: true,
+      substitutes: {
+        select: {
+          substituteTeacherId: true,
+          confirmed: true,
+        },
+      },
+    },
+  });
+  if (!attendance) return false;
+  return attendance.actualTeacherId === teacher.id
+    || attendance.assistantTeacherId === teacher.id
+    || attendance.substitutes.some((substitute) => substitute.confirmed && substitute.substituteTeacherId === teacher.id);
+}
+
+async function ensureTeacherCanAccessAttendance(lineUserId: string, attendanceId: number, replyToken: string, token: string) {
+  if (await teacherCanAccessAttendance(lineUserId, attendanceId)) return true;
+  await replyMessage(replyToken, [{ type: "text", text: UNAUTHORIZED_ATTENDANCE_REPLY }], token);
+  return false;
+}
+
+async function ensureSchoolLineRegionColumn() {
+  await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN lineRegion TEXT NOT NULL DEFAULT "school"').catch(() => undefined);
+}
 
 export async function handleWebhook(req: NextRequest, region: LineRegion) {
   const body = await req.text();
@@ -53,7 +107,8 @@ export async function handleWebhook(req: NextRequest, region: LineRegion) {
 }
 
 async function handleFollow(userId: string, replyToken: string, token: string, region: LineRegion) {
-  if (region === "school") {
+  if (isSchoolLineRegion(region)) {
+    await ensureSchoolLineRegionColumn();
     const school = await prisma.school.findFirst({ where: { lineUserId: userId } } as never) as { name: string } | null;
     if (school) {
       await replyMessage(replyToken, [{ type: "text", text: `歡迎回來，${school.name}！課程回報將會傳送到這裡。` }], token);
@@ -82,7 +137,84 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   const pendingId = pendingDetails.get(userId);
   if (pendingId) {
     pendingDetails.delete(userId);
+    if (!(await ensureTeacherCanAccessAttendance(userId, pendingId, replyToken, token))) return;
     await saveDetailedReport(userId, pendingId, text, replyToken, token, region);
+    return;
+  }
+
+  const pendingLeaveAttendanceId = pendingLeaveApplications.get(userId);
+  if (pendingLeaveAttendanceId) {
+    if (!text.trim()) {
+      await replyMessage(replyToken, [{ type: "text", text: "請輸入請假原因，原因為必填。" }], token);
+      return;
+    }
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      pendingLeaveApplications.delete(userId);
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    try {
+      const result = await createLeaveRequestFromAttendance({
+        attendanceId: pendingLeaveAttendanceId,
+        teacherId: teacher.id,
+        reason: text,
+      });
+      pendingLeaveApplications.delete(userId);
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: `✅ 已送出請假申請，行政審核後會再通知您。\n本學期請假累計：${result.semesterLeaveCountAtSubmit} 次。\n\n若要取消請假，請傳「取消請假」。`,
+      }], token);
+    } catch (error) {
+      pendingLeaveApplications.delete(userId);
+      await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "請假申請送出失敗，請稍後再試。" }], token);
+    }
+    return;
+  }
+
+  if (text === "取消請假" || text === "取消請假申請") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    const leaves = await cancellableLeaveChoices(teacher.id);
+    if (leaves.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有可取消的請假申請。` }], token);
+      return;
+    }
+    await replyMessage(replyToken, [buildLeaveCancelSelectMessage({
+      teacherName: teacher.name,
+      leaves,
+    })], token);
+    return;
+  }
+
+  if (["到校", "已到校", "抵達", "已抵達", "打卡", "到校打卡"].includes(text)) {
+    const result = await recordTeacherArrival(userId);
+    await replyMessage(replyToken, [{ type: "text", text: result.message }], token);
+    return;
+  }
+
+  if (text === "申請請假" || text === "請假") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    const [courses, leaveCount] = await Promise.all([
+      upcomingLeaveCourseChoices(teacher.id, 10),
+      semesterLeaveCount(teacher.id),
+    ]);
+    if (courses.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前找不到未來 60 天內可申請請假的課程。若課程尚未建立出勤紀錄，請聯絡行政協助。` }], token);
+      return;
+    }
+    await replyMessage(replyToken, [buildLeaveCourseSelectMessage({
+      teacherName: teacher.name,
+      semesterLeaveCount: leaveCount,
+      courses,
+    })], token);
     return;
   }
 
@@ -114,12 +246,22 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     }) as unknown as Promise<Array<{
       id: number; date: Date; category: string; hours: number;
       studentCount: number | null; studentCountA: number | null; studentCountB: number | null;
-      reportContent: string; cancelled: boolean;
+      reportContent: string; reportSentAt?: Date | null; isPayrollLocked?: boolean; cancelled: boolean;
       course: { id: number; school: string; courseType: string; category: string; department: string; time: string };
     }>>);
     const pastScheduledTimeMap = await attendanceScheduledTimeMap(pastRaw.map((a) => a.id));
     const pendingPast = pastRaw.filter((att) => {
-      const scheduledTime = pastScheduledTimeMap.get(att.id) || att.course.time || "";
+      const scheduledTime = effectiveAttendanceTime({
+        scheduledTime: pastScheduledTimeMap.get(att.id),
+        courseTime: att.course.time,
+        attendanceHours: att.hours,
+        isPayrollLocked: att.isPayrollLocked,
+        reportContent: att.reportContent,
+        reportSentAt: att.reportSentAt,
+        studentCount: att.studentCount,
+        studentCountA: att.studentCountA,
+        studentCountB: att.studentCountB,
+      });
       return isPendingReport(att, scheduledTime);
     });
 
@@ -214,7 +356,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const courses = await prisma.course.findMany({
       where: { teacherId: teacher.id, isActive: true },
       include: { schoolRel: true },
-    }) as unknown as Array<{ id: number; school: string; courseType: string; dayOfWeek: string; time: string; department: string; address?: string; schoolRel?: { address?: string } | null }>;
+    }) as unknown as Array<{ id: number; schoolId?: number | null; school: string; courseType: string; dayOfWeek: string; time: string; department: string; address?: string; schoolRel?: { address?: string } | null }>;
 
     if (courses.length === 0) {
       await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有排定的課程。` }], token);
@@ -228,29 +370,36 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const now = new Date();
     const targetYear = now.getFullYear();
 
-    const yearStart = new Date(targetYear, 0, 1);
-    const yearEnd = new Date(targetYear, 11, 31, 23, 59, 59, 999);
+    const displayMonthIndexes = [6, 7, 8];
+    const periodStart = new Date(targetYear, displayMonthIndexes[0], 1);
+    const periodEnd = new Date(targetYear, displayMonthIndexes[displayMonthIndexes.length - 1] + 1, 0, 23, 59, 59, 999);
 
     const actualRows = await prisma.attendance.findMany({
       where: {
         actualTeacherId: teacher.id,
         cancelled: false,
-        date: { gte: yearStart, lte: yearEnd },
+        date: { gte: periodStart, lte: periodEnd },
       },
       include: { course: { include: { schoolRel: true } } },
       orderBy: { date: "asc" },
     }) as unknown as Array<{
-      id: number;
+      id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null;
+      studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null;
       date: Date;
-      course: { id: number; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
+      course: { id: number; schoolId?: number | null; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
     }>;
     const actualTimeMap = await attendanceScheduledTimeMap(actualRows.map((row) => row.id));
+    const confirmationMap = await courseConfirmationMapBySchoolIds([
+      ...courses.map((course) => course.schoolId ?? 0),
+      ...actualRows.map((row) => row.course.schoolId ?? 0),
+    ]);
+    const confirmationSummaryFor = (schoolId?: number | null) => schoolId
+      ? courseConfirmationSummary(confirmationMap.get(schoolId), { multiline: true, teacher: true })
+      : "";
 
     const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
 
-    // 安親班課程優先（有 department 含「安親」的優先顯示）
-    const anqinCourses = courses.filter((c: { department?: string }) => c.department?.includes("安親"));
-    const displayCourses = anqinCourses.length > 0 ? anqinCourses : courses;
+    const displayCourses = courses;
     const displayCourseIds = new Set(displayCourses.map((course) => course.id));
     const scheduleNearDate = new Date();
     const datedCourseIds = await courseIdsWithAnyAttendance({
@@ -261,7 +410,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const weeks: Array<{
       label: string;
       month: string;
-      entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string }>;
+      entries: Array<{ date: string; dayShort: string; school: string; courseType: string; time: string; address?: string; confirmationSummary?: string }>;
     }> = [];
     type ScheduleEntryRow = {
       date: string;
@@ -270,10 +419,11 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       courseType: string;
       time: string;
       address?: string;
+      confirmationSummary?: string;
       sortKey: number;
     };
 
-    for (let month = 0; month < 12; month++) {
+    for (const month of displayMonthIndexes) {
       const monthStart = new Date(targetYear, month, 1);
       const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
       const entries = [
@@ -287,15 +437,26 @@ async function handleText(userId: string, text: string, replyToken: string, regi
               dayShort: weekday.replace("星期", ""),
               school: a.course.school,
               courseType: a.course.courseType,
-              time: actualTimeMap.get(a.id) || a.course.time,
+              time: effectiveAttendanceTime({
+                scheduledTime: actualTimeMap.get(a.id),
+                courseTime: a.course.time,
+                attendanceHours: a.hours,
+                isPayrollLocked: a.isPayrollLocked,
+                reportContent: a.reportContent,
+                reportSentAt: a.reportSentAt,
+                studentCount: a.studentCount,
+                studentCountA: a.studentCountA,
+                studentCountB: a.studentCountB,
+              }),
               address: a.course.address || a.course.schoolRel?.address || "",
+              confirmationSummary: confirmationSummaryFor(a.course.schoolId),
               sortKey: a.date.getTime(),
             };
           }),
         ...displayCourses
           .filter((c) => !datedCourseIds.has(c.id))
           .filter((c: { dayOfWeek: string }) => DAY_JS[c.dayOfWeek] !== undefined)
-          .flatMap((c: { dayOfWeek: string; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null }) => {
+          .flatMap((c: { dayOfWeek: string; schoolId?: number | null; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null }) => {
             const rows: ScheduleEntryRow[] = [];
             const targetDay = DAY_JS[c.dayOfWeek];
             const cursor = new Date(monthStart);
@@ -308,6 +469,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
                   courseType: c.courseType,
                   time: c.time,
                   address: c.address || c.schoolRel?.address || "",
+                  confirmationSummary: confirmationSummaryFor(c.schoolId),
                   sortKey: cursor.getTime(),
                 });
               }
@@ -322,7 +484,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
         month: `${month + 1}月`,
         entries: entries
           .sort((a, b) => a.sortKey - b.sortKey)
-          .map(({ date, dayShort, school, courseType, time, address }) => ({ date, dayShort, school, courseType, time, address })),
+          .map(({ date, dayShort, school, courseType, time, address, confirmationSummary }) => ({ date, dayShort, school, courseType, time, address, confirmationSummary })),
       });
     }
 
@@ -365,11 +527,17 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   const upper = text.toUpperCase();
   const looksLikeBindCode = /^[A-Z0-9]{6}$/.test(upper);
 
-  if (region === "school") {
+  if (isSchoolLineRegion(region)) {
     if (looksLikeBindCode) {
+      await ensureSchoolLineRegionColumn();
       const school = await prisma.school.findFirst({ where: { lineBindCode: upper } });
       if (school) {
-        await prisma.school.update({ where: { id: school.id }, data: { lineUserId: userId } });
+        await prisma.$executeRawUnsafe(
+          "UPDATE School SET lineUserId = ?, lineRegion = ? WHERE id = ?",
+          userId,
+          region,
+          school.id,
+        );
         await replyMessage(replyToken, [{ type: "text", text: `✅ 綁定成功！${school.name} 已連結。之後課程回報會自動發送到這裡。` }], token);
         return;
       }
@@ -399,7 +567,75 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const action = params.get("action");
   const attendanceId = Number(params.get("id"));
 
+  if (action === "leave_select") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    const leaveCount = await semesterLeaveCount(teacher.id);
+    pendingLeaveApplications.set(userId, attendanceId);
+    await replyMessage(replyToken, [{
+      type: "text",
+      text: `請輸入請假原因（必填）。\n\n提醒：您本學期已請假 ${leaveCount} 次，本次送出後將累計為 ${leaveCount + 1} 次。`,
+    }], token);
+    return;
+  }
+
+  if (action === "leave_cancel") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    try {
+      const result = await cancelLeaveRequestByTeacher({ leaveRequestId: attendanceId, teacherId: teacher.id });
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: result.alreadyCancelled
+          ? "這筆請假申請已經是取消狀態。"
+          : `✅ 已取消請假申請。\n\n${result.leave.leaveDate} ${result.leave.time}\n${result.leave.school}｜${result.leave.courseType}`,
+      }], token);
+    } catch (error) {
+      await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "取消請假失敗，請稍後再試。" }], token);
+    }
+    return;
+  }
+
+  if (action === "sub_available" || action === "sub_unavailable" || action === "sub_cancel") {
+    const inquiryId = Number(params.get("inquiryId"));
+    const inquiry = Number.isFinite(inquiryId) ? await getInquiryWithLeave(inquiryId) : null;
+    if (!inquiry) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到這筆代課詢問，請聯絡行政確認。" }], token);
+      return;
+    }
+    if (inquiry.candidateLineUserId && inquiry.candidateLineUserId !== userId) {
+      await replyMessage(replyToken, [{ type: "text", text: "這筆代課詢問不是發送給您的，請聯絡行政確認。" }], token);
+      return;
+    }
+    if (inquiry.status === INQUIRY_STATUS.noLongerNeeded || inquiry.status === INQUIRY_STATUS.expired) {
+      await replyMessage(replyToken, [{ type: "text", text: "這堂課目前已找到代課老師，謝謝您的回覆與協助。" }], token);
+      return;
+    }
+    const nextStatus = action === "sub_available"
+      ? INQUIRY_STATUS.available
+      : action === "sub_cancel"
+        ? INQUIRY_STATUS.cancelled
+        : INQUIRY_STATUS.unavailable;
+    await updateInquiryResponse(inquiryId, nextStatus);
+    await replyMessage(replyToken, [{
+      type: "text",
+      text: action === "sub_available"
+        ? "已收到您的回覆，行政確認後會再通知您是否安排代課。"
+        : action === "sub_cancel"
+          ? "已收到您的取消代課回覆。若此代課已由行政確認，請等待行政重新處理；正式代課不會自動取消。"
+        : "已收到您的回覆，謝謝您回覆。",
+    }], token);
+    return;
+  }
+
   if (action === "select_progress") {
+    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
     const attForCurriculum = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { course: true },
@@ -414,6 +650,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "report_progress") {
+    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
     const content = decodeURIComponent(params.get("content") ?? "");
     await prisma.attendance.update({
       where: { id: attendanceId },
@@ -427,7 +664,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     return;
   }
 
-  // New: handle count board submission via postback
+  // Handle count board submission via postback
   if (action === "report_count") {
     const group = params.get("group") ?? "";
     const count = Number(params.get("count"));
@@ -436,6 +673,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "report") {
+    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
     const status = params.get("status");
     const cancelled = status === "cancelled";
     await prisma.attendance.update({
@@ -456,6 +694,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "report_detail") {
+    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
     pendingDetails.set(userId, attendanceId);
     await replyMessage(replyToken, [{
       type: "text",
@@ -514,6 +753,7 @@ async function handleCountSubmit(
   replyToken: string,
   token: string,
 ) {
+  if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
   if (group === "A") {
     // Save A班 count, show B班 board
     await prisma.attendance.update({
@@ -561,6 +801,7 @@ async function handleCountSubmit(
 
 async function saveDetailedReport(userId: string, attendanceId: number, text: string, replyToken: string, token: string, region: LineRegion) {
   void region;
+  if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
   const content = text.replace(/^自訂[：:]\s*/, "").trim() || "";
 
   await prisma.attendance.update({
