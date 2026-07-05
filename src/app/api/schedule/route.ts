@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
 import { departmentQueryValues, regionQueryValues } from "@/lib/courseMeta";
 import { courseIdsWithAnyAttendance, isoDatesBetween } from "@/lib/scheduleLogic";
-import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 
 const MS_PER_DAY = 86400000;
 const DEFAULT_RANGE_DAYS = 7;
@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
   ]);
   const attendances = attendancesRaw as unknown as Array<{
     id: number;
+    scheduledTime?: string | null;
     date: Date; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null;
     studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null;
     actualTeacher?: { id: number; name: string } | null;
@@ -78,17 +79,15 @@ export async function GET(req: NextRequest) {
     };
   }>;
 
-  const [scheduledTimeMap, coursesRaw] = await Promise.all([
-    attendanceScheduledTimeMap(attendances.map((attendance) => attendance.id)),
-    prisma.course.findMany({
-      where: {
-        ...courseWhere,
-        ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
-      },
-      include: { teacher: teacherSelect, assistantTeacher: teacherSelect, schoolRel: { select: { address: true } } },
-      orderBy: [{ region: "asc" }, { school: "asc" }, { dayOfWeek: "asc" }],
-    }),
-  ]);
+  // scheduledTime 已在 schema 內，findMany 直接帶回，省一次資料庫來回
+  const coursesRaw = await prisma.course.findMany({
+    where: {
+      ...courseWhere,
+      ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
+    },
+    include: { teacher: teacherSelect, assistantTeacher: teacherSelect, schoolRel: { select: { address: true } } },
+    orderBy: [{ region: "asc" }, { school: "asc" }, { dayOfWeek: "asc" }],
+  });
   const actualItems = attendances.map((a) => {
       const iso = a.date.toISOString().slice(0, 10);
       const mainSubstitute = a.substitutes?.find((substitute) => substitute.role === "主教") ?? null;
@@ -107,7 +106,7 @@ export async function GET(req: NextRequest) {
         date: iso,
         dateLabel: formatMonthDay(iso),
         time: effectiveAttendanceTime({
-          scheduledTime: scheduledTimeMap.get(a.id),
+          scheduledTime: usableScheduledTime(a.scheduledTime),
           courseTime: a.course.time,
           attendanceHours: a.hours,
           isPayrollLocked: a.isPayrollLocked,

@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, normalizeCategory, normalizeDepartment } from "@/lib/courseMeta";
-import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
-import { coursePayrollHoursMap } from "@/lib/payrollHours";
+import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 
 export const runtime = "nodejs";
@@ -191,6 +190,7 @@ export async function GET(req: NextRequest) {
   }) as unknown as Array<{
     id: number;
     date: Date | string | null;
+    scheduledTime?: string | null;
     studentCount: number | null;
     studentCountA: number | null;
     studentCountB: number | null;
@@ -207,18 +207,13 @@ export async function GET(req: NextRequest) {
       courseType: string | null;
       department: string | null;
       time: string | null;
+      payrollHours?: number | null;
       category: string | null;
       schoolRel: { type: string } | null;
     } | null;
   }>;
 
-  const scheduledTimes = format === "xlsx"
-    ? await attendanceScheduledTimeMap(records.map((record) => record.id))
-    : new Map<number, string>();
-  const coursePayrollHours = format === "xlsx"
-    ? await coursePayrollHoursMap(records.flatMap((record) => record.course?.id ? [record.course.id] : []))
-    : new Map<number, number | null>();
-
+  // scheduledTime / payrollHours 已在 schema 內，include 直接帶回，省 2 次資料庫來回
   const rows = records
     .map((r) => {
       const course = r.course;
@@ -229,7 +224,7 @@ export async function GET(req: NextRequest) {
         : (course?.department ? normalizeDepartment(course.department) : "未分類");
       const category = normalizeCategory(course?.category ?? r.category);
       const time = effectiveAttendanceTime({
-        scheduledTime: scheduledTimes.get(r.id),
+        scheduledTime: usableScheduledTime(r.scheduledTime),
         courseTime: safeText(course?.time),
         attendanceHours: r.hours,
         isPayrollLocked: r.isPayrollLocked,
@@ -240,7 +235,7 @@ export async function GET(req: NextRequest) {
         studentCountB: r.studentCountB,
       });
       const payrollHours = course?.id
-        ? salaryHoursFromValues(r.hours, coursePayrollHours.get(course.id), time)
+        ? salaryHoursFromValues(r.hours, course.payrollHours, time)
         : null;
       return {
         id: r.id,

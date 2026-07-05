@@ -22,6 +22,11 @@ function isUsableScheduledTime(value: string | null | undefined) {
   return /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(compact);
 }
 
+// 純函式版：schema 已含 scheduledTime 欄位，熱路徑可直接用 findMany 撈到的值過濾，省一次 raw SQL 來回
+export function usableScheduledTime(value: string | null | undefined) {
+  return isUsableScheduledTime(value) ? String(value ?? "") : "";
+}
+
 function normalizedUsableTime(value: string | null | undefined) {
   const parsed = calculateCourseHours(value);
   return parsed.needsReview ? "" : parsed.time;

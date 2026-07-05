@@ -90,7 +90,8 @@ export default function AttendancePage() {
   const loadOptions = useCallback(async () => {
     setLoadingOptions(true);
     try {
-      const courseParams = new URLSearchParams({ includeDates: "0", includeConfirmation: "0" });
+      // minimal=1：只抓下拉選單需要的欄位，避免載入整張課程表
+      const courseParams = new URLSearchParams({ minimal: "1" });
       if (dept) courseParams.set("dept", dept);
       const [courseRes, teacherRes] = await Promise.all([
         fetch(`/api/courses?${courseParams}`, { cache: "no-store" }),

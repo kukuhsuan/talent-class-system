@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays, parseAttendanceDay } from "@/lib/attendanceBatch";
-import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime } from "@/lib/attendanceTime";
+import { effectiveAttendanceTime, stampAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
 import { attendanceMissingItems, attendanceReportWindow, isPendingReport } from "@/lib/reportWindow";
-import { coursePayrollHoursForAttendance, coursePayrollHoursMap } from "@/lib/payrollHours";
+import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { resolvePayrollHours } from "@/lib/payrollHoursCore";
 import { writeAuditLog } from "@/lib/auditLog";
 
@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
           school: true,
           courseType: true,
           time: true,
+          payrollHours: true,
           teacherId: true,
           assistantTeacherId: true,
           category: true,
@@ -112,11 +113,10 @@ export async function GET(req: NextRequest) {
     prisma.attendance.findMany({ ...query, ...(paginateInDatabase ? { skip: (page - 1) * pageSize, take: pageSize } : {}) }),
     paginateInDatabase ? prisma.attendance.count({ where: where as Prisma.AttendanceWhereInput }) : Promise.resolve(0),
   ]);
-  const scheduledTimeMap = await attendanceScheduledTimeMap(records.map((record) => record.id));
-  const payrollMap = await coursePayrollHoursMap(records.map((record) => record.courseId));
+  // scheduledTime / payrollHours 已在 schema 內，直接由 findMany 取得，省 2 次資料庫來回
   const annotatedRecords = records.map((record) => {
     const scheduledTime = effectiveAttendanceTime({
-      scheduledTime: scheduledTimeMap.get(record.id),
+      scheduledTime: usableScheduledTime(record.scheduledTime),
       courseTime: record.course.time,
       attendanceHours: record.hours,
       isPayrollLocked: record.isPayrollLocked,
@@ -126,13 +126,13 @@ export async function GET(req: NextRequest) {
       studentCountA: record.studentCountA,
       studentCountB: record.studentCountB,
     });
-    const payrollHours = resolvePayrollHours(record.hours, payrollMap.get(record.courseId), scheduledTime);
+    const payrollHours = resolvePayrollHours(record.hours, record.course.payrollHours, scheduledTime);
     const reportWindow = attendanceReportWindow({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     const missingItems = attendanceMissingItems({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     return {
       ...record,
       scheduledTime,
-      course: { ...record.course, payrollHours: payrollMap.get(record.courseId) ?? null },
+      course: { ...record.course, payrollHours: record.course.payrollHours ?? null },
       hours: payrollHours.payableHours,
       hoursNeedsReview: payrollHours.needsReview,
       hoursReviewReason: payrollHours.reason,
@@ -188,9 +188,8 @@ export async function POST(req: NextRequest) {
   }
 
   const fields = buildFields(data);
-  const course = await prisma.course.findUnique({ where: { id: fields.courseId }, select: { id: true, time: true } });
-  const payrollMap = await coursePayrollHoursMap(course ? [course.id] : []);
-  const calculatedHours = coursePayrollHoursForAttendance(payrollMap.get(fields.courseId), course?.time ?? "");
+  const course = await prisma.course.findUnique({ where: { id: fields.courseId }, select: { id: true, time: true, payrollHours: true } });
+  const calculatedHours = coursePayrollHoursForAttendance(course?.payrollHours, course?.time ?? "");
   if (!fields.hours || fields.hours <= 0) fields.hours = calculatedHours.hours;
   if (calculatedHours.needsReview && !fields.notes.includes("上課時間需人工確認")) {
     fields.notes = [fields.notes, `上課時間需人工確認：${calculatedHours.reason}`].filter(Boolean).join("；");

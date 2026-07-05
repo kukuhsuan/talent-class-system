@@ -239,6 +239,7 @@ model Course {
   endDate            DateTime?
   weekday            String       @default("")
   time               String       @default("")
+  payrollHours       Float?
   category           String       @default("課後")
   department         String       @default("幼兒園")
   enrollCount        String       @default("")
@@ -287,6 +288,7 @@ model Attendance {
   makeupDone         Boolean                  @default(false)
   category           String                   @default("課後")
   hours              Float                    @default(1)
+  scheduledTime      String?                  @default("")
   isPayrollLocked    Boolean                  @default(false)
   payrollLockedAt    DateTime?
   notes              String                   @default("")

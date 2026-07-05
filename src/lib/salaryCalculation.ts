@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { normalizeCategory } from "@/lib/courseMeta";
-import { coursePayrollHoursMap } from "@/lib/payrollHours";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 
@@ -50,7 +49,8 @@ type AttendanceRow = {
   id: number; date: Date; actualTeacherId: number; assistantTeacherId: number | null;
   category: string; hours: number; notes: string; isPayrollLocked: boolean; reportContent: string; reportSentAt: Date | null;
   studentCount: number | null; studentCountA: number | null; studentCountB: number | null;
-  course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string; time: string };
+  scheduledTime: string | null;
+  course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string; time: string; payrollHours: number | null };
 };
 
 export type SalaryResult = {
@@ -84,8 +84,7 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   const teachers = teachersRaw as unknown as TeacherRow[];
   const rows = rowsRaw as unknown as AttendanceRow[];
   const adjustments = adjustmentsRaw as unknown as SalaryAdjustmentRow[];
-  const scheduledTimes = await attendanceScheduledTimeMap(rows.map((row) => row.id));
-  const coursePayrollMap = await coursePayrollHoursMap(rows.map((row) => row.course.id));
+  // scheduledTime / payrollHours 已在 schema 內，include 直接帶回，省 2 次資料庫來回
   const leadByTeacher = new Map<number, AttendanceRow[]>();
   const assistantByTeacher = new Map<number, AttendanceRow[]>();
   const adjustmentsByTeacher = new Map<number, SalaryAdjustmentRow[]>();
@@ -96,7 +95,7 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   for (const adjustment of adjustments) adjustmentsByTeacher.set(adjustment.teacherId, [...(adjustmentsByTeacher.get(adjustment.teacherId) ?? []), adjustment]);
 
   const rowTime = (row: AttendanceRow) => effectiveAttendanceTime({
-    scheduledTime: scheduledTimes.get(row.id),
+    scheduledTime: usableScheduledTime(row.scheduledTime),
     courseTime: row.course.time,
     attendanceHours: row.hours,
     isPayrollLocked: row.isPayrollLocked,
@@ -106,7 +105,7 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     studentCountA: row.studentCountA,
     studentCountB: row.studentCountB,
   });
-  const salaryHours = (row: AttendanceRow) => salaryHoursFromValues(row.hours, coursePayrollMap.get(row.course.id), rowTime(row));
+  const salaryHours = (row: AttendanceRow) => salaryHoursFromValues(row.hours, row.course.payrollHours, rowTime(row));
   const detail = (row: AttendanceRow, teacher: TeacherRow, role: "主教" | "助教"): SalaryDetail => {
     const category = normalizeCategory(row.category);
     const isDemo = category === "Demo";

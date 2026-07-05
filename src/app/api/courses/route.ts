@@ -6,7 +6,7 @@ import { stampAttendanceTime } from "@/lib/attendanceTime";
 import { nextCourseCode } from "@/lib/courseCode";
 import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { departmentQueryValues, normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
-import { coursePayrollHoursForAttendance, coursePayrollHoursMap, parsePayrollHours, setCoursePayrollHours } from "@/lib/payrollHours";
+import { coursePayrollHoursForAttendance, parsePayrollHours, setCoursePayrollHours } from "@/lib/payrollHours";
 import { WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 import { recurrenceFields } from "@/lib/courseRecurrence";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
@@ -54,6 +54,30 @@ export async function GET(req: NextRequest) {
     ];
   }
 
+  // 精簡模式：只回傳下拉選單需要的欄位，省掉整包關聯資料（出勤頁選項載入用）
+  if (searchParams.get("minimal") === "1") {
+    const minimalItems = await prisma.course.findMany({
+      where: where as Prisma.CourseWhereInput,
+      select: {
+        id: true,
+        code: true,
+        school: true,
+        courseType: true,
+        time: true,
+        payrollHours: true,
+        category: true,
+        teacherId: true,
+        assistantTeacherId: true,
+        teacher: { select: { id: true, name: true } },
+        assistantTeacher: { select: { id: true, name: true } },
+      },
+      orderBy: [{ region: "asc" }, { dayOfWeek: "asc" }],
+    });
+    const response = NextResponse.json(minimalItems);
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
+
   const attendanceDateRange = month >= 1 && month <= 12
     ? {
         gte: new Date(Date.UTC(year, month - 1, 1)),
@@ -85,13 +109,13 @@ export async function GET(req: NextRequest) {
     prisma.course.findMany({ ...query, ...(pageSize ? { skip: (page - 1) * pageSize, take: pageSize } : {}) }),
     pageSize ? prisma.course.count({ where: where as Prisma.CourseWhereInput }) : Promise.resolve(0),
   ]);
-  const payrollMap = await coursePayrollHoursMap(courses.map((course) => course.id));
+  // payrollHours 已在 schema 內，findMany 直接帶回，省一次資料庫來回
   const confirmationMap = includeConfirmation
     ? await courseConfirmationMapBySchoolIds(courses.map((course) => course.schoolId ?? 0))
     : null;
   const items = courses.map((course) => ({
     ...course,
-    payrollHours: payrollMap.get(course.id) ?? null,
+    payrollHours: course.payrollHours ?? null,
     courseConfirmationSummary: includeConfirmation && course.schoolId ? courseConfirmationSummary(confirmationMap?.get(course.schoolId), { multiline: true, includeTerm: true }) : "",
     scheduledDates: "attendances" in course ? [...new Set(course.attendances.map((a) => a.date.toISOString().slice(0, 10)))] : [],
   }));
