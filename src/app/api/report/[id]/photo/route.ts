@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { put } from "@vercel/blob";
+import { get, put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { verifyPublicAccessToken } from "@/lib/publicAccessToken";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
@@ -36,12 +36,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "找不到照片" }, { status: 404 });
     }
 
+    let first = "";
     try {
       const parsed = JSON.parse(raw);
-      const first = Array.isArray(parsed) ? String(parsed.find((item) => String(item).includes(pathname)) ?? "") : "";
-      if (first.startsWith("http://") || first.startsWith("https://")) return NextResponse.redirect(first);
+      first = Array.isArray(parsed) ? String(parsed.find((item) => String(item).includes(pathname)) ?? "") : "";
     } catch {
-      if (raw.startsWith("http://") || raw.startsWith("https://")) return NextResponse.redirect(raw);
+      first = raw;
+    }
+    // 舊資料：公開網址直接導向（相容既有照片）
+    if (first.startsWith("http://") || first.startsWith("https://")) return NextResponse.redirect(first);
+    // 新資料：私有照片透過代理串流，不暴露公開網址
+    if (first.startsWith("private:")) {
+      const blob = await get(first.slice("private:".length), { access: "private", token: blobToken() });
+      if (!blob?.stream) return NextResponse.json({ error: "找不到照片" }, { status: 404 });
+      return new NextResponse(blob.stream as BodyInit, {
+        headers: {
+          "Content-Type": blob.blob.contentType ?? "image/jpeg",
+          "Cache-Control": "private, max-age=300",
+        },
+      });
     }
     return NextResponse.json({ error: "照片連結格式不支援，請重新上傳" }, { status: 404 });
   } catch (e) {
@@ -106,18 +119,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const ext = imageExtension(file.type);
+    // 私有上傳：照片沒有公開網址，只能透過帶 token 的代理連結讀取
     const blob = await put(`report-photos/${crypto.randomUUID()}.${ext}`, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: true,
       token,
     });
 
     await prisma.attendance.update({
       where: { id: attendanceId },
-      data: { reportPhotos: JSON.stringify([blob.url]) },
+      data: { reportPhotos: JSON.stringify([`private:${blob.pathname}`]) },
     });
 
-    return NextResponse.json({ ok: true, url: blob.url });
+    return NextResponse.json({
+      ok: true,
+      url: `/api/report/${encodeURIComponent(id)}/photo?path=${encodeURIComponent(blob.pathname)}`,
+    });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
       return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });

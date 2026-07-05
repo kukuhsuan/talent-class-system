@@ -104,6 +104,10 @@ export async function middleware(req: NextRequest) {
       if (path.startsWith("/api/")) return NextResponse.json({ error: "權限不足" }, { status: 403 });
       return NextResponse.redirect(new URL("/", req.url));
     }
+    // viewer 為唯讀角色：只允許讀取類請求，禁止任何寫入 API
+    if (role === "viewer" && path.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+      return NextResponse.json({ error: "唯讀帳號無法執行此操作" }, { status: 403 });
+    }
     return NextResponse.next();
   } catch {
     return unauthorized();
