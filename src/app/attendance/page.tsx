@@ -6,6 +6,7 @@ import { Toast } from "@/components/Toast";
 import { ensureOk, readApiError } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
 import { CATEGORY_OPTIONS, courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
+import { EQUIPMENT_STATUSES, equipmentSummaryLabels, hasEquipmentSettings, type EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHoursCore";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
@@ -19,6 +20,7 @@ type Attendance = {
   category: string; hours: number; notes: string; scheduledTime?: string; reportContent?: string;
   substitutes?: Array<{ role: string }>;
   reportFillable?: boolean; reportExpired?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
+  equipment?: (EquipmentReminderData & { attendanceId: number }) | null;
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -28,10 +30,16 @@ const initialStatusFilter = () => {
   const status = new URLSearchParams(window.location.search).get("status");
   return ["all", "missing", "done", "substitute", "cancelled"].includes(status ?? "") ? status ?? "all" : "all";
 };
+const EMPTY_EQUIPMENT: EquipmentReminderData = {
+  isFirstClass: false, needsAssembly: false, equipmentNote: "",
+  needsTransferAfterClass: false, nextSchoolName: "", nextClassDate: "", nextCourseType: "", nextAddress: "", transferNote: "",
+  status: "待確認",
+};
 const EMPTY_FORM = {
   date: today(), courseId: 0, actualTeacherId: 0, assistantTeacherId: null as number | null,
   studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 0, notes: "",
   scheduledTime: "", confirmCompleted: false, extraDates: [] as string[],
+  equipment: EMPTY_EQUIPMENT,
 };
 
 export default function AttendancePage() {
@@ -208,7 +216,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [] });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [], equipment: r.equipment ? { isFirstClass: Boolean(r.equipment.isFirstClass), needsAssembly: Boolean(r.equipment.needsAssembly), equipmentNote: r.equipment.equipmentNote ?? "", needsTransferAfterClass: Boolean(r.equipment.needsTransferAfterClass), nextSchoolName: r.equipment.nextSchoolName ?? "", nextClassDate: r.equipment.nextClassDate ?? "", nextCourseType: r.equipment.nextCourseType ?? "", nextAddress: r.equipment.nextAddress ?? "", transferNote: r.equipment.transferNote ?? "", status: r.equipment.status || "待確認" } : EMPTY_EQUIPMENT });
     setEditing(r.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -241,6 +249,14 @@ export default function AttendancePage() {
     return "出課";
   };
   const hoursDisplay = (r: Attendance) => r.hoursNeedsReview ? "需人工確認" : `${r.hours}h`;
+  const setEquipment = (patch: Partial<EquipmentReminderData>) => setForm((f) => ({ ...f, equipment: { ...f.equipment, ...patch } }));
+  // 器材標籤配色：無法協助紅、待處理黃、已完成綠、其餘藍
+  const equipmentBadgeClass = (label: string) =>
+    label === "無法協助" ? "bg-rose-100 text-rose-700 font-semibold"
+      : label === "已確認器材" || label.startsWith("已完成") ? "bg-green-50 text-green-700"
+        : label === "待確認" || label === "課後待轉送" ? "bg-amber-50 text-amber-700"
+          : "bg-indigo-50 text-indigo-600";
+  const equipmentLabels = (r: Attendance) => r.equipment ? equipmentSummaryLabels(r.equipment) : [];
   const filteredRecords = records.filter((r) => {
     if (statusFilter === "missing") return isMissingReport(r);
     if (statusFilter === "done") return isReportComplete(r);
@@ -426,6 +442,62 @@ export default function AttendancePage() {
               <label>備註</label>
               <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註" />
             </div>
+            <div className="md:col-span-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-4">
+                <span className="text-sm font-semibold text-slate-700">📦 器材提醒（選填）</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.equipment.isFirstClass} onChange={(e) => setEquipment({ isFirstClass: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm text-slate-700">第一堂課（需確認器材送達）</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.equipment.needsAssembly} onChange={(e) => setEquipment({ needsAssembly: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm text-slate-700">需要組裝</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.equipment.needsTransferAfterClass} onChange={(e) => setEquipment({ needsTransferAfterClass: e.target.checked })} className="w-4 h-4" />
+                  <span className="text-sm text-slate-700">課後需轉送器材</span>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div className="md:col-span-2">
+                  <label>器材內容</label>
+                  <input value={form.equipment.equipmentNote} onChange={(e) => setEquipment({ equipmentNote: e.target.value })} placeholder="例：籃球架 2 座、球 20 顆" />
+                </div>
+                {editing !== null && hasEquipmentSettings(form.equipment) && (
+                  <div>
+                    <label>器材狀態</label>
+                    <select value={form.equipment.status} onChange={(e) => setEquipment({ status: e.target.value })}>
+                      {EQUIPMENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+                {form.equipment.needsTransferAfterClass && (
+                  <>
+                    <div>
+                      <label>下一站園所</label>
+                      <input value={form.equipment.nextSchoolName} onChange={(e) => setEquipment({ nextSchoolName: e.target.value })} placeholder="例：快樂幼兒園" />
+                    </div>
+                    <div>
+                      <label>下一站上課日</label>
+                      <input type="date" value={form.equipment.nextClassDate} onChange={(e) => setEquipment({ nextClassDate: e.target.value })} />
+                    </div>
+                    <div>
+                      <label>下一站課程</label>
+                      <input value={form.equipment.nextCourseType} onChange={(e) => setEquipment({ nextCourseType: e.target.value })} placeholder="例：足球" />
+                    </div>
+                    <div>
+                      <label>下一站地址</label>
+                      <input value={form.equipment.nextAddress} onChange={(e) => setEquipment({ nextAddress: e.target.value })} placeholder="地址（選填）" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label>轉送備註</label>
+                      <input value={form.equipment.transferNote} onChange={(e) => setEquipment({ transferNote: e.target.value })} placeholder="例：請先聯絡園所王主任" />
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">勾選後會在課前 LINE 提醒老師；全部留白代表清除此堂的器材提醒。</p>
+            </div>
           </div>
           <div className="flex gap-2 mt-4">
             <SaveButton saving={saving} onClick={save} />
@@ -549,6 +621,11 @@ export default function AttendancePage() {
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 計薪</div><div className="font-medium">{normalizeCategory(r.category)}｜{hoursDisplay(r)}</div></div>
                           </div>
                           {r.hoursNeedsReview && <div className="mt-2 text-xs font-medium text-amber-600">上課時間需人工確認{r.hoursReviewReason ? `：${r.hoursReviewReason}` : ""}</div>}
+                          {equipmentLabels(r).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {equipmentLabels(r).map((label) => <span key={label} className={`rounded-full px-2 py-0.5 text-xs ${equipmentBadgeClass(label)}`}>📦 {label}</span>)}
+                            </div>
+                          )}
                           {substitute && <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                           {(r.cancelReason || r.notes) && <div className="mt-2 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
                           <div className="mt-4 flex gap-4">
@@ -608,6 +685,7 @@ export default function AttendancePage() {
                                     : "bg-slate-100 text-slate-500"
                                   }`}>{statusLabel(r)}</span>
                                   {isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
+                                  {equipmentLabels(r).map((label) => <span key={label} className={`rounded-full px-2.5 py-1 text-xs ${equipmentBadgeClass(label)}`}>📦 {label}</span>)}
                                 </div>
                               </td>
                               <td className="max-w-[220px] truncate px-4 py-4 text-xs text-slate-500" title={r.hoursNeedsReview ? `上課時間需人工確認：${r.hoursReviewReason || ""}` : r.cancelReason || r.notes || ""}>{r.hoursNeedsReview ? "上課時間需人工確認" : r.cancelReason || r.notes || "-"}</td>

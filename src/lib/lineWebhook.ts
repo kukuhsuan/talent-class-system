@@ -26,6 +26,8 @@ import {
   updateInquiryResponse,
   upcomingLeaveCourseChoices,
 } from "@/lib/teacherLeaves";
+import { setEquipmentStatus } from "@/lib/equipmentReminder";
+import { equipmentNextStopLabel, type EquipmentStatus } from "@/lib/equipmentReminderCore";
 
 type LineEvent = {
   type: string;
@@ -631,6 +633,30 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
           ? "已收到您的取消代課回覆。若此代課已由行政確認，請等待行政重新處理；正式代課不會自動取消。"
         : "已收到您的回覆，謝謝您回覆。",
     }], token);
+    return;
+  }
+
+  // 器材確認按鈕：已確認器材 / 已完成組裝 / 已完成轉送 / 無法協助
+  if (action === "equipment_confirm" || action === "equipment_assembled" || action === "equipment_transferred" || action === "equipment_cannot_help") {
+    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+    const statusByAction: Record<string, EquipmentStatus> = {
+      equipment_confirm: "已確認器材",
+      equipment_assembled: "已完成組裝",
+      equipment_transferred: "已完成轉送",
+      equipment_cannot_help: "無法協助",
+    };
+    const row = await setEquipmentStatus(attendanceId, statusByAction[action]);
+    if (!row) {
+      await replyMessage(replyToken, [{ type: "text", text: "這堂課目前沒有器材提醒設定，若有疑問請聯絡行政。" }], token);
+      return;
+    }
+    const replyByAction: Record<string, string> = {
+      equipment_confirm: "✅ 已記錄：器材已確認。謝謝您的協助！",
+      equipment_assembled: "✅ 已記錄：器材已完成組裝。謝謝您的協助！",
+      equipment_transferred: `✅ 已記錄：器材已完成轉送。謝謝您的協助！${equipmentNextStopLabel(row) ? `\n下一站：${equipmentNextStopLabel(row)}` : ""}`,
+      equipment_cannot_help: "已收到您的回覆，行政會另行安排器材事宜，謝謝告知。",
+    };
+    await replyMessage(replyToken, [{ type: "text", text: replyByAction[action] }], token);
     return;
   }
 

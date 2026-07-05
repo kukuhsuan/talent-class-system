@@ -313,6 +313,7 @@ model Attendance {
   substitutes        Substitute[]
   leaveRequests      TeacherLeaveRequest[]
   substituteInquiries SubstituteInquiry[]
+  equipment          AttendanceEquipment?
 
   @@unique([courseId, date])
   @@index([date])
@@ -321,6 +322,27 @@ model Attendance {
   @@index([isPayrollLocked])
   @@index([cancelled])
   @@index([category])
+}
+
+// 器材提醒與轉送確認（第一版：只做提醒與確認，不做庫存/物流）
+// 資料表由 ensureAttendanceEquipmentTable() 在執行期建立（與 TeacherLeave 等表相同模式）
+model AttendanceEquipment {
+  id                      Int        @id @default(autoincrement())
+  attendance              Attendance @relation(fields: [attendanceId], references: [id])
+  attendanceId            Int        @unique
+  isFirstClass            Boolean    @default(false)
+  needsAssembly           Boolean    @default(false)
+  equipmentNote           String     @default("")
+  needsTransferAfterClass Boolean    @default(false)
+  nextSchoolName          String     @default("")
+  nextClassDate           String     @default("")
+  nextCourseType          String     @default("")
+  nextAddress             String     @default("")
+  transferNote            String     @default("")
+  status                  String     @default("待確認")
+  confirmedAt             DateTime?
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
 }
 
 model KindergartenAssessment {

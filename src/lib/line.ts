@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { COURSE_LABEL, courseLabel } from "@/lib/courseMeta";
+import { equipmentFirstClassText, equipmentTransferText, type EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { signPublicAccessToken } from "@/lib/publicAccessToken";
 
 export { COURSE_LABEL, courseLabel };
@@ -303,6 +304,7 @@ export function buildReminderMessage(opts: {
     dayOfWeek?: string;
     reportUrl?: string;
     confirmationSummary?: string;
+    equipment?: EquipmentReminderData | null;
   }>;
 }) {
   const courses = opts.courses?.length ? opts.courses : [{
@@ -338,6 +340,22 @@ export function buildReminderMessage(opts: {
             { type: "text", text: "✓ 回傳紙本點名表\n✓ 完成課程回報", size: "sm", color: "#3F5145", wrap: true, margin: "sm" },
           ],
         },
+        // 📦 器材提醒：第一堂 / 需組裝
+        ...(course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly) ? [{
+          type: "box" as const, layout: "vertical" as const, spacing: "xs" as const, backgroundColor: "#EEF2FB", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            { type: "text" as const, text: "📦 器材提醒", size: "sm" as const, weight: "bold" as const, color: "#4C5FA3" },
+            { type: "text" as const, text: equipmentFirstClassText(course.equipment), size: "sm" as const, color: "#3D4B7A", wrap: true, margin: "sm" as const },
+          ],
+        }] : []),
+        // 📦 課後器材轉送提醒
+        ...(course.equipment?.needsTransferAfterClass ? [{
+          type: "box" as const, layout: "vertical" as const, spacing: "xs" as const, backgroundColor: "#FDF0EC", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            { type: "text" as const, text: "📦 課後器材轉送提醒", size: "sm" as const, weight: "bold" as const, color: "#B25B3C" },
+            { type: "text" as const, text: equipmentTransferText(course.equipment), size: "sm" as const, color: "#8C4A33", wrap: true, margin: "sm" as const },
+          ],
+        }] : []),
         {
           type: "box", layout: "vertical", backgroundColor: "#FFF8E8", cornerRadius: "10px", paddingAll: "13px",
           contents: [
@@ -359,6 +377,19 @@ export function buildReminderMessage(opts: {
           ...(course.attendanceId ? [{
             type: "button" as const, style: "secondary" as const, height: "sm" as const,
             action: { type: "uri" as const, label: "更新人數", uri: `${appUrl()}/report/${encodeURIComponent(signPublicAccessToken("report", course.attendanceId))}` },
+          }] : []),
+          // 器材確認按鈕（postback）
+          ...(course.attendanceId && course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly) ? [{
+            type: "button" as const, style: "secondary" as const, height: "sm" as const,
+            action: { type: "postback" as const, label: course.equipment.needsAssembly ? "📦 已完成組裝" : "📦 已確認器材", data: `action=${course.equipment.needsAssembly ? "equipment_assembled" : "equipment_confirm"}&id=${course.attendanceId}` },
+          }] : []),
+          ...(course.attendanceId && course.equipment?.needsTransferAfterClass ? [{
+            type: "button" as const, style: "secondary" as const, height: "sm" as const,
+            action: { type: "postback" as const, label: "📦 已完成轉送", data: `action=equipment_transferred&id=${course.attendanceId}` },
+          }] : []),
+          ...(course.attendanceId && course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly || course.equipment.needsTransferAfterClass) ? [{
+            type: "button" as const, style: "secondary" as const, height: "sm" as const,
+            action: { type: "postback" as const, label: "無法協助器材事項", data: `action=equipment_cannot_help&id=${course.attendanceId}` },
           }] : []),
         ],
       },

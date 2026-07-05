@@ -8,9 +8,11 @@ import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
 import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
+import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
+import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
 
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
-type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string };
+type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null };
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -141,6 +143,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ sent: 0, message: "no courses today" });
   }
 
+  // 器材提醒：一次撈出所有出勤的設定，附掛到提醒卡片
+  const equipmentMap = await equipmentByAttendanceIds(courses.map((course) => course.attendanceId ?? 0));
+
   const byTeacher = new Map<number, { teacher: ReminderTeacher; courses: ReminderCourse[] }>();
   for (const course of courses) {
     for (const teacher of course.teachers) {
@@ -154,6 +159,7 @@ export async function GET(req: NextRequest) {
         date: targetIso,
         dayOfWeek: targetName,
         confirmationSummary: course.confirmationSummary,
+        equipment: course.attendanceId ? equipmentMap.get(course.attendanceId) ?? null : null,
       });
       byTeacher.set(teacher.id, item);
     }

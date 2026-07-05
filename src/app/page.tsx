@@ -24,6 +24,16 @@ type PendingDetail = {
   time: string;
   missingItems: string[];
 };
+type EquipmentItem = {
+  id: number;
+  time: string;
+  school: string;
+  courseType: string;
+  teacherName: string;
+  reminderLabels: string[];
+  nextStop: string;
+  status: string;
+};
 
 const EMPTY_STATS: DashboardStats = {
   todayCourseCount: 0,
@@ -39,6 +49,7 @@ export default function Home() {
   const [seeding, setSeeding] = useState(false);
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [pendingDetails, setPendingDetails] = useState<PendingDetail[]>([]);
+  const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [reminding, setReminding] = useState<number | null>(null);
   const [remindedIds, setRemindedIds] = useState<Set<number>>(new Set());
@@ -65,6 +76,7 @@ export default function Home() {
         teacherCount: Number(data.teacherCount ?? 0),
       });
       setPendingDetails(Array.isArray(data.pendingDetails) ? data.pendingDetails.slice(0, 5) : []);
+      setEquipmentItems(Array.isArray(data.equipment?.items) ? data.equipment.items : []);
       setSeeded(Number(data.teacherCount ?? 0) > 0);
       setLoading(false);
     }
@@ -220,6 +232,44 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {equipmentItems.length > 0 && (
+        <div className="mt-6 rounded-xl border border-indigo-100 bg-white shadow-sm">
+          <div className="border-b border-indigo-50 px-4 py-4">
+            <h2 className="font-semibold text-slate-800">📦 今日器材提醒</h2>
+            <p className="text-sm text-slate-500">今日需確認器材、組裝或課後轉送的課程。</p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {equipmentItems.map((item) => {
+              const cannotHelp = item.status === "無法協助";
+              return (
+                <div key={item.id} className={`grid gap-2 px-4 py-4 md:grid-cols-[auto_1.2fr_1fr_1fr_auto] md:items-center ${cannotHelp ? "bg-rose-50/60" : ""}`}>
+                  <div className="text-sm font-medium text-slate-600 md:w-24">{item.time || "-"}</div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-900">{item.school}</div>
+                    <div className="mt-1 text-sm text-slate-500">{courseLabel(item.courseType)} · {item.teacherName}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {item.reminderLabels.map((label) => (
+                      <span key={label} className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-600">{label}</span>
+                    ))}
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    {item.nextStop ? <><span className="text-xs text-slate-400">下一站</span> {item.nextStop}</> : <span className="text-slate-300">-</span>}
+                  </div>
+                  <div className="flex md:justify-end">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                      cannotHelp ? "bg-rose-100 text-rose-700"
+                      : item.status === "待確認" ? "bg-amber-50 text-amber-700"
+                      : "bg-green-50 text-green-700"
+                    }`}>{item.status}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

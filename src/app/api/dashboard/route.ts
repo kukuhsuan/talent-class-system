@@ -3,9 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { departmentQueryValues } from "@/lib/courseMeta";
 import { courseDateWindowWhere, courseIdsWithAnyAttendance, courseOccursOnIso, dayNameOfIso } from "@/lib/scheduleLogic";
 import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
-import { effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceMissingItems, isPendingReport } from "@/lib/reportWindow";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
+import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
+import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
 
 // Single endpoint for the home page — replaces 3 separate fetches
 // Returns the compact data needed by the home page.
@@ -37,7 +39,8 @@ export async function GET(req: NextRequest) {
       },
       select: {
         id: true, date: true, cancelled: true, reportSentAt: true,
-        course: { select: { id: true, teacherId: true, startDate: true, endDate: true } },
+        scheduledTime: true, hours: true,
+        course: { select: { id: true, teacherId: true, startDate: true, endDate: true, school: true, courseType: true, time: true } },
         actualTeacherId: true,
         actualTeacher: { select: { name: true } },
       },
@@ -122,7 +125,33 @@ export async function GET(req: NextRequest) {
   ).length;
   const unnotifiedCount = validTodayAttendance.filter((a) => !a.cancelled && !a.reportSentAt).length;
 
+  // 今日器材提醒：只列今日有器材設定的課
+  const equipmentMap = await equipmentByAttendanceIds(validTodayAttendance.map((a) => a.id));
+  const equipmentItems = validTodayAttendance
+    .filter((a) => !a.cancelled && equipmentMap.has(a.id))
+    .map((a) => {
+      const row = equipmentMap.get(a.id)!;
+      return {
+        id: a.id,
+        time: usableScheduledTime(a.scheduledTime) || a.course.time || "",
+        school: a.course.school,
+        courseType: a.course.courseType,
+        teacherName: a.actualTeacher.name,
+        reminderLabels: equipmentSummaryLabels(row).filter((label) => label !== row.status),
+        nextStop: equipmentNextStopLabel(row),
+        status: row.status,
+      };
+    })
+    .sort((a, b) => a.time.localeCompare(b.time));
+  const equipment = {
+    total: equipmentItems.length,
+    unconfirmedCount: equipmentItems.filter((item) => item.status === "待確認").length,
+    cannotHelpCount: equipmentItems.filter((item) => item.status === "無法協助").length,
+    items: equipmentItems,
+  };
+
   return NextResponse.json({
+    equipment,
     todayCourseCount: todayCourseIds.size,
     todaySubstituteCount,
     pendingFillableCount,

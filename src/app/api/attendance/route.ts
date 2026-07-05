@@ -8,9 +8,11 @@ import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/cou
 import { attendanceMissingItems, attendanceReportWindow, isPendingReport } from "@/lib/reportWindow";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { resolvePayrollHours } from "@/lib/payrollHoursCore";
+import { ensureAttendanceEquipmentTable, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export async function GET(req: NextRequest) {
+  await ensureAttendanceEquipmentTable();
   const { searchParams } = new URL(req.url);
   const year = searchParams.get("year");
   const month = searchParams.get("month");
@@ -101,6 +103,7 @@ export async function GET(req: NextRequest) {
       actualTeacher: { select: { id: true, name: true } },
       assistantTeacher: { select: { id: true, name: true } },
       substitutes: { select: { role: true } },
+      equipment: true,
     },
     orderBy: [
       { course: { school: "asc" as const } },
@@ -198,6 +201,13 @@ export async function POST(req: NextRequest) {
   const { created, skipped, records } = await createAttendancesForUniqueDays(dates, fields);
   if (created > 0) {
     await stampAttendanceTime(fields.courseId, dates, course?.time ?? "");
+  }
+  // 器材提醒設定（第一堂/組裝/課後轉送）
+  const equipmentInput = parseEquipmentInput(data.equipment);
+  if (equipmentInput) {
+    for (const record of records) {
+      await saveAttendanceEquipment(record.id, equipmentInput);
+    }
   }
   await writeAuditLog(req, {
     action: "create",

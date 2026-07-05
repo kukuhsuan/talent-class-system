@@ -5,12 +5,13 @@ import { ensureAttendanceScheduledTimeColumn, stampAttendanceTime } from "@/lib/
 import { normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { coursePayrollHoursForAttendance, coursePayrollHoursMap } from "@/lib/payrollHours";
 import { parsePayrollHours } from "@/lib/payrollHoursCore";
+import { deleteAttendanceEquipment, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await req.json();
-  const { makeupDate, assistantTeacherId, confirmCompleted, scheduledTime, ...rest } = data;
+  const { makeupDate, assistantTeacherId, confirmCompleted, scheduledTime, equipment, ...rest } = data;
   const current = await prisma.attendance.findUnique({
     where: { id: Number(id) },
     include: { course: { select: { id: true, code: true, school: true, courseType: true, time: true } }, actualTeacher: { select: { id: true, name: true } }, assistantTeacher: { select: { id: true, name: true } } },
@@ -57,6 +58,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   } else {
     await stampAttendanceTime(record.courseId, [record.date.toISOString().slice(0, 10)], record.course.time);
   }
+  // 器材提醒設定（有帶 equipment 才更新；全空白等於清除）
+  const equipmentInput = parseEquipmentInput(equipment);
+  const equipmentRow = equipmentInput ? await saveAttendanceEquipment(record.id, equipmentInput) : undefined;
   await writeAuditLog(req, {
     action: "update",
     targetType: "Attendance",
@@ -75,7 +79,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }) || `修改出勤紀錄：${record.date.toISOString().slice(0, 10)} ${record.course.school}`,
     sensitive: true,
   });
-  return NextResponse.json(record);
+  return NextResponse.json(equipmentRow === undefined ? record : { ...record, equipment: equipmentRow });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -88,6 +92,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (current.isPayrollLocked) {
     return NextResponse.json({ error: "此筆出勤已鎖定薪資，不可刪除" }, { status: 409 });
   }
+  await deleteAttendanceEquipment(Number(id));
   await prisma.attendance.delete({ where: { id: Number(id) } });
   await writeAuditLog(req, {
     action: "delete",
