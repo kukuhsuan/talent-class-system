@@ -426,48 +426,52 @@ export function buildReportRequestMessage(opts: {
 }) {
   const label = courseLabel(opts.courseType);
   const reportToken = signPublicAccessToken("report", opts.attendanceId);
+  // 風格與 buildReminderMessage（今日課程提醒）一致：藍灰標題、資訊區塊、藍色按鈕
   return {
     type: "flex",
     altText: `請回報 ${opts.school} ${label} 課程`,
     contents: {
       type: "bubble",
       header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#7B9E87",
-        paddingAll: "16px",
-        contents: [
-          { type: "text", text: "📝 課程回報", color: "#F6F3EE", weight: "bold", size: "lg" },
-        ],
+        type: "box", layout: "vertical", backgroundColor: "#6B8FAB", paddingAll: "16px",
+        contents: [{ type: "text", text: "課程回報", color: "#FFFFFF", weight: "bold", size: "xl" }],
       },
       body: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#F6F3EE",
-        spacing: "sm",
-        paddingAll: "16px",
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#FFFFFF",
         contents: [
-          { type: "text", text: opts.school, weight: "bold", color: "#2E2B27", size: "lg" },
-          { type: "text", text: `課程：${label}`, size: "sm", color: "#6B6358" },
-          { type: "separator", margin: "md", color: "#DDD8D0" },
-          { type: "text", text: "請點下方按鈕進入手機表單，完成進度、人數與課堂狀況回報。", size: "sm", color: "#6B6358", margin: "md", wrap: true },
+          {
+            type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#F5F9FC", cornerRadius: "10px", paddingAll: "13px",
+            contents: [
+              { type: "text", text: "課程資訊", size: "sm", weight: "bold", color: "#47718F" },
+              { type: "text", text: `地點｜${opts.school}`, size: "sm", color: "#555555", wrap: true, margin: "sm" },
+              { type: "text", text: `課程｜${label}`, size: "sm", color: "#555555", wrap: true },
+            ],
+          },
+          {
+            type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#F3F8F4", cornerRadius: "10px", paddingAll: "13px",
+            contents: [
+              { type: "text", text: "課後必做", size: "sm", weight: "bold", color: "#4F7A5F" },
+              { type: "text", text: "✓ 回傳紙本點名表\n✓ 完成課程回報", size: "sm", color: "#3F5145", wrap: true, margin: "sm" },
+            ],
+          },
+          {
+            type: "box", layout: "vertical", backgroundColor: "#FFF8E8", cornerRadius: "10px", paddingAll: "13px",
+            contents: [
+              { type: "text", text: "薪資提醒", size: "sm", weight: "bold", color: "#A16207" },
+              { type: "text", text: "⚠️ 請完成課程回報，否則該堂課暫不列入薪資計算。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
+            ],
+          },
         ],
       },
       footer: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        backgroundColor: "#F6F3EE",
+        type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC", spacing: "sm",
         contents: [
           {
-            type: "button",
-            style: "primary",
-            color: "#7B9E87",
-            action: { type: "uri", label: "🧸 課後回報", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
+            type: "button", style: "primary", color: "#2C82B8", height: "sm",
+            action: { type: "uri", label: "課後回報", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
           },
           {
-            type: "button",
-            style: "secondary",
+            type: "button", style: "secondary", height: "sm",
             action: { type: "uri", label: "更新人數", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
           },
         ],
