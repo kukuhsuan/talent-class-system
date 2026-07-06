@@ -305,12 +305,25 @@ export function buildReminderMessage(opts: {
     reportUrl?: string;
     confirmationSummary?: string;
     equipment?: EquipmentReminderData | null;
+    studentCount?: number | null;
+    studentCountA?: number | null;
+    studentCountB?: number | null;
   }>;
 }) {
   const courses = opts.courses?.length ? opts.courses : [{
     school: opts.school ?? "園所待確認", time: opts.time ?? "待確認",
     courseType: opts.courseType, date: opts.date, dayOfWeek: opts.dayOfWeek,
   }];
+  // 人數顯示：一般課顯示總數，安親班顯示 A/B 班
+  const studentCountText = (course: (typeof courses)[number]) => {
+    if (course.studentCountA != null || course.studentCountB != null) {
+      const parts: string[] = [];
+      if (course.studentCountA != null) parts.push(`A班 ${course.studentCountA} 人`);
+      if (course.studentCountB != null) parts.push(`B班 ${course.studentCountB} 人`);
+      return parts.join("、");
+    }
+    return course.studentCount != null ? `${course.studentCount} 人` : "";
+  };
   const bubbles = courses.slice(0, 12).map((course) => ({
     type: "bubble",
     header: {
@@ -330,6 +343,7 @@ export function buildReminderMessage(opts: {
             { type: "text", text: `地點｜${course.school}`, size: "sm", color: "#555555", wrap: true },
             ...(course.address ? [{ type: "text" as const, text: `地址｜${course.address}`, size: "sm" as const, color: "#555555", wrap: true }] : []),
             { type: "text", text: `課程｜${courseLabel(course.courseType || opts.courseType || "")}`, size: "sm", color: "#555555", wrap: true },
+            ...(studentCountText(course) ? [{ type: "text" as const, text: `人數｜${studentCountText(course)}`, size: "sm" as const, color: "#555555", wrap: true }] : []),
             ...(course.confirmationSummary ? [{ type: "text" as const, text: course.confirmationSummary, size: "xs" as const, color: "#5F6F83", wrap: true, margin: "sm" as const }] : []),
           ],
         },

@@ -12,7 +12,7 @@ import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
 
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
-type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null };
+type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null };
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
     });
     const attendance = result.records[0] ?? await prisma.attendance.findFirst({ where: { courseId: course.id, date: { gte: dayStart, lt: dayEnd } } });
     await stampAttendanceTime(course.id, [targetIso], course.time || "").catch(() => undefined);
-    return { ...course, attendanceId: attendance?.id };
+    return { ...course, attendanceId: attendance?.id, attStudentCount: attendance?.studentCount ?? null, attStudentCountA: attendance?.studentCountA ?? null, attStudentCountB: attendance?.studentCountB ?? null };
   }));
 
   const courses = [
@@ -126,6 +126,9 @@ export async function GET(req: NextRequest) {
       }),
       courseType: att.course.courseType,
       confirmationSummary: confirmationSummaryFor(att.course.schoolId),
+      studentCount: att.studentCount,
+      studentCountA: att.studentCountA,
+      studentCountB: att.studentCountB,
       teachers: [att.actualTeacher, ...(att.assistantTeacher && att.assistantTeacher.id !== att.actualTeacher.id ? [att.assistantTeacher] : [])],
     })),
     ...weekdayWithAttendance.map((course) => ({
@@ -135,6 +138,9 @@ export async function GET(req: NextRequest) {
       time: course.time,
       courseType: course.courseType,
       confirmationSummary: confirmationSummaryFor(course.schoolId),
+      studentCount: course.attStudentCount,
+      studentCountA: course.attStudentCountA,
+      studentCountB: course.attStudentCountB,
       teachers: [course.teacher, ...(course.assistantTeacher && course.assistantTeacher.id !== course.teacher.id ? [course.assistantTeacher] : [])],
     })),
   ];
