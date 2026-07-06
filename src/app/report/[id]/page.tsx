@@ -507,12 +507,15 @@ export default function TeacherReportPage() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">代表照片（選填）</div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
+          <div className="text-sm font-semibold text-slate-800">課堂活動照片（選填）</div>
+          <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
+            ⚠️ 點名表請傳到 LINE 官方帳號，這裡只上傳課堂活動照片。
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
             每堂課最多 1 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
           </p>
           <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading || photoLocked ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
-            {photoLocked ? "已超過補填期限" : photoUploading ? "照片上傳中..." : "選擇或拍攝代表照片"}
+            {photoLocked ? "已超過補填期限" : photoUploading ? "照片上傳中..." : "選擇或拍攝活動照片"}
             <input type="file" accept="image/*" className="hidden" disabled={photoUploading || photoLocked} onChange={uploadPhoto} />
           </label>
           {photoError && (

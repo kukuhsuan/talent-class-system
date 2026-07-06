@@ -119,22 +119,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const ext = imageExtension(file.type);
-    // 私有上傳：照片沒有公開網址，只能透過帶 token 的代理連結讀取
-    const blob = await put(`report-photos/${crypto.randomUUID()}.${ext}`, file, {
-      access: "private",
-      addRandomSuffix: true,
-      token,
-    });
+    const pathname = `report-photos/${crypto.randomUUID()}.${ext}`;
+    // 優先私有上傳（照片只能透過帶 token 的代理連結讀取）；
+    // 若 Blob store 是公開型（不支援 private），改用公開上傳存公開網址。
+    let stored = "";
+    let responseUrl = "";
+    try {
+      const blob = await put(pathname, file, { access: "private", addRandomSuffix: true, token });
+      stored = `private:${blob.pathname}`;
+      responseUrl = `/api/report/${encodeURIComponent(id)}/photo?path=${encodeURIComponent(blob.pathname)}`;
+    } catch (err) {
+      const message = (err as Error).message ?? "";
+      if (!/private access|public store/i.test(message)) throw err;
+      const blob = await put(pathname, file, { access: "public", addRandomSuffix: true, token });
+      stored = blob.url;
+      responseUrl = blob.url;
+    }
 
     await prisma.attendance.update({
       where: { id: attendanceId },
-      data: { reportPhotos: JSON.stringify([`private:${blob.pathname}`]) },
+      data: { reportPhotos: JSON.stringify([stored]) },
     });
 
-    return NextResponse.json({
-      ok: true,
-      url: `/api/report/${encodeURIComponent(id)}/photo?path=${encodeURIComponent(blob.pathname)}`,
-    });
+    return NextResponse.json({ ok: true, url: responseUrl });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
       return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
