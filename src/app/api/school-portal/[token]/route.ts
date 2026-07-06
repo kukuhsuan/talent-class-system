@@ -12,7 +12,7 @@ import {
   termLabel,
   upsertSchoolStartConfirmation,
 } from "@/lib/courseConfirmation";
-import { verifySchoolPortalToken } from "@/lib/schoolPortalToken";
+import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { writeAuditLog } from "@/lib/auditLog";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
@@ -66,31 +66,10 @@ async function getSkillCards() {
   }
 }
 
-async function ensurePortalTokenVersionColumn() {
-  try {
-    await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN portalTokenVersion INTEGER NOT NULL DEFAULT 1');
-  } catch {
-    // Column already exists.
-  }
-}
-
-async function requireCurrentPortalToken(token: string) {
-  const verified = await verifySchoolPortalToken(token);
-  await ensurePortalTokenVersionColumn();
-  const rows = await prisma.$queryRawUnsafe<Array<{ portalTokenVersion: number }>>(
-    "SELECT portalTokenVersion FROM School WHERE id = ?",
-    verified.schoolId,
-  );
-  if (Number(rows[0]?.portalTokenVersion ?? 0) !== verified.tokenVersion) {
-    throw new Error("Invalid school portal token");
-  }
-  return verified;
-}
-
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
+    const { schoolId } = await resolveSchoolPortalParam(token);
     const { searchParams } = new URL(req.url);
     const selectedMonth = monthRange(
       Number(searchParams.get("year") ?? new Date().getFullYear()),
@@ -253,7 +232,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
+    const { schoolId } = await resolveSchoolPortalParam(token);
     const body = await req.json().catch(() => ({}));
     const term = parseConfirmationTerm(body.confirmationTerm ?? body);
     const [school, current] = await Promise.all([

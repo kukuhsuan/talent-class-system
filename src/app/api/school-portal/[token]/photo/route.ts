@@ -1,28 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
-import { verifySchoolPortalToken } from "@/lib/schoolPortalToken";
-
-async function ensurePortalTokenVersionColumn() {
-  try {
-    await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN portalTokenVersion INTEGER NOT NULL DEFAULT 1');
-  } catch {
-    // Column already exists.
-  }
-}
-
-async function requireCurrentPortalToken(token: string) {
-  const verified = await verifySchoolPortalToken(token);
-  await ensurePortalTokenVersionColumn();
-  const rows = await prisma.$queryRawUnsafe<Array<{ portalTokenVersion: number }>>(
-    "SELECT portalTokenVersion FROM School WHERE id = ?",
-    verified.schoolId,
-  );
-  if (Number(rows[0]?.portalTokenVersion ?? 0) !== verified.tokenVersion) {
-    throw new Error("Invalid school portal token");
-  }
-  return verified;
-}
+import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 
 function blobToken() {
   return process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_READ_WRITE_TOKEN ?? "";
@@ -42,7 +21,7 @@ function includesPrivatePhoto(value: string | null | undefined, pathname: string
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
+    const { schoolId } = await resolveSchoolPortalParam(token);
     const pathname = req.nextUrl.searchParams.get("path") ?? "";
     if (!pathname.startsWith("report-photos/")) {
       return NextResponse.json({ error: "照片路徑不正確" }, { status: 400 });

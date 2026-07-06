@@ -104,7 +104,7 @@ export default function EquipmentPage() {
     setLoading(true);
     try {
       const [schoolsRes, equipmentRes] = await Promise.all([
-        fetch("/api/schools"),
+        fetch("/api/schools?minimal=1"),
         fetch("/api/equipment-status"),
       ]);
       await Promise.all([

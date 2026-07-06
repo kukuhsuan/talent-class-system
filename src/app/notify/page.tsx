@@ -37,7 +37,8 @@ export default function NotifyPage() {
 
   useEffect(() => {
     fetch("/api/teachers").then(r => r.json()).then(setTeachers);
-    fetch("/api/schools").then(r => r.json()).then(setSchools);
+    // minimal=1 跳過開課確認彙整（完整模式在正式站會逾時，導致園所清單一直空白）
+    fetch("/api/schools?minimal=1").then(r => r.json()).then(data => setSchools(Array.isArray(data) ? data : []));
   }, []);
 
   useEffect(() => {

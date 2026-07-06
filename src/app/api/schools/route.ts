@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       prisma.school.findMany({
         ...query,
         ...(pageSize ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
-        select: { id: true, name: true, type: true, region: true, address: true },
+        select: { id: true, name: true, type: true, region: true, address: true, lineUserId: true, lineBindCode: true },
       }),
       pageSize ? prisma.school.count({ where }) : Promise.resolve(0),
     ]);

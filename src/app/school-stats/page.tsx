@@ -22,7 +22,7 @@ export default function SchoolStatsPage() {
   const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    fetch("/api/schools").then((r) => r.json()).then(setSchools);
+    fetch("/api/schools?minimal=1").then((r) => r.json()).then((data) => setSchools(Array.isArray(data) ? data : []));
   }, []);
 
   const load = useCallback(async () => {
