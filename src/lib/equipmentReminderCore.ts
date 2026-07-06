@@ -34,22 +34,21 @@ export function hasEquipmentSettings(input: Partial<EquipmentReminderData> | nul
 }
 
 // 後台列表的簡短標籤，例：第一堂｜需組裝｜待確認
+// （課後轉送已停用：舊資料即使有 needsTransferAfterClass 也不顯示）
 export function equipmentSummaryLabels(row: EquipmentReminderData): string[] {
   const labels: string[] = [];
   if (row.isFirstClass) labels.push("第一堂");
   if (row.needsAssembly) labels.push("需組裝");
-  if (row.needsTransferAfterClass) labels.push(row.status === "已完成轉送" ? "已完成轉送" : "課後待轉送");
-  if (row.status && row.status !== "已完成轉送") labels.push(row.status);
+  if (row.status) labels.push(row.status);
   return labels;
 }
 
 // LINE：第一堂課／組裝提醒文字
 export function equipmentFirstClassText(row: EquipmentReminderData) {
   const lines: string[] = [];
-  if (row.isFirstClass && row.needsAssembly) lines.push("本堂為第一堂課，需協助確認器材是否已送達並完成組裝。");
-  else if (row.isFirstClass) lines.push("本堂為第一堂課，需協助確認器材是否已送達。");
-  else if (row.needsAssembly) lines.push("本堂課需協助組裝器材。");
-  if (row.equipmentNote.trim()) lines.push(`器材：${row.equipmentNote.trim()}`);
+  if (row.isFirstClass) lines.push("本堂為第一堂課，請老師協助確認器材是否已送達。");
+  if (row.needsAssembly) lines.push("本堂課需要組裝器材，請老師協助提前確認。");
+  if (row.equipmentNote.trim()) lines.push(`器材內容：${row.equipmentNote.trim()}`);
   return lines.join("\n");
 }
 

@@ -459,10 +459,6 @@ export default function AttendancePage() {
                   <input type="checkbox" checked={form.equipment.needsAssembly} onChange={(e) => setEquipment({ needsAssembly: e.target.checked })} className="w-4 h-4" />
                   <span className="text-sm text-slate-700">需要組裝</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.equipment.needsTransferAfterClass} onChange={(e) => setEquipment({ needsTransferAfterClass: e.target.checked })} className="w-4 h-4" />
-                  <span className="text-sm text-slate-700">課後需轉送器材</span>
-                </label>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div className="md:col-span-2">
@@ -477,32 +473,8 @@ export default function AttendancePage() {
                     </select>
                   </div>
                 )}
-                {form.equipment.needsTransferAfterClass && (
-                  <>
-                    <div>
-                      <label>下一站園所</label>
-                      <input value={form.equipment.nextSchoolName} onChange={(e) => setEquipment({ nextSchoolName: e.target.value })} placeholder="例：快樂幼兒園" />
-                    </div>
-                    <div>
-                      <label>下一站上課日</label>
-                      <input type="date" value={form.equipment.nextClassDate} onChange={(e) => setEquipment({ nextClassDate: e.target.value })} />
-                    </div>
-                    <div>
-                      <label>下一站課程</label>
-                      <input value={form.equipment.nextCourseType} onChange={(e) => setEquipment({ nextCourseType: e.target.value })} placeholder="例：足球" />
-                    </div>
-                    <div>
-                      <label>下一站地址</label>
-                      <input value={form.equipment.nextAddress} onChange={(e) => setEquipment({ nextAddress: e.target.value })} placeholder="地址（選填）" />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label>轉送備註</label>
-                      <input value={form.equipment.transferNote} onChange={(e) => setEquipment({ transferNote: e.target.value })} placeholder="例：請先聯絡園所王主任" />
-                    </div>
-                  </>
-                )}
               </div>
-              <p className="mt-2 text-xs text-slate-400">勾選後會在課前 LINE 提醒老師；全部留白代表清除此堂的器材提醒。</p>
+              <p className="mt-2 text-xs text-slate-400">勾選後會在課前 LINE 提醒老師確認器材；全部留白代表清除此堂的器材提醒。</p>
             </div>
           </div>
           <div className="flex gap-2 mt-4">

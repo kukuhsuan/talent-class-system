@@ -237,7 +237,7 @@ export default function Home() {
         <div className="mt-6 rounded-xl border border-indigo-100 bg-white shadow-sm">
           <div className="border-b border-indigo-50 px-4 py-4">
             <h2 className="font-semibold text-slate-800">📦 今日器材提醒</h2>
-            <p className="text-sm text-slate-500">今日需確認器材、組裝或課後轉送的課程。</p>
+            <p className="text-sm text-slate-500">今日需確認器材或組裝的課程。</p>
           </div>
           <div className="divide-y divide-slate-100">
             {equipmentItems.map((item) => {
