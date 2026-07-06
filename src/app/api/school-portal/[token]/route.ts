@@ -4,7 +4,6 @@ import { courseLabel, normalizeDepartment } from "@/lib/courseMeta";
 import {
   canEditSubmittedConfirmation,
   confirmationHistory,
-  confirmationTermRange,
   copyPreviousSchoolStartConfirmation,
   courseConfirmationSummary,
   getSchoolStartConfirmation,
@@ -23,6 +22,18 @@ function countOf(row: { studentCount: number | null; studentCountA?: number | nu
 
 function dateText(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function monthRange(year: number, month: number) {
+  const now = new Date();
+  const safeYear = Number.isFinite(year) && year >= 2020 && year <= 2035 ? year : now.getFullYear();
+  const safeMonth = Number.isFinite(month) && month >= 1 && month <= 12 ? month : now.getMonth() + 1;
+  return {
+    year: safeYear,
+    month: safeMonth,
+    start: new Date(safeYear, safeMonth - 1, 1),
+    end: new Date(safeYear, safeMonth, 1),
+  };
 }
 
 function firstPhotoUrl(value: string | null | undefined) {
@@ -81,13 +92,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const { token } = await params;
     const { schoolId } = await requireCurrentPortalToken(decodeURIComponent(token));
     const { searchParams } = new URL(req.url);
-    const year = Number(searchParams.get("year") ?? new Date().getFullYear());
-    const month = Number(searchParams.get("month") ?? new Date().getMonth() + 1);
+    const selectedMonth = monthRange(
+      Number(searchParams.get("year") ?? new Date().getFullYear()),
+      Number(searchParams.get("month") ?? new Date().getMonth() + 1),
+    );
     const term = parseConfirmationTerm({
       academicYear: searchParams.get("academicYear"),
       semester: searchParams.get("semester"),
     });
-    const { start, end } = confirmationTermRange(term);
 
     const [school, skillCards] = await Promise.all([
       prisma.school.findUnique({ where: { id: schoolId } }),
@@ -99,7 +111,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
     const records = await prisma.attendance.findMany({
       where: {
-        date: { gte: start, lt: end },
+        date: { gte: selectedMonth.start, lt: selectedMonth.end },
         course: { OR: [{ schoolId }, { school: school.name }] },
       } as never,
       include: {
@@ -219,8 +231,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         label: termLabel(term),
         westernLabel: semesterWesternLabel(term),
       },
-      year,
-      month,
+      year: selectedMonth.year,
+      month: selectedMonth.month,
       summary: {
         reports: reports.length,
         lessons: monthlyRows.length,

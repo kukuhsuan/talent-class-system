@@ -22,6 +22,7 @@ import {
   createLeaveRequestFromAttendance,
   getInquiryWithLeave,
   INQUIRY_STATUS,
+  LEAVE_STATUS,
   semesterLeaveCount,
   updateInquiryResponse,
   upcomingLeaveCourseChoices,
@@ -360,11 +361,6 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       include: { schoolRel: true },
     }) as unknown as Array<{ id: number; schoolId?: number | null; school: string; courseType: string; dayOfWeek: string; time: string; department: string; address?: string; schoolRel?: { address?: string } | null }>;
 
-    if (courses.length === 0) {
-      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有排定的課程。` }], token);
-      return;
-    }
-
     const DAY_JS: Record<string, number> = {
       "星期一": 1, "星期二": 2, "星期三": 3, "星期四": 4,
       "星期五": 5, "星期六": 6, "星期日": 0,
@@ -378,7 +374,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
 
     const actualRows = await prisma.attendance.findMany({
       where: {
-        actualTeacherId: teacher.id,
+        OR: [{ actualTeacherId: teacher.id }, { assistantTeacherId: teacher.id }],
         cancelled: false,
         date: { gte: periodStart, lte: periodEnd },
       },
@@ -390,6 +386,10 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       date: Date;
       course: { id: number; schoolId?: number | null; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
     }>;
+    if (courses.length === 0 && actualRows.length === 0) {
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前沒有排定的課程。` }], token);
+      return;
+    }
     const actualTimeMap = await attendanceScheduledTimeMap(actualRows.map((row) => row.id));
     const confirmationMap = await courseConfirmationMapBySchoolIds([
       ...courses.map((course) => course.schoolId ?? 0),
@@ -404,10 +404,12 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const displayCourses = courses;
     const displayCourseIds = new Set(displayCourses.map((course) => course.id));
     const scheduleNearDate = new Date();
-    const datedCourseIds = await courseIdsWithAnyAttendance({
-      isActive: true,
-      id: { in: [...displayCourseIds] },
-    }, scheduleNearDate);
+    const datedCourseIds = displayCourseIds.size > 0
+      ? await courseIdsWithAnyAttendance({
+        isActive: true,
+        id: { in: [...displayCourseIds] },
+      }, scheduleNearDate)
+      : new Set<number>();
 
     const weeks: Array<{
       label: string;
@@ -430,7 +432,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
       const entries = [
         ...actualRows
-          .filter((a) => displayCourseIds.has(a.course.id) && a.date >= monthStart && a.date <= monthEnd)
+          .filter((a) => a.date >= monthStart && a.date <= monthEnd)
           .map((a): ScheduleEntryRow => {
             const iso = a.date.toISOString().slice(0, 10);
             const weekday = weekdayOfIso(iso);
@@ -615,7 +617,9 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       await replyMessage(replyToken, [{ type: "text", text: "這筆代課詢問不是發送給您的，請聯絡行政確認。" }], token);
       return;
     }
-    if (inquiry.status === INQUIRY_STATUS.noLongerNeeded || inquiry.status === INQUIRY_STATUS.expired) {
+    if ((inquiry as typeof inquiry & { leaveStatus?: string }).leaveStatus === LEAVE_STATUS.found
+      || inquiry.status === INQUIRY_STATUS.noLongerNeeded
+      || inquiry.status === INQUIRY_STATUS.expired) {
       await replyMessage(replyToken, [{ type: "text", text: "這堂課目前已找到代課老師，謝謝您的回覆與協助。" }], token);
       return;
     }

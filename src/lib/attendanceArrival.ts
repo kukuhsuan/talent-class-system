@@ -285,7 +285,11 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
 
   const dateIso = taipeiDateIso(now);
   const nowParts = taipeiParts(now);
-  const rows = await arrivalRowsForDate({ dateIso, teacherId: teacher.id, createMissing: true });
+  const rowsById = await arrivalRowsForDate({ dateIso, teacherId: teacher.id, createMissing: true });
+  const rows = rowsById.length > 0
+    ? rowsById
+    : (await arrivalRowsForDate({ dateIso, createMissing: false }))
+      .filter((row) => responsibleTeacher(row).name.trim() === teacher.name.trim());
   const columnMap = await arrivalColumnMap(rows.map((row) => row.id));
   const candidates = rows
     .map((row) => {
@@ -293,7 +297,10 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
       const end = parseCourseEndMinutes(row.course.time) ?? (start === null ? null : start + 90);
       return { row, start, end };
     })
-    .filter((item) => responsibleTeacher(item.row).id === teacher.id)
+    .filter((item) => {
+      const responsible = responsibleTeacher(item.row);
+      return responsible.id === teacher.id || responsible.name.trim() === teacher.name.trim();
+    })
     .filter((item) => item.start !== null)
     .filter((item) => nowParts.minutes >= (item.start ?? 0) - 120 && nowParts.minutes <= (item.end ?? (item.start ?? 0) + 90) + 60)
     .sort((a, b) => Math.abs(nowParts.minutes - (a.start ?? 0)) - Math.abs(nowParts.minutes - (b.start ?? 0)));

@@ -209,34 +209,6 @@ export default function SchoolPortalPage() {
             <>
               <Hero data={data} year={year} month={month} setYear={setYear} setMonth={setMonth} />
 
-              <section className="mt-5">
-                <CourseConfirmationForm
-                  value={confirmation}
-                  onChange={setConfirmation}
-                  onSave={saveConfirmation}
-                  onCopyPrevious={copyPreviousConfirmation}
-                  saving={savingConfirmation}
-                  message={confirmationMessage}
-                  termLabel={data.confirmationTerm?.label ?? ""}
-                  westernLabel={data.confirmationTerm?.westernLabel ?? ""}
-                  locked={confirmation.canSchoolEdit === false}
-                />
-              </section>
-
-              <section className="mt-5">
-                <PanelTitle title="本學期進度" subtitle="目前學到哪、已完成多少堂，一眼就能看懂。" />
-                <div className="mt-3">
-                  <LearningMaps maps={learningMaps.slice(0, 2)} compact />
-                </div>
-              </section>
-
-              <section className="mt-3 grid grid-cols-4 gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
-                <SummaryCard label="本月堂數" value={data.summary.lessons} helper="已完成課程" icon="▣" />
-                <SummaryCard label="本月總人數" value={data.summary.totalPeople} helper="累積參與" icon="◎" />
-                <SummaryCard label="成果回報" value={data.summary.reports} helper="本月紀錄" icon="★" />
-                <SummaryCard label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
-              </section>
-
               <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-slate-200/80 bg-[#f8fafc]/90 py-4 backdrop-blur lg:flex">
                 {NAV.map((item) => (
                   <TabPill key={item.id} active={tab === item.id} onClick={() => setTab(item.id)} icon={item.icon}>{item.label}</TabPill>
@@ -273,6 +245,38 @@ export default function SchoolPortalPage() {
                 )}
 
               </section>
+
+              {tab === "home" && (
+                <>
+                  <section className="mt-5">
+                    <CourseConfirmationForm
+                      value={confirmation}
+                      onChange={setConfirmation}
+                      onSave={saveConfirmation}
+                      onCopyPrevious={copyPreviousConfirmation}
+                      saving={savingConfirmation}
+                      message={confirmationMessage}
+                      termLabel={data.confirmationTerm?.label ?? ""}
+                      westernLabel={data.confirmationTerm?.westernLabel ?? ""}
+                      locked={confirmation.canSchoolEdit === false}
+                    />
+                  </section>
+
+                  <section className="mt-5">
+                    <PanelTitle title="本學期進度" subtitle="目前學到哪、已完成多少堂，一眼就能看懂。" />
+                    <div className="mt-3">
+                      <LearningMaps maps={learningMaps.slice(0, 2)} compact />
+                    </div>
+                  </section>
+
+                  <section className="mt-3 grid grid-cols-4 gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+                    <SummaryCard label="本月堂數" value={data.summary.lessons} helper="已完成課程" icon="▣" />
+                    <SummaryCard label="本月總人數" value={data.summary.totalPeople} helper="累積參與" icon="◎" />
+                    <SummaryCard label="成果回報" value={data.summary.reports} helper="本月紀錄" icon="★" />
+                    <SummaryCard label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
+                  </section>
+                </>
+              )}
             </>
           )}
         </main>
@@ -291,6 +295,8 @@ export default function SchoolPortalPage() {
 }
 
 function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year: number; month: number; setYear: (v: number) => void; setMonth: (v: number) => void }) {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from(new Set([currentYear - 1, currentYear, currentYear + 1, 2025, 2026, 2027])).sort((a, b) => a - b);
   return (
     <section className="relative overflow-hidden rounded-[22px] border border-slate-200/80 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:rounded-[28px] sm:px-7 sm:py-7 lg:px-8">
       <div className="absolute right-8 top-8 hidden h-16 w-16 rounded-full bg-blue-50 md:block" />
@@ -306,7 +312,7 @@ function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year
         </div>
         <div className="grid grid-cols-2 gap-3">
           <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 shadow-sm outline-none sm:min-h-12 sm:px-4 sm:py-3 sm:text-base">
-            {[2025, 2026, 2027].map((y) => <option key={y}>{y}年</option>)}
+            {years.map((y) => <option key={y} value={y}>{y}年</option>)}
           </select>
           <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 shadow-sm outline-none sm:min-h-12 sm:px-4 sm:py-3 sm:text-base">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
@@ -630,7 +636,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
           <div className="mt-3 rounded-[20px] border border-blue-100 bg-blue-50/40 p-3 sm:mt-5 sm:rounded-[22px] sm:p-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <div className="text-sm font-black text-[#142452] sm:text-base">家長分享成果卡</div>
+                <div className="text-sm font-black text-[#142452] sm:text-base">分享學習卡</div>
                 <div className="mt-0.5 text-xs font-semibold text-slate-500 sm:mt-1 sm:text-sm">快速整理成可轉發內容。</div>
               </div>
             </div>
@@ -639,7 +645,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
                 {copied ? "已複製分享文字" : "複製給家長文字"}
               </button>
               <button type="button" onClick={generateShareImage} disabled={imageGenerating} className="rounded-2xl border border-blue-100 bg-white px-3 py-3 text-xs font-black text-blue-600 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:text-sm">
-                {imageGenerating ? "成果卡產生中..." : "產生家長分享圖"}
+                {imageGenerating ? "學習卡產生中..." : "產生學習卡圖片"}
               </button>
               {shareImageUrl && (
                 <a href={shareImageUrl} download={`WaysLeader-${row.school}-${row.courseName}-${row.date}.png`} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-black text-slate-700 shadow-sm sm:px-5 sm:text-sm">
