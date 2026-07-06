@@ -6,12 +6,13 @@ import { normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { coursePayrollHoursForAttendance, coursePayrollHoursMap } from "@/lib/payrollHours";
 import { parsePayrollHours } from "@/lib/payrollHoursCore";
 import { deleteAttendanceEquipment, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
+import { parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await req.json();
-  const { makeupDate, assistantTeacherId, confirmCompleted, scheduledTime, equipment, ...rest } = data;
+  const { makeupDate, assistantTeacherId, confirmCompleted, scheduledTime, equipment, expectedStudentCount, ...rest } = data;
   const current = await prisma.attendance.findUnique({
     where: { id: Number(id) },
     include: { course: { select: { id: true, code: true, school: true, courseType: true, time: true } }, actualTeacher: { select: { id: true, name: true } }, assistantTeacher: { select: { id: true, name: true } } },
@@ -61,6 +62,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // 器材提醒設定（有帶 equipment 才更新；全空白等於清除）
   const equipmentInput = parseEquipmentInput(equipment);
   const equipmentRow = equipmentInput ? await saveAttendanceEquipment(record.id, equipmentInput) : undefined;
+  // 預計人數（有帶才更新；空字串 = 清除）
+  const expectedCount = parseExpectedStudentCount(expectedStudentCount);
+  if (expectedCount !== undefined) await setExpectedStudentCount([record.id], expectedCount);
   await writeAuditLog(req, {
     action: "update",
     targetType: "Attendance",

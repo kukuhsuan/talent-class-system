@@ -21,6 +21,7 @@ type Attendance = {
   substitutes?: Array<{ role: string }>;
   reportFillable?: boolean; reportExpired?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
   equipment?: (EquipmentReminderData & { attendanceId: number }) | null;
+  expectedStudentCount?: number | null;
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -40,6 +41,7 @@ const EMPTY_FORM = {
   studentCount: "", cancelled: false, cancelReason: "", makeupDate: "", makeupDone: false, category: "課後", hours: 0, notes: "",
   scheduledTime: "", confirmCompleted: false, extraDates: [] as string[],
   equipment: EMPTY_EQUIPMENT,
+  expectedStudentCount: "",
 };
 
 export default function AttendancePage() {
@@ -216,7 +218,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [], equipment: r.equipment ? { isFirstClass: Boolean(r.equipment.isFirstClass), needsAssembly: Boolean(r.equipment.needsAssembly), equipmentNote: r.equipment.equipmentNote ?? "", needsTransferAfterClass: Boolean(r.equipment.needsTransferAfterClass), nextSchoolName: r.equipment.nextSchoolName ?? "", nextClassDate: r.equipment.nextClassDate ?? "", nextCourseType: r.equipment.nextCourseType ?? "", nextAddress: r.equipment.nextAddress ?? "", transferNote: r.equipment.transferNote ?? "", status: r.equipment.status || "待確認" } : EMPTY_EQUIPMENT });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [], expectedStudentCount: r.expectedStudentCount?.toString() ?? "", equipment: r.equipment ? { isFirstClass: Boolean(r.equipment.isFirstClass), needsAssembly: Boolean(r.equipment.needsAssembly), equipmentNote: r.equipment.equipmentNote ?? "", needsTransferAfterClass: Boolean(r.equipment.needsTransferAfterClass), nextSchoolName: r.equipment.nextSchoolName ?? "", nextClassDate: r.equipment.nextClassDate ?? "", nextCourseType: r.equipment.nextCourseType ?? "", nextAddress: r.equipment.nextAddress ?? "", transferNote: r.equipment.transferNote ?? "", status: r.equipment.status || "待確認" } : EMPTY_EQUIPMENT });
     setEditing(r.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -391,6 +393,10 @@ export default function AttendancePage() {
             <div>
               <label>出席人數{requiresStudentCount(form.category) ? "" : "（課內免填）"}</label>
               <input type="number" value={form.studentCount} onChange={(e) => setForm({ ...form, studentCount: e.target.value })} placeholder={requiresStudentCount(form.category) ? "人數" : "固定班級免填"} />
+            </div>
+            <div>
+              <label>預計人數（課前通知顯示）</label>
+              <input type="number" value={form.expectedStudentCount} onChange={(e) => setForm({ ...form, expectedStudentCount: e.target.value })} placeholder="報名人數，選填" />
             </div>
             <div>
               <label>類別</label>
@@ -617,7 +623,7 @@ export default function AttendancePage() {
                           </div>
                           {isCountRequired(r) && r.reportFillStatus && <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.reportFillStatus}</div>}
                           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{countDisplay(r)}</div></div>
+                            <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{countDisplay(r)}{r.expectedStudentCount != null && <span className="ml-1 text-xs font-normal text-blue-500">預計 {r.expectedStudentCount}</span>}</div></div>
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 計薪</div><div className="font-medium">{normalizeCategory(r.category)}｜{hoursDisplay(r)}</div></div>
                           </div>
                           {r.hoursNeedsReview && <div className="mt-2 text-xs font-medium text-amber-600">上課時間需人工確認{r.hoursReviewReason ? `：${r.hoursReviewReason}` : ""}</div>}
@@ -671,6 +677,7 @@ export default function AttendancePage() {
                               </td>
                               <td className="px-4 py-4 text-center">
                                 {r.studentCount ?? (isCountRequired(r) ? <span className="text-amber-600">待回報</span> : <span className="text-slate-500">免填</span>)}
+                                {r.expectedStudentCount != null && <div className="mt-0.5 text-xs text-blue-500">預計 {r.expectedStudentCount}</div>}
                               </td>
                               <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{normalizeCategory(r.category)}</span></td>
                               <td className="px-4 py-4 text-center">

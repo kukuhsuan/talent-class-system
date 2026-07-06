@@ -308,14 +308,16 @@ export function buildReminderMessage(opts: {
     studentCount?: number | null;
     studentCountA?: number | null;
     studentCountB?: number | null;
+    expectedStudentCount?: number | null;
   }>;
 }) {
   const courses = opts.courses?.length ? opts.courses : [{
     school: opts.school ?? "園所待確認", time: opts.time ?? "待確認",
     courseType: opts.courseType, date: opts.date, dayOfWeek: opts.dayOfWeek,
   }];
-  // 人數顯示：一般課顯示總數，安親班顯示 A/B 班
+  // 人數顯示：優先顯示行政先填的預計人數；否則一般課顯示總數，安親班顯示 A/B 班
   const studentCountText = (course: (typeof courses)[number]) => {
+    if (course.expectedStudentCount != null) return `預計 ${course.expectedStudentCount} 人`;
     if (course.studentCountA != null || course.studentCountB != null) {
       const parts: string[] = [];
       if (course.studentCountA != null) parts.push(`A班 ${course.studentCountA} 人`);

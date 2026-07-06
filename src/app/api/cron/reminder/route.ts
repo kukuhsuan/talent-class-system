@@ -9,10 +9,11 @@ import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
 import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
+import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
 import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
 
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
-type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null };
+type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null };
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -149,8 +150,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ sent: 0, message: "no courses today" });
   }
 
-  // 器材提醒：一次撈出所有出勤的設定，附掛到提醒卡片
-  const equipmentMap = await equipmentByAttendanceIds(courses.map((course) => course.attendanceId ?? 0));
+  // 器材提醒 + 預計人數：一次撈出所有出勤的設定，附掛到提醒卡片
+  const [equipmentMap, expectedMap] = await Promise.all([
+    equipmentByAttendanceIds(courses.map((course) => course.attendanceId ?? 0)),
+    expectedStudentCountMap(courses.map((course) => course.attendanceId ?? 0)),
+  ]);
 
   const byTeacher = new Map<number, { teacher: ReminderTeacher; courses: ReminderCourse[] }>();
   for (const course of courses) {
@@ -166,6 +170,7 @@ export async function GET(req: NextRequest) {
         dayOfWeek: targetName,
         confirmationSummary: course.confirmationSummary,
         equipment: course.attendanceId ? equipmentMap.get(course.attendanceId) ?? null : null,
+        expectedStudentCount: course.attendanceId ? expectedMap.get(course.attendanceId) ?? null : null,
       });
       byTeacher.set(teacher.id, item);
     }
