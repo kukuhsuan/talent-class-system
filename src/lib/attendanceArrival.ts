@@ -48,7 +48,6 @@ type ArrivalRow = {
   actualTeacherId: number;
   assistantTeacher?: TeacherLite | null;
   assistantTeacherId?: number | null;
-  substitutes?: Array<{ confirmed: boolean; substituteTeacherId: number | null; substituteTeacher?: TeacherLite | null }>;
 };
 
 export type ArrivalDetail = {
@@ -145,9 +144,10 @@ function messageTime(time: string) {
   return time.replace(/\s*[-–—~～]\s*/g, "－");
 }
 
+// 一律以出勤紀錄的主教為準（代課確認後 assignSubstitute 已同步 actualTeacherId；
+// 後台直接改老師也以出勤為主，不再回頭看代課紀錄，避免通知發給錯的老師）
 function responsibleTeacher(row: ArrivalRow): TeacherLite {
-  const confirmed = row.substitutes?.find((substitute) => substitute.confirmed && substitute.substituteTeacher);
-  return confirmed?.substituteTeacher ?? row.actualTeacher;
+  return row.actualTeacher;
 }
 
 async function arrivalColumnMap(ids: number[]) {
@@ -169,7 +169,7 @@ async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; 
     ? { OR: [{ teacherId: input.teacherId }, { assistantTeacherId: input.teacherId }] }
     : {};
   const attendanceTeacherFilter: Prisma.AttendanceWhereInput = input.teacherId
-    ? { OR: [{ actualTeacherId: input.teacherId }, { assistantTeacherId: input.teacherId }, { substitutes: { some: { confirmed: true, substituteTeacherId: input.teacherId } } }] }
+    ? { OR: [{ actualTeacherId: input.teacherId }, { assistantTeacherId: input.teacherId }] }
     : {};
   const deptFilter: Prisma.CourseWhereInput = input.dept ? { department: input.dept } : {};
 
@@ -212,7 +212,6 @@ async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; 
       course: { include: { schoolRel: true } },
       actualTeacher: true,
       assistantTeacher: true,
-      substitutes: { where: { confirmed: true }, include: { substituteTeacher: true } },
     },
     orderBy: [{ date: "asc" }, { id: "asc" }],
   }) as unknown as Promise<ArrivalRow[]>;

@@ -8,6 +8,7 @@ import { parsePayrollHours } from "@/lib/payrollHoursCore";
 import { deleteAttendanceEquipment, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
 import { parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
+import { syncSubstituteWithAttendance } from "@/lib/substituteAssignment";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -49,6 +50,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     },
     include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
   });
+  // 後台直接改老師時，同步代課紀錄（通知一律以出勤為主，避免發給錯的老師）
+  if (record.actualTeacherId !== current.actualTeacherId) {
+    await syncSubstituteWithAttendance(record.id, "主教", record.actualTeacherId);
+  }
+  if (record.assistantTeacherId !== current.assistantTeacherId) {
+    await syncSubstituteWithAttendance(record.id, "助教", record.assistantTeacherId);
+  }
   if (typeof scheduledTime === "string") {
     await ensureAttendanceScheduledTimeColumn();
     await prisma.$executeRawUnsafe(

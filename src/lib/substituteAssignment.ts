@@ -85,6 +85,20 @@ export async function assignSubstitute(input: AssignmentInput) {
   return { updated: attendances.length };
 }
 
+// 後台直接改出勤老師時，同步代課紀錄（一律以出勤為主）
+// 改回原老師＝取消代課；改成別人＝更新代課老師
+export async function syncSubstituteWithAttendance(attendanceId: number, role: SubstituteRole, newTeacherId: number | null) {
+  const record = await prisma.substitute.findUnique({
+    where: { attendanceId_role: { attendanceId, role } },
+  });
+  if (!record) return;
+  if (!newTeacherId || record.originalTeacherId === newTeacherId) {
+    await prisma.substitute.delete({ where: { id: record.id } });
+  } else if (record.substituteTeacherId !== newTeacherId) {
+    await prisma.substitute.update({ where: { id: record.id }, data: { substituteTeacherId: newTeacherId } });
+  }
+}
+
 export async function cancelSubstitute(id: number) {
   const record = await prisma.substitute.findUnique({
     where: { id },
