@@ -6,6 +6,7 @@ import {
   replyMessage,
   buildReportRequestMessage, buildCurriculumSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
   buildLeaveCourseSelectMessage, buildLeaveCancelSelectMessage,
+  buildEquipmentFlowAcceptedMessage,
   isSchoolLineRegion,
 } from "@/lib/line";
 import { formatMonthDay, taipeiDateIso, weekdayOfIso } from "@/lib/courseDates";
@@ -29,6 +30,9 @@ import {
 } from "@/lib/teacherLeaves";
 import { setEquipmentStatus } from "@/lib/equipmentReminder";
 import { equipmentNextStopLabel, type EquipmentStatus } from "@/lib/equipmentReminderCore";
+import { getEquipmentFlow, updateEquipmentFlowStatus } from "@/lib/equipmentFlow";
+import { diffSummary, writeAuditLog } from "@/lib/auditLog";
+import { pushAdminAlert, raiseSystemAlert } from "@/lib/systemAlerts";
 
 type LineEvent = {
   type: string;
@@ -617,10 +621,34 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       await replyMessage(replyToken, [{ type: "text", text: "這筆代課詢問不是發送給您的，請聯絡行政確認。" }], token);
       return;
     }
-    if ((inquiry as typeof inquiry & { leaveStatus?: string }).leaveStatus === LEAVE_STATUS.found
+    const leaveStatus = (inquiry as typeof inquiry & { leaveStatus?: string }).leaveStatus;
+    // M22：代課老師按「取消代課」→ 立即通知行政並開異常單（已確認代課後取消 = P1 可能開天窗）
+    if (action === "sub_cancel") {
+      const afterConfirmed = leaveStatus === LEAVE_STATUS.found;
+      const detail = `${String(inquiry.leaveDate).slice(0, 10)} ${inquiry.startTime}-${inquiry.endTime}｜${inquiry.school}｜${inquiry.courseType}（原請假老師：${inquiry.teacherName}）`;
+      await raiseSystemAlert({
+        level: afterConfirmed ? "P1" : "P2",
+        category: "代課取消",
+        title: afterConfirmed
+          ? `${inquiry.candidateTeacherName} 老師取消代課（該課已確認代課，可能開天窗，請立即處理）`
+          : `${inquiry.candidateTeacherName} 老師取消先前的代課回覆`,
+        detail,
+        dedupeKey: `sub-cancel:${inquiryId}:${Date.now()}`,
+      }).catch((error) => console.error("raiseSystemAlert failed:", error));
+      if (!afterConfirmed) {
+        // 未確認前的取消不推 P1，但仍即時通知行政知悉
+        await pushAdminAlert(`ℹ️【代課取消】${inquiry.candidateTeacherName} 老師取消先前的代課回覆\n${detail}`).catch(() => undefined);
+      }
+    }
+    if (leaveStatus === LEAVE_STATUS.found
       || inquiry.status === INQUIRY_STATUS.noLongerNeeded
       || inquiry.status === INQUIRY_STATUS.expired) {
-      await replyMessage(replyToken, [{ type: "text", text: "這堂課目前已找到代課老師，謝謝您的回覆與協助。" }], token);
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: action === "sub_cancel"
+          ? "已收到您的取消通知，行政已同步收到提醒，將盡快與您聯絡確認。"
+          : "這堂課目前已找到代課老師，謝謝您的回覆與協助。",
+      }], token);
       return;
     }
     const nextStatus = action === "sub_available"
@@ -637,6 +665,58 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
           ? "已收到您的取消代課回覆。若此代課已由行政確認，請等待行政重新處理；正式代課不會自動取消。"
         : "已收到您的回覆，謝謝您回覆。",
     }], token);
+    return;
+  }
+
+  if (action === "equipment_flow_accept" || action === "equipment_flow_delivered" || action === "equipment_flow_cannot") {
+    const teacher = await prisma.teacher.findFirst({
+      where: { lineUserId: userId },
+      select: { id: true, name: true },
+    });
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    const flow = await getEquipmentFlow(attendanceId);
+    if (!flow || !flow.isActive) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到這筆器材詢問，請聯絡行政確認。" }], token);
+      return;
+    }
+    if (flow.responsibleTeacherId && flow.responsibleTeacherId !== teacher.id) {
+      await replyMessage(replyToken, [{ type: "text", text: "這筆器材詢問不是發送給您的，請聯絡行政確認。" }], token);
+      return;
+    }
+    const statusByAction: Record<string, string> = {
+      equipment_flow_accept: "已接受",
+      equipment_flow_delivered: "已送達",
+      equipment_flow_cannot: "無法協助",
+    };
+    const updated = await updateEquipmentFlowStatus(flow.id, statusByAction[action], teacher.name);
+    await writeAuditLog(null, {
+      action: "line_update_status",
+      targetType: "EquipmentFlow",
+      targetId: flow.id,
+      targetLabel: flow.equipmentName,
+      actorUserId: teacher.id,
+      actorName: teacher.name,
+      actorRole: "teacher",
+      beforeData: { status: flow.status },
+      afterData: { status: updated?.status },
+      diffSummary: diffSummary({ status: flow.status }, { status: updated?.status }, { status: "狀態" }),
+    });
+    if (action === "equipment_flow_accept") {
+      await replyMessage(replyToken, [buildEquipmentFlowAcceptedMessage({
+        flowId: flow.id,
+        nextSchoolName: flow.nextSchoolName,
+        nextAddress: flow.nextAddress,
+      })], token);
+    } else {
+      const replyByAction: Record<string, string> = {
+        equipment_flow_delivered: "已記錄：器材已送達。謝謝您的協助！",
+        equipment_flow_cannot: "已收到無法協助的回覆，行政會另外安排，謝謝老師。",
+      };
+      await replyMessage(replyToken, [{ type: "text", text: replyByAction[action] }], token);
+    }
     return;
   }
 

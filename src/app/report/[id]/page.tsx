@@ -36,27 +36,6 @@ type ReportInfo = {
   schoolNotifyError?: string;
   reportLocked?: boolean;
   reportPhotoLocked?: boolean;
-  courseConfirmation?: {
-    smallClassCount?: string;
-    middleClassCount?: string;
-    bigClassCount?: string;
-    academicYear?: number;
-    semester?: string;
-  } | null;
-  courseConfirmationSummary?: string;
-  courseConfirmationHistory?: Array<{
-    id: number;
-    previousSmallClassCount: string;
-    previousMiddleClassCount: string;
-    previousBigClassCount: string;
-    newSmallClassCount: string;
-    newMiddleClassCount: string;
-    newBigClassCount: string;
-    note: string;
-    teacherName: string;
-    createdAt: string;
-  }>;
-  confirmationTerm?: { academicYear: number; semester: string; label: string; westernLabel: string };
 };
 
 const EMPTY = {
@@ -140,10 +119,6 @@ export default function TeacherReportPage() {
   const [photoPreview, setPhotoPreview] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
-  const [countEditorOpen, setCountEditorOpen] = useState(false);
-  const [countSaving, setCountSaving] = useState(false);
-  const [countForm, setCountForm] = useState({ smallClassCount: "", middleClassCount: "", bigClassCount: "", note: "" });
-  const [countMessage, setCountMessage] = useState("");
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -171,12 +146,6 @@ export default function TeacherReportPage() {
           incidentProcess: data.incidentProcess ?? "",
           incidentAction: data.incidentAction ?? "",
           incidentNotified: data.incidentNotified || "否",
-        });
-        setCountForm({
-          smallClassCount: data.courseConfirmation?.smallClassCount ?? "",
-          middleClassCount: data.courseConfirmation?.middleClassCount ?? "",
-          bigClassCount: data.courseConfirmation?.bigClassCount ?? "",
-          note: "",
         });
         setCustomProgress(Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress)));
       })
@@ -275,45 +244,6 @@ export default function TeacherReportPage() {
     }
   }
 
-  async function updateClassCounts() {
-    if (countSaving) return;
-    setCountSaving(true);
-    setCountMessage("");
-    setError("");
-    try {
-      const res = await fetch(`/api/report/${params.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "confirmation_counts",
-          confirmationTerm: info?.confirmationTerm,
-          ...countForm,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "班級人數更新失敗");
-      setInfo((current) => current ? {
-        ...current,
-        courseConfirmation: data.courseConfirmation,
-        courseConfirmationSummary: data.courseConfirmationSummary,
-        courseConfirmationHistory: data.courseConfirmationHistory ?? current.courseConfirmationHistory,
-        confirmationTerm: data.confirmationTerm ?? current.confirmationTerm,
-      } : current);
-      setCountForm({
-        smallClassCount: data.courseConfirmation?.smallClassCount ?? "",
-        middleClassCount: data.courseConfirmation?.middleClassCount ?? "",
-        bigClassCount: data.courseConfirmation?.bigClassCount ?? "",
-        note: "",
-      });
-      setCountMessage("班級人數已更新");
-      setCountEditorOpen(false);
-    } catch (e) {
-      setError((e as Error).message || "班級人數更新失敗");
-    } finally {
-      setCountSaving(false);
-    }
-  }
-
   if (loading) return <div className="mx-auto max-w-md py-16 text-center text-slate-500">載入表單中...</div>;
   if (!info) return <div className="mx-auto max-w-md py-16 text-center text-red-500">{error || "找不到表單"}</div>;
   const isKindergarten = info.reportMode === "kindergarten";
@@ -362,64 +292,6 @@ export default function TeacherReportPage() {
         <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-600">
           此回報已超過 48 小時補填期限，目前僅供查看。如需修改請聯繫客服。
         </div>
-      )}
-
-      {info.courseConfirmationSummary && (
-        <section className="mb-4 rounded-2xl border border-blue-100 bg-white p-4 text-sm shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-bold text-slate-900">本學期班級人數</div>
-              <div className="mt-1 text-xs text-slate-500">{info.confirmationTerm?.label}</div>
-            </div>
-            <button type="button" onClick={() => setCountEditorOpen((value) => !value)}
-              className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">
-              更新人數
-            </button>
-          </div>
-          <div className="mt-3 whitespace-pre-line rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-            {info.courseConfirmationSummary}
-          </div>
-          {countEditorOpen && (
-            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  ["smallClassCount", "小班"],
-                  ["middleClassCount", "中班"],
-                  ["bigClassCount", "大班"],
-                ].map(([key, label]) => (
-                  <label key={key} className="text-xs font-semibold text-slate-600">
-                    {label}
-                    <input inputMode="numeric" type="number" value={countForm[key as keyof typeof countForm]}
-                      onChange={(e) => setCountForm((current) => ({ ...current, [key]: e.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm font-bold outline-none focus:border-blue-400" />
-                  </label>
-                ))}
-              </div>
-              <textarea value={countForm.note} onChange={(e) => setCountForm((current) => ({ ...current, note: e.target.value }))}
-                className="mt-3 min-h-16 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                placeholder="備註：例如本週新增1位學生" />
-              <button type="button" disabled={countSaving} onClick={updateClassCounts}
-                className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
-                {countSaving ? "更新中..." : "儲存人數更新"}
-              </button>
-            </div>
-          )}
-          {countMessage && <div className="mt-2 text-xs font-semibold text-green-700">{countMessage}</div>}
-          {info.courseConfirmationHistory?.length ? (
-            <details className="mt-3 rounded-xl bg-slate-50 px-3 py-2">
-              <summary className="cursor-pointer text-xs font-semibold text-slate-500">查看更新紀錄</summary>
-              <div className="mt-2 space-y-2">
-                {info.courseConfirmationHistory.slice(0, 5).map((item) => (
-                  <div key={item.id} className="rounded-lg bg-white p-2 text-xs leading-5 text-slate-600">
-                    <div className="font-semibold text-slate-700">{item.teacherName} 更新</div>
-                    <div>小班 {item.previousSmallClassCount || "0"} → {item.newSmallClassCount || "0"}｜中班 {item.previousMiddleClassCount || "0"} → {item.newMiddleClassCount || "0"}｜大班 {item.previousBigClassCount || "0"} → {item.newBigClassCount || "0"}</div>
-                    {item.note && <div className="text-slate-500">備註：{item.note}</div>}
-                  </div>
-                ))}
-              </div>
-            </details>
-          ) : null}
-        </section>
       )}
 
       <div className="space-y-4">

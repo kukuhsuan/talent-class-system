@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { TeacherCombobox } from "@/components/TeacherCombobox";
 import { Toast } from "@/components/Toast";
 import { ensureOk, readApiError } from "@/lib/clientApi";
@@ -105,7 +106,7 @@ export default function AttendancePage() {
       if (dept) courseParams.set("dept", dept);
       const [courseRes, teacherRes] = await Promise.all([
         fetch(`/api/courses?${courseParams}`, { cache: "no-store" }),
-        fetch("/api/teachers", { cache: "no-store" }),
+        fetch("/api/teachers?minimal=1", { cache: "no-store" }),
       ]);
       const courseError = courseRes.ok ? "" : await readApiError(courseRes, "課程清單載入失敗");
       const teacherError = teacherRes.ok ? "" : await readApiError(teacherRes, "老師清單載入失敗");
@@ -269,6 +270,11 @@ export default function AttendancePage() {
   });
   const filteredByControls = records;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const courseSelectOptions = courses.map((course) => ({
+    value: course.id,
+    label: `${course.code}｜${course.school}｜${courseLabel(course.courseType)}｜${course.teacher.name}｜${course.time || "未填時間"}`,
+    searchText: `${course.code} ${course.school} ${course.courseType} ${courseLabel(course.courseType)} ${course.teacher.name} ${course.time}`,
+  }));
   const unassignedCount = filteredByControls.filter(isUnassigned).length;
   const statusTabs = [
     { key: "all", label: "全部", count: filteredByControls.length, className: "bg-blue-50 text-blue-700 border-blue-100" },
@@ -279,6 +285,16 @@ export default function AttendancePage() {
     ...(unassignedCount > 0 ? [{ key: "unassigned", label: "⚠ 待指派老師", count: unassignedCount, className: "bg-rose-50 text-rose-700 border-rose-200" }] : []),
   ];
   const schoolOptions = [...new Set(courses.map((r) => r.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  const schoolFilterOptions = schoolOptions.map((school) => ({
+    value: school,
+    label: school,
+    searchText: school,
+  }));
+  const teacherFilterOptions = teachers.map((teacher) => ({
+    value: String(teacher.id),
+    label: teacher.name,
+    searchText: teacher.name,
+  }));
   const summary = {
     todayCourses: records.filter((r) => fmt(r.date) === today()).length,
     missing: records.filter(isMissingReport).length,
@@ -362,12 +378,14 @@ export default function AttendancePage() {
             )}
             <div className="md:col-span-2">
               <label>課程 *</label>
-              <select value={form.courseId} onChange={(e) => onCourseChange(Number(e.target.value))}>
-                <option value={0}>{loadingOptions ? "-- 課程載入中 --" : "-- 選擇課程 --"}</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>[{c.code}] {c.school} {c.courseType} ({c.teacher.name})</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={courseSelectOptions}
+                value={form.courseId || ""}
+                onChange={(value) => onCourseChange(value == null ? 0 : Number(value))}
+                placeholder={loadingOptions ? "課程載入中…" : "搜尋課程編號、園所、課程或老師"}
+                emptyText="查無符合的課程，請確認關鍵字"
+                emptyLabel="清除課程"
+              />
             </div>
             <div>
               <label>上課老師 *（代課時修改）</label>
@@ -511,14 +529,22 @@ export default function AttendancePage() {
           <select value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
-          <select value={filterSchool} onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}>
-            <option value="">{loadingOptions ? "園所載入中…" : "全部園所"}</option>
-            {schoolOptions.map((school) => <option key={school}>{school}</option>)}
-          </select>
-          <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}>
-            <option value="">{loadingOptions ? "老師載入中…" : "全部老師"}</option>
-            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
-          </select>
+          <SearchableSelect
+            options={schoolFilterOptions}
+            value={filterSchool}
+            onChange={(value) => { setFilterSchool(value ?? ""); setPage(1); }}
+            placeholder={loadingOptions ? "園所載入中…" : "搜尋園所"}
+            emptyLabel="全部園所"
+            emptyText="查無符合的園所，請確認關鍵字"
+          />
+          <SearchableSelect
+            options={teacherFilterOptions}
+            value={filterTeacher}
+            onChange={(value) => { setFilterTeacher(value ?? ""); setPage(1); }}
+            placeholder={loadingOptions ? "老師載入中…" : "搜尋老師"}
+            emptyLabel="全部老師"
+            emptyText="查無符合的老師，請確認關鍵字"
+          />
           <input type="date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setPage(1); }} />
           <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}>
             <option value="">全部類別</option>

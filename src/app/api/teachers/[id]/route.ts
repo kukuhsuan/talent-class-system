@@ -25,7 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       bankName: data.bankName?.trim() || "",
       bankCode: data.bankCode?.trim() || "",
       bankBranch: data.bankBranch?.trim() || "",
-      bankAccountName: data.bankAccountName?.trim() || "",
+      bankAccountName: data.bankAccountName?.trim() || data.name?.trim() || "",
       bankAccountNumber: data.bankAccountNumber?.replace(/\s+/g, "") || "",
     },
   });
@@ -51,15 +51,39 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const before = await prisma.teacher.findUnique({ where: { id: Number(id) } });
-  await prisma.teacher.delete({ where: { id: Number(id) } });
+  const teacherId = Number(id);
+  const before = await prisma.teacher.findUnique({ where: { id: teacherId } });
+  if (!before) return NextResponse.json({ error: "找不到老師資料" }, { status: 404 });
+  const [courses, attendances, leaveRequests, substitutes, inquiries, salaryAdjustments] = await Promise.all([
+    prisma.course.count({ where: { OR: [{ teacherId }, { assistantTeacherId: teacherId }] } }),
+    prisma.attendance.count({ where: { OR: [{ actualTeacherId: teacherId }, { assistantTeacherId: teacherId }] } }),
+    prisma.teacherLeaveRequest.count({ where: { teacherId } }),
+    prisma.substitute.count({ where: { OR: [{ originalTeacherId: teacherId }, { substituteTeacherId: teacherId }] } }),
+    prisma.substituteInquiry.count({ where: { candidateTeacherId: teacherId } }),
+    prisma.salaryAdjustment.count({ where: { teacherId } }),
+  ]);
+  const blockers = [
+    courses ? `課程 ${courses} 筆` : "",
+    attendances ? `出勤 ${attendances} 筆` : "",
+    leaveRequests ? `請假 ${leaveRequests} 筆` : "",
+    substitutes ? `代課 ${substitutes} 筆` : "",
+    inquiries ? `代課詢問 ${inquiries} 筆` : "",
+    salaryAdjustments ? `薪資調整 ${salaryAdjustments} 筆` : "",
+  ].filter(Boolean);
+  if (blockers.length > 0) {
+    return NextResponse.json({
+      error: `「${before.name}」已有${blockers.join("、")}，不能直接刪除，以免影響歷史出勤與薪資資料。若老師離職，請保留資料並移除 LINE 綁定或在備註標記停用。`,
+      blockers,
+    }, { status: 409 });
+  }
+  await prisma.teacher.delete({ where: { id: teacherId } });
   await writeAuditLog(req, {
     action: "delete",
     targetType: "Teacher",
     targetId: id,
-    targetLabel: before ? `老師：${before.name}` : `老師：${id}`,
+    targetLabel: `老師：${before.name}`,
     beforeData: before,
-    diffSummary: before ? `刪除老師：${before.name}` : `刪除老師：${id}`,
+    diffSummary: `刪除老師：${before.name}`,
     sensitive: true,
   });
   return NextResponse.json({ ok: true });

@@ -7,7 +7,7 @@ const secret = new TextEncoder().encode(
 );
 
 const PUBLIC_EXACT = ["/login", "/api/setup", "/api/line/north", "/api/line/south", "/api/line/school", "/api/line/school2"];
-const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/"];
+const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/"];
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant"]);

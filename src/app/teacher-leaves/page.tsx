@@ -8,6 +8,10 @@ type Inquiry = {
   candidateTeacherName: string;
   candidateLineUserId: string | null;
   candidateLineRegion: string;
+  primaryRegionLabel?: string;
+  primarySpecialtyLabel?: string;
+  recentAttendanceCount?: number;
+  primaryCourseTypes?: string[];
   status: string;
   sentAt: string | null;
   respondedAt: string | null;
@@ -39,9 +43,17 @@ type Candidate = {
   id: number;
   name: string;
   region: string;
+  primaryRegion: string;
+  primaryRegionLabel: string;
+  primarySpecialty: string;
+  primarySpecialtyLabel: string;
+  recentAttendanceCount: number;
+  primaryCourseTypes: string[];
+  hasTeachingRecords: boolean;
   hasLineBinding: boolean;
   hasConflict: boolean;
   isOriginalTeacher: boolean;
+  score: number;
 };
 
 type TeacherOption = {
@@ -50,6 +62,12 @@ type TeacherOption = {
   region?: string;
   lineUserId?: string | null;
   lineRegion?: string | null;
+  teachingProfile?: {
+    primaryRegionLabel: string;
+    primarySpecialtyLabel: string;
+    recentAttendanceCount: number;
+    primaryCourseTypes: string[];
+  };
 };
 
 const statusTone: Record<string, string> = {
@@ -133,7 +151,15 @@ export default function TeacherLeavesPage() {
     const query = manualTeacherQuery.trim().toLowerCase();
     return teacherOptions
       .filter((teacher) => teacher.id !== manualLeave?.teacherId)
-      .filter((teacher) => !query || teacher.name.toLowerCase().includes(query) || (teacher.region ?? "").toLowerCase().includes(query))
+      .filter((teacher) => {
+        if (!query) return true;
+        const profile = teacher.teachingProfile;
+        return teacher.name.toLowerCase().includes(query)
+          || (teacher.region ?? "").toLowerCase().includes(query)
+          || (profile?.primaryRegionLabel ?? "").toLowerCase().includes(query)
+          || (profile?.primarySpecialtyLabel ?? "").toLowerCase().includes(query)
+          || (profile?.primaryCourseTypes ?? []).some((course) => course.toLowerCase().includes(query));
+      })
       .slice(0, 12);
   }, [manualLeave?.teacherId, manualTeacherQuery, teacherOptions]);
 
@@ -428,16 +454,27 @@ export default function TeacherLeavesPage() {
                     <div className="mb-2 text-xs font-bold text-slate-500">老師回覆狀態</div>
                     <div className="flex flex-wrap gap-2">
                       {item.inquiries.map((inquiry) => (
-                        <div key={inquiry.id} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-sm">
-                          <span className="font-medium text-slate-700">{inquiry.candidateTeacherName}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${inquiryTone[inquiry.status] ?? "bg-slate-100 text-slate-600"}`}>
-                            {inquiryLabel[inquiry.status] ?? inquiry.status}
-                          </span>
+                        <div key={inquiry.id} className="flex flex-col gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-sm md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-700">{inquiry.candidateTeacherName}</div>
+                            <div className="mt-0.5 text-xs text-slate-500">
+                              {inquiry.primaryRegionLabel ?? "尚無排課紀錄"}｜{inquiry.primarySpecialtyLabel ?? "尚無排課紀錄"}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-slate-400">
+                              近 90 天 {inquiry.recentAttendanceCount ?? 0} 堂
+                              {inquiry.primaryCourseTypes?.length ? `｜${inquiry.primaryCourseTypes.join("、")}` : ""}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${inquiryTone[inquiry.status] ?? "bg-slate-100 text-slate-600"}`}>
+                              狀態：{inquiryLabel[inquiry.status] ?? inquiry.status}
+                            </span>
                           {inquiry.status === "available" && item.status !== "已找到代課" && (
                             <button onClick={() => confirmSubstitute(item, inquiry)} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
                               確認此老師代課
                             </button>
                           )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -449,7 +486,7 @@ export default function TeacherLeavesPage() {
                     <div className="mb-3 flex items-center justify-between">
                       <div>
                         <div className="font-bold text-slate-800">選擇要詢問的老師</div>
-                        <div className="text-xs text-slate-500">已標示同時段衝突與 LINE 綁定狀態；第一版仍由管理端手動判斷。</div>
+                        <div className="text-xs text-slate-500">依同區、同專長、可代課狀態與近期排課自動排序；發送前仍由管理端最後勾選。</div>
                       </div>
                       <button onClick={() => sendInquiries(item.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">發送代課詢問</button>
                     </div>
@@ -467,8 +504,16 @@ export default function TeacherLeavesPage() {
                             />
                             <span className="min-w-0">
                               <span className="block font-semibold text-slate-800">{teacher.name}</span>
+                              <span className="mt-1 block text-xs text-slate-600">
+                                {teacher.primaryRegionLabel}｜{teacher.primarySpecialtyLabel}
+                              </span>
+                              <span className="mt-0.5 block text-[11px] text-slate-400">
+                                近 90 天 {teacher.recentAttendanceCount} 堂
+                                {teacher.primaryCourseTypes.length > 0 ? `｜主要課程：${teacher.primaryCourseTypes.join("、")}` : ""}
+                              </span>
                               <span className="mt-1 flex flex-wrap gap-1 text-[11px]">
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{teacher.region}</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{teacher.primaryRegionLabel}</span>
+                                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">{teacher.primarySpecialtyLabel}</span>
                                 <span className={`rounded-full px-2 py-0.5 ${teacher.hasLineBinding ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                                   {teacher.hasLineBinding ? "LINE 已綁" : "未綁 LINE"}
                                 </span>
@@ -525,8 +570,20 @@ export default function TeacherLeavesPage() {
                       }`}
                     >
                       <span className="block font-semibold text-slate-800">{teacher.name}</span>
+                      {teacher.teachingProfile && (
+                        <span className="mt-1 block text-xs text-slate-600">
+                          {teacher.teachingProfile.primaryRegionLabel}｜{teacher.teachingProfile.primarySpecialtyLabel}
+                        </span>
+                      )}
+                      {teacher.teachingProfile && (
+                        <span className="mt-0.5 block text-[11px] text-slate-400">
+                          近 90 天 {teacher.teachingProfile.recentAttendanceCount} 堂
+                          {teacher.teachingProfile.primaryCourseTypes.length > 0 ? `｜${teacher.teachingProfile.primaryCourseTypes.join("、")}` : ""}
+                        </span>
+                      )}
                       <span className="mt-1 flex flex-wrap gap-1 text-[11px]">
-                        {teacher.region && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{teacher.region}</span>}
+                        {teacher.teachingProfile?.primaryRegionLabel && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{teacher.teachingProfile.primaryRegionLabel}</span>}
+                        {teacher.teachingProfile?.primarySpecialtyLabel && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">{teacher.teachingProfile.primarySpecialtyLabel}</span>}
                         <span className={`rounded-full px-2 py-0.5 ${hasLine ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                           {hasLine ? "LINE 已綁" : "未綁 LINE"}
                         </span>

@@ -12,7 +12,7 @@ type SalaryRow = {
   teacher: Teacher;
   regularHours: number; subHours: number; demoHours: number; assistantHours?: number;
   regularPay: number; demoPay: number; assistantPay?: number; travelPay: number; adjustmentTotal: number; total: number;
-  hoursReviewCount?: number; hasActivity: boolean; details?: Detail[];
+  hoursReviewCount?: number; unreportedCount?: number; unreportedItems?: string[]; hasActivity: boolean; details?: Detail[];
   adjustments: Array<{ id: number; targetMonth: string; payoutMonth: string; type: string; amount: number; reason: string; notes: string; isPaid: boolean }>;
 };
 
@@ -23,7 +23,8 @@ const catColor: Record<string, string> = {
 export default function SalaryPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [data, setData] = useState<{ year: number; month: number; results: SalaryRow[] } | null>(null);
+  const [data, setData] = useState<{ year: number; month: number; results: SalaryRow[]; locked?: boolean; finalizedBy?: string; finalizedAt?: string } | null>(null);
+  const [finalizing, setFinalizing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -62,6 +63,31 @@ export default function SalaryPage() {
       setDetailLoading(null);
     }
     setExpanded((prev) => new Set(prev).add(id));
+  };
+
+  const finalizeMonth = async (action: "lock" | "unlock") => {
+    const label = action === "lock" ? "結算鎖定" : "解鎖";
+    const warning = action === "lock"
+      ? `確定結算鎖定 ${year}年${month}月薪資？\n\n鎖定後：\n・當下計算結果會存成快照，之後改動出勤不影響本月薪資\n・該月出勤將全部鎖定不可編輯\n・解鎖需最高權限`
+      : `確定解鎖 ${year}年${month}月薪資結算？\n\n解鎖後快照會刪除，薪資恢復即時重算，該月出勤恢復可編輯。`;
+    if (!confirm(warning)) return;
+    setFinalizing(true);
+    try {
+      const res = await fetch("/api/salary/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ year, month, action }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `${label}失敗`);
+      setSentMsg(`${year}年${month}月薪資已${label}`);
+      setTimeout(() => setSentMsg(""), 4000);
+      await load();
+    } catch (error) {
+      alert((error as Error).message);
+    } finally {
+      setFinalizing(false);
+    }
   };
 
   const saveAdjustment = async () => {
@@ -210,9 +236,22 @@ export default function SalaryPage() {
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50">
             {loading ? "計算中..." : "重新計算"}
           </button>
-          <button onClick={() => setShowAdjustment((value) => !value)} className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2 rounded-lg text-sm">
-            + 薪資補發／扣款
-          </button>
+          {!data?.locked && (
+            <button onClick={() => setShowAdjustment((value) => !value)} className="bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2 rounded-lg text-sm">
+              + 薪資補發／扣款
+            </button>
+          )}
+          {data && (data.locked ? (
+            <button onClick={() => finalizeMonth("unlock")} disabled={finalizing}
+              className="bg-slate-600 hover:bg-slate-700 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+              {finalizing ? "處理中..." : "🔓 解鎖重算（限最高權限）"}
+            </button>
+          ) : (
+            <button onClick={() => finalizeMonth("lock")} disabled={finalizing || loading}
+              className="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+              {finalizing ? "處理中..." : "🔒 結算鎖定本月"}
+            </button>
+          ))}
           <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
             <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="w-4 h-4" />
             顯示無課老師
@@ -232,6 +271,13 @@ export default function SalaryPage() {
             <div><label className="block text-xs text-slate-600 mb-1">原因</label><input value={adjustment.reason} onChange={(e) => setAdjustment({ ...adjustment, reason: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
             <button onClick={saveAdjustment} className="bg-amber-600 text-white rounded-lg px-4 py-2 text-sm font-medium">儲存調整</button>
           </div>
+        </div>
+      )}
+
+      {data?.locked && (
+        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          🔒 本月薪資已於 {String(data.finalizedAt ?? "").slice(0, 16).replace("T", " ")} 由 {data.finalizedBy} 結算鎖定。
+          以下為結算當下的快照，之後的出勤異動不會影響這些數字。
         </div>
       )}
 
@@ -292,6 +338,7 @@ export default function SalaryPage() {
                       {r.travelPay > 0 && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">車費 ${fmt(r.travelPay)}</span>}
                       {r.adjustmentTotal !== 0 && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${r.adjustmentTotal > 0 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>調整 {r.adjustmentTotal > 0 ? "+" : ""}${fmt(r.adjustmentTotal)}</span>}
                       {(r.hoursReviewCount ?? 0) > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">需人工確認 {r.hoursReviewCount} 筆</span>}
+                      {(r.unreportedCount ?? 0) > 0 && <span title={(r.unreportedItems ?? []).join("\n")} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">未回報仍計薪 {r.unreportedCount} 筆</span>}
                       <span className="font-bold text-blue-700 ml-auto">{r.total > 0 ? `$${fmt(r.total)}` : "—"}</span>
                     </div>
                     <div className="flex items-center gap-2 ml-2" onClick={(e) => e.stopPropagation()}>

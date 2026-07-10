@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { normalizeRegion } from "@/lib/courseMeta";
 import { getTeacherLeave, splitTimeRange } from "@/lib/teacherLeaves";
+import { inferCourseSpecialty, rankTeacherForSubstitute, teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 
 function toMinutes(time: string) {
   const match = time.match(/^(\d{1,2}):(\d{2})$/);
@@ -27,13 +29,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const start = new Date(`${leave.leaveDate}T00:00:00.000Z`);
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 1);
-    const [teachers, sameDayAttendances] = await Promise.all([
+    const [teachers, sameDayAttendances, leaveCourse] = await Promise.all([
       prisma.teacher.findMany({ orderBy: { name: "asc" } }),
       prisma.attendance.findMany({
         where: { date: { gte: start, lt: end }, cancelled: false },
         include: { course: true },
       }),
+      prisma.course.findUnique({
+        where: { id: leave.courseId },
+        select: { region: true, courseType: true, schoolRel: { select: { region: true } } },
+      }),
     ]);
+    const profiles = await teacherTeachingProfiles(prisma, teachers.map((teacher) => teacher.id));
     const timeMap = await attendanceScheduledTimeMap(sameDayAttendances.map((row) => row.id));
     const conflictTeacherIds = new Set<number>();
     for (const row of sameDayAttendances) {
@@ -54,18 +61,39 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       if (row.assistantTeacherId) conflictTeacherIds.add(row.assistantTeacherId);
     }
 
-    return NextResponse.json({
-      items: teachers.map((teacher) => ({
+    const target = {
+      region: normalizeRegion(leaveCourse?.region || leaveCourse?.schoolRel?.region || ""),
+      specialty: inferCourseSpecialty(leaveCourse?.courseType || leave.courseType),
+    };
+    const items = teachers.map((teacher) => {
+      const profile = profiles.get(teacher.id);
+      const hasLineBinding = Boolean(teacher.lineUserId && teacher.lineRegion);
+      const hasConflict = conflictTeacherIds.has(teacher.id);
+      const isOriginalTeacher = teacher.id === leave.teacherId;
+      const score = profile
+        ? rankTeacherForSubstitute(profile, target, { hasConflict, hasLineBinding, isOriginalTeacher })
+        : 0;
+      return {
         id: teacher.id,
         name: teacher.name,
         lineUserId: teacher.lineUserId,
         lineRegion: teacher.lineRegion,
-        region: teacher.lineRegion || "未設定",
-        isOriginalTeacher: teacher.id === leave.teacherId,
-        hasLineBinding: Boolean(teacher.lineUserId && teacher.lineRegion),
-        hasConflict: conflictTeacherIds.has(teacher.id),
-      })),
-    });
+        region: profile?.primaryRegionLabel ?? "尚無排課紀錄",
+        primaryRegion: profile?.primaryRegion ?? "",
+        primaryRegionLabel: profile?.primaryRegionLabel ?? "尚無排課紀錄",
+        primarySpecialty: profile?.primarySpecialty ?? "",
+        primarySpecialtyLabel: profile?.primarySpecialtyLabel ?? "尚無排課紀錄",
+        recentAttendanceCount: profile?.recentAttendanceCount ?? 0,
+        primaryCourseTypes: profile?.primaryCourseTypes ?? [],
+        hasTeachingRecords: Boolean(profile?.hasTeachingRecords),
+        isOriginalTeacher,
+        hasLineBinding,
+        hasConflict,
+        score,
+      };
+    }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "zh-Hant"));
+
+    return NextResponse.json({ items, target });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message || "候選老師載入失敗" }, { status: 400 });
   }

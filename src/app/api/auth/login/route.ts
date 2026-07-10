@@ -46,8 +46,8 @@ export async function POST(req: NextRequest) {
   const { username, password } = await req.json();
   const normalizedUsername = String(username ?? "").trim();
   const rawPassword = String(password ?? "");
-  const adminPassword = process.env.ADMIN_PASSWORD?.trim()
-    || (process.env.NODE_ENV === "production" ? "" : "admin123");
+  // 安全性：不再提供 admin123 開發預設密碼；未設定 ADMIN_PASSWORD 即完全停用共用密碼登入
+  const adminPassword = process.env.ADMIN_PASSWORD?.trim() || "";
 
   // 共用密碼登入：僅在有設定非空 ADMIN_PASSWORD 時允許，避免空密碼直接取得 admin 權限
   if (adminPassword && rawPassword === adminPassword) {
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       action: "login",
       targetType: "UserAccount",
       targetLabel: "legacy-admin",
-      diffSummary: "共用後台密碼登入成功",
+      diffSummary: "【警告】共用後台密碼登入成功（無法追責到個人，建議改用個人帳號並停用 ADMIN_PASSWORD）",
       sensitive: true,
     });
     res.cookies.set("auth-token", token, {

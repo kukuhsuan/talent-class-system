@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/backup",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/consistency-check",
+      "schedule": "0 1 * * *"
     }
   ]
 }

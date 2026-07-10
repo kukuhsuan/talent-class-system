@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SaveButton } from "@/components/SaveButton";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { TeacherCombobox } from "@/components/TeacherCombobox";
 import { Toast } from "@/components/Toast";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
@@ -10,7 +11,15 @@ import { CATEGORY_BADGE_CLASS, CATEGORY_OPTIONS, COURSE_OPTIONS, courseLabel, no
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
 
-type Teacher = { id: number; name: string };
+type Teacher = {
+  id: number;
+  name: string;
+  teachingProfile?: {
+    primaryRegionLabel: string;
+    primarySpecialtyLabel: string;
+    primaryCourseTypes: string[];
+  };
+};
 type School = { id: number; name: string; type: string; region: string; address: string };
 type CourseOption = { code: string; label: string };
 type Course = {
@@ -30,6 +39,7 @@ function coerceDept(s: string): DeptOption {
 }
 
 const DAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+const COURSE_WEEKDAY_SET = new Set(DAYS);
 const DATE_MODES = [
   { value: "single", label: "單日" },
   { value: "multiple", label: "多日指定" },
@@ -56,7 +66,7 @@ type CourseForm = typeof EMPTY_FORM;
 function collectScheduledDates(form: CourseForm) {
   if (form.dateMode === "single") return form.scheduledDates[0] ? [form.scheduledDates[0]] : [];
   if (form.dateMode === "range") return expandIsoDateRange(form.rangeStart, form.rangeEnd);
-  if (form.dateMode === "weekly") return expandWeeklyDates(form.recurringStart, form.recurringEnd, form.recurringDays);
+  if (form.dateMode === "weekly") return expandWeeklyDates(form.recurringStart, form.recurringEnd, form.recurringDays.filter((day) => COURSE_WEEKDAY_SET.has(day)));
 
   const parsed = parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear));
   return [...new Set([
@@ -71,6 +81,13 @@ function describeCourse(c: Course) {
 
 function displayTeacherName(name: string) {
   return name === "待排老師" ? "未指派 / 待排老師" : name;
+}
+
+function displayTeacherOption(teacher: Teacher) {
+  const profile = teacher.teachingProfile;
+  const courses = profile?.primaryCourseTypes?.length ? profile.primaryCourseTypes.join("、") : "授課項目整理中";
+  const region = profile?.primaryRegionLabel?.replace(/老師$/, "") || "主要地區整理中";
+  return `${displayTeacherName(teacher.name)}｜${courses}｜${region}`;
 }
 
 function uniqueSortedDates(dates: string[]) {
@@ -99,8 +116,12 @@ function inferWeeklyDates(dates: string[]) {
   return {
     start: unique[0],
     end: unique[unique.length - 1],
-    days: weekdays,
+    days: weekdays.filter((day) => COURSE_WEEKDAY_SET.has(day)),
   };
+}
+
+function sanitizeCourseWeekdays(days: string[]) {
+  return [...new Set(days.filter((day) => COURSE_WEEKDAY_SET.has(day)))];
 }
 
 async function readErrorMessage(res: Response, fallback: string) {
@@ -359,7 +380,7 @@ export default function CoursesPage() {
   };
 
   const del = async (id: number, code: string) => {
-    if (!confirm(`確定刪除課程「${code}」？相關出勤紀錄也會一併刪除。`)) return;
+    if (!confirm(`確定刪除課程「${code}」？（已有出勤紀錄的課程無法刪除，請改用「停用」）`)) return;
     const res = await fetch(`/api/courses/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const message = await readErrorMessage(res, "刪除失敗，請確認是否仍有關聯資料");
@@ -384,18 +405,59 @@ export default function CoursesPage() {
     const dateMode = persistedMode || (inferredWeekly ? "weekly" : "multiple");
     const recurrenceStart = fullCourse.startDate?.slice(0, 10) || inferredWeekly?.start || "";
     const recurrenceEnd = fullCourse.endDate?.slice(0, 10) || inferredWeekly?.end || "";
-    const recurrenceDays = fullCourse.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [fullCourse.dayOfWeek || "星期一"];
+    const recurrenceDays = sanitizeCourseWeekdays(fullCourse.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [fullCourse.dayOfWeek || "星期一"]);
     setForm({ code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
       courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), category: normalizeCategory(fullCourse.category),
       department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes,
       dateMode, scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: dateMode === "weekly" ? [] : existingDates,
       rangeStart: dateMode === "range" ? recurrenceStart : "", rangeEnd: dateMode === "range" ? recurrenceEnd : "",
-      recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays });
+      recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays.length > 0 ? recurrenceDays : ["星期一"] });
     setEditing(c.id); setShowForm(true);
     scrollToFormOnEdit();
   };
 
   const regions = [...new Set([...REGION_OPTIONS, ...schools.map((s) => normalizeRegion(s.region)).filter(Boolean)])].sort();
+  const schoolCourseNames = new Map<string, Set<string>>();
+  for (const course of courses) {
+    if (!course.school && !course.schoolId) continue;
+    const keys = [course.schoolId ? String(course.schoolId) : "", course.school].filter(Boolean);
+    for (const key of keys) {
+      const set = schoolCourseNames.get(key) ?? new Set<string>();
+      set.add(courseLabel(course.courseType));
+      schoolCourseNames.set(key, set);
+    }
+  }
+  const schoolOptions = schools.map((school) => {
+    const courseNames = [
+      ...(schoolCourseNames.get(String(school.id)) ?? new Set<string>()),
+      ...(schoolCourseNames.get(school.name) ?? new Set<string>()),
+    ].filter(Boolean);
+    const courseText = [...new Set(courseNames)].join("、") || normalizeDepartment(school.type) || "課程整理中";
+    const region = normalizeRegion(school.region) || "未填地區";
+    return {
+      value: school.id,
+      label: `${school.name}｜${region}｜${courseText}`,
+      searchText: `${school.name} ${region} ${school.address} ${school.type} ${courseText}`,
+    };
+  });
+  const courseSelectOptions = [
+    ...courseOptions.map((option) => ({
+      value: option.code,
+      label: `${option.label}${option.label !== option.code ? `｜${option.code}` : ""}`,
+      searchText: `${option.label} ${option.code}`,
+    })),
+    ...(form.courseType && !courseOptions.some((option) => option.code === form.courseType)
+      ? [{ value: form.courseType, label: `${courseLabel(form.courseType)}｜既有資料`, searchText: form.courseType }]
+      : []),
+  ];
+  const teacherFilterOptions = [
+    { value: "unassigned", label: "未指派 / 待排老師", searchText: "未指派 待排老師" },
+    ...teachers.map((teacher) => ({
+      value: String(teacher.id),
+      label: displayTeacherOption(teacher),
+      searchText: `${teacher.name} ${displayTeacherOption(teacher)}`,
+    })),
+  ];
   const filtered = courses;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const parsedDates = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { dates: [], errors: [] };
@@ -445,10 +507,17 @@ export default function CoursesPage() {
             </div>
             <div className="md:col-span-2">
               <label>園所名稱 *</label>
-              <select value={form.schoolId ?? ""} onChange={(e) => selectSchool(Number(e.target.value))}>
-                <option value="">{loadingOptions ? "-- 園所載入中 --" : "-- 從園所管理選擇，或下方手動輸入 --"}</option>
-                {schools.map((s) => <option key={s.id} value={s.id}>{s.region ? `[${normalizeRegion(s.region)}] ` : ""}{s.type ? `${normalizeDepartment(s.type)}｜` : ""}{s.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={schoolOptions}
+                value={form.schoolId ?? ""}
+                onChange={(value) => {
+                  if (value == null) setForm((current) => ({ ...current, schoolId: null }));
+                  else selectSchool(Number(value));
+                }}
+                placeholder={loadingOptions ? "園所載入中…" : "搜尋園所名稱、地區、地址"}
+                emptyText="查無符合的園所，請確認關鍵字"
+                emptyLabel="手動輸入園所"
+              />
               {form.schoolId && (
                 <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                   <div className="font-medium text-slate-900">{form.school}</div>
@@ -483,7 +552,7 @@ export default function CoursesPage() {
                 value={form.teacherId || null}
                 onChange={(teacherId) => setForm({ ...form, teacherId: teacherId ?? 0 })}
                 placeholder="-- 選擇老師 --"
-                displayName={(teacher) => displayTeacherName(teacher.name)}
+                displayName={displayTeacherOption}
               />
               {form.department === "安親班" && (
                 <p className="mt-1 text-xs text-amber-600">安親班每天老師請在「出勤紀錄」逐日設定。此欄選「待排老師」即可。</p>
@@ -501,18 +570,21 @@ export default function CoursesPage() {
                   emptyLabel="-- 無助教 --"
                   excludeTeacherId={form.teacherId}
                   className="bg-blue-50/40"
-                  displayName={(teacher) => displayTeacherName(teacher.name)}
+                  displayName={displayTeacherOption}
                 />
                 <p className="mt-1 text-xs text-blue-500">選填，會同步到出勤與助教薪資。</p>
               </div>
             )}
             <div>
               <label>課程項目</label>
-              <select value={form.courseType} onChange={(e) => setForm({ ...form, courseType: e.target.value })}>
-                <option value="">-- 選擇課程 --</option>
-                {courseOptions.map((c) => <option key={c.code} value={c.code}>{c.label}{c.label !== c.code ? `（${c.code}）` : ""}</option>)}
-                {form.courseType && !courseOptions.some((c) => c.code === form.courseType) && <option value={form.courseType}>{courseLabel(form.courseType)}（既有資料）</option>}
-              </select>
+              <SearchableSelect
+                options={courseSelectOptions}
+                value={form.courseType}
+                onChange={(value) => setForm({ ...form, courseType: value ?? "" })}
+                placeholder="搜尋課程名稱或編號"
+                emptyText="查無符合的課程，請確認關鍵字"
+                emptyLabel="清除課程"
+              />
               <button type="button" onClick={() => setShowCourseOptionForm((v) => !v)}
                 className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800">
                 + 新增課程選項
@@ -577,7 +649,9 @@ export default function CoursesPage() {
                         dateMode: m.value,
                         recurringStart: f.recurringStart || inferred?.start || existingDates[0] || "",
                         recurringEnd: f.recurringEnd || inferred?.end || existingDates[existingDates.length - 1] || "",
-                        recurringDays: f.recurringDays.length > 0 ? f.recurringDays : (inferred?.days ?? [f.dayOfWeek || "星期一"]),
+                        recurringDays: sanitizeCourseWeekdays(f.recurringDays).length > 0
+                          ? sanitizeCourseWeekdays(f.recurringDays)
+                          : sanitizeCourseWeekdays(inferred?.days ?? [f.dayOfWeek || "星期一"]),
                       };
                     }
                     return { ...f, dateMode: m.value };
@@ -656,7 +730,7 @@ export default function CoursesPage() {
                       {DAYS.map((d) => (
                         <label key={d} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs ${form.recurringDays.includes(d) ? "border-amber-700 bg-amber-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>
                           <input type="checkbox" className="sr-only" checked={form.recurringDays.includes(d)} onChange={(e) => {
-                            const next = e.target.checked ? [...form.recurringDays, d] : form.recurringDays.filter((x) => x !== d);
+                            const next = e.target.checked ? [...sanitizeCourseWeekdays(form.recurringDays), d] : form.recurringDays.filter((x) => x !== d);
                             setForm({ ...form, recurringDays: next });
                           }} />
                           {d.replace("星期", "週")}
@@ -706,11 +780,14 @@ export default function CoursesPage() {
             <option value="">全部類型</option>
             {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
-          <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-            <option value="">{loadingOptions ? "老師載入中…" : "全部老師"}</option>
-            <option value="unassigned">未指派 / 待排老師</option>
-            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
-          </select>
+          <SearchableSelect
+            options={teacherFilterOptions}
+            value={filterTeacher}
+            onChange={(value) => { setFilterTeacher(value ?? ""); setPage(1); }}
+            placeholder={loadingOptions ? "老師載入中…" : "搜尋老師、授課項目或地區"}
+            emptyLabel="全部老師"
+            emptyText="查無符合的老師，請確認關鍵字"
+          />
           <select value={filterMonth} onChange={(e) => { setFilterMonth(e.target.value); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
             <option value="">全部月份</option>
             <option value="7">7月</option>

@@ -19,13 +19,32 @@ type PortalData = {
     incidentChild: string; incidentProcess: string; incidentAction: string; incidentNotified: string;
     aiSummary: string; aiSkillFocus: string; aiTeachingNote: string; representativePhotoUrl: string; schoolNotifyStatus: string;
   }>;
+  teachers: Array<{
+    id: number;
+    name: string;
+    cardUrl: string;
+    courseNames: string[];
+    courseTypes: string[];
+    photoUrl: string;
+    specialties: string;
+    specialtyTags: string[];
+    educationSummary: string;
+    experienceSummary: string;
+    certificationsSummary: string;
+    teachingStyle: string;
+    intro: string;
+    status: string;
+    primaryRegionLabel: string;
+    primarySpecialtyLabel: string;
+    primaryCourseTypes: string[];
+  }>;
   monthlyRows: Array<{ id: number; date: string; courseName: string; teacherName: string; time: string; studentCount: number; reportContent: string }>;
   curriculum: Array<{ courseType: string; courseName: string; items: Array<{ lesson: number; title: string }> }>;
   assessments: Array<{ id: number; childName: string; courseName: string; teacherName: string; date: string; title: string; comment: string; certificateUrl: string }>;
   skillCards: Array<{ name: string; icon: string; imageUrl: string; description: string }>;
 };
 
-type Tab = "home" | "outcomes" | "progress" | "certificates";
+type Tab = "home" | "teachers" | "outcomes" | "progress" | "certificates";
 type CourseConfirmation = {
   smallClassCount?: string;
   middleClassCount?: string;
@@ -43,6 +62,7 @@ type CourseConfirmation = {
 
 const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: "home", label: "首頁", icon: "⌂" },
+  { id: "teachers", label: "師資", icon: "♛" },
   { id: "outcomes", label: "成果", icon: "★" },
   { id: "progress", label: "進度", icon: "⌁" },
   { id: "certificates", label: "證書", icon: "◇" },
@@ -80,6 +100,8 @@ export default function SchoolPortalPage() {
   const [confirmation, setConfirmation] = useState<CourseConfirmation>(EMPTY_CONFIRMATION);
   const [savingConfirmation, setSavingConfirmation] = useState(false);
   const [confirmationMessage, setConfirmationMessage] = useState("");
+  const [teacherSearch, setTeacherSearch] = useState("");
+  const [teacherCourseFilter, setTeacherCourseFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +131,27 @@ export default function SchoolPortalPage() {
   const recentReports = useMemo(() => (data?.reports ?? []).slice(0, 3), [data]);
   const learningMaps = useMemo(() => buildLearningMaps(data?.reports ?? [], data?.curriculum ?? []), [data]);
   const skillMap = useMemo(() => buildSkillMap(data?.skillCards ?? []), [data]);
+  const teacherCourseOptions = useMemo(() => {
+    const names = (data?.teachers ?? []).flatMap((teacher) => teacher.courseNames);
+    return [...new Set(names.filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  }, [data]);
+  const filteredTeachers = useMemo(() => {
+    const query = teacherSearch.trim().toLowerCase();
+    return (data?.teachers ?? []).filter((teacher) => {
+      const matchesCourse = !teacherCourseFilter || teacher.courseNames.includes(teacherCourseFilter);
+      if (!matchesCourse) return false;
+      if (!query) return true;
+      return [
+        teacher.name,
+        teacher.courseNames.join(" "),
+        teacher.specialties,
+        teacher.educationSummary,
+        teacher.experienceSummary,
+        teacher.teachingStyle,
+        teacher.primaryRegionLabel,
+      ].join(" ").toLowerCase().includes(query);
+    });
+  }, [data, teacherCourseFilter, teacherSearch]);
 
   async function saveConfirmation() {
     if (confirmation.canSchoolEdit === false) return;
@@ -230,6 +273,18 @@ export default function SchoolPortalPage() {
                   </div>
                 )}
 
+                {tab === "teachers" && (
+                  <TeachersPanel
+                    teachers={filteredTeachers}
+                    allCount={data.teachers.length}
+                    search={teacherSearch}
+                    onSearch={setTeacherSearch}
+                    courseFilter={teacherCourseFilter}
+                    onCourseFilter={setTeacherCourseFilter}
+                    courseOptions={teacherCourseOptions}
+                  />
+                )}
+
                 {tab === "progress" && (
                   <div className="space-y-5">
                     <PanelTitle title="學習進度地圖" subtitle="用時間軸看見目前學到哪、下一步會練習什麼。" />
@@ -282,9 +337,9 @@ export default function SchoolPortalPage() {
         </main>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 gap-2 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
+      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
         {NAV.map((item) => (
-          <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-2xl px-2 py-2 text-center text-[11px] font-black ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
+          <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-2xl px-1.5 py-2 text-center text-[10px] font-black ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
             <div className="text-base">{item.icon}</div>
             {item.label}
           </button>
@@ -320,6 +375,134 @@ function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year
         </div>
       </div>
     </section>
+  );
+}
+
+function TeachersPanel({
+  teachers,
+  allCount,
+  search,
+  onSearch,
+  courseFilter,
+  onCourseFilter,
+  courseOptions,
+}: {
+  teachers: PortalData["teachers"];
+  allCount: number;
+  search: string;
+  onSearch: (value: string) => void;
+  courseFilter: string;
+  onCourseFilter: (value: string) => void;
+  courseOptions: string[];
+}) {
+  return (
+    <div className="space-y-4">
+      <PanelTitle title="本學期授課老師" subtitle="以下為本學期安排至貴園授課的專業老師，提供園所參考。" />
+      <div className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:p-5">
+        <div className="grid gap-3 lg:grid-cols-[1fr_260px_auto]">
+          <input
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            placeholder="搜尋老師姓名、授課項目、學歷、教學風格"
+          />
+          <select
+            value={courseFilter}
+            onChange={(event) => onCourseFilter(event.target.value)}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+          >
+            <option value="">全部課程類型</option>
+            {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
+          </select>
+          {(search || courseFilter) && (
+            <button
+              type="button"
+              onClick={() => { onSearch(""); onCourseFilter(""); }}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-600"
+            >
+              清除篩選
+            </button>
+          )}
+        </div>
+        <div className="mt-3 text-sm font-bold text-slate-400">顯示 {teachers.length} / {allCount} 位授課老師</div>
+      </div>
+
+      {allCount === 0 ? (
+        <Empty text="目前尚未安排授課老師，待課程確認後將自動更新。" />
+      ) : teachers.length === 0 ? (
+        <Empty text="查無符合的老師，請確認關鍵字" />
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {teachers.map((teacher) => (
+            <PortalTeacherCard key={teacher.id} teacher={teacher} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PortalTeacherCard({ teacher }: { teacher: PortalData["teachers"][number] }) {
+  const tags = teacher.specialtyTags.length > 0
+    ? teacher.specialtyTags
+    : [...teacher.courseNames, ...teacher.primaryCourseTypes].filter(Boolean).slice(0, 5);
+  return (
+    <article className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_12px_28px_rgba(30,64,175,0.06)]">
+      <div className="bg-blue-600 px-5 py-4 text-white">
+        <div className="text-xs font-bold text-blue-100">WaysLeader AI 師資介紹</div>
+        <h3 className="mt-1 text-2xl font-black">{teacher.name} 老師</h3>
+      </div>
+      <div className="grid gap-4 p-5 sm:grid-cols-[132px_1fr]">
+        <div>
+          <div className="h-32 w-32 overflow-hidden rounded-[26px] bg-blue-50 ring-4 ring-white shadow-sm">
+            {teacher.photoUrl
+              ? <img src={teacher.photoUrl} alt={teacher.name} loading="lazy" className="h-full w-full object-cover" />
+              : <div className="flex h-full w-full items-center justify-center text-5xl font-black text-blue-200">{teacher.name.slice(0, 1)}</div>}
+          </div>
+          <button
+            type="button"
+            onClick={() => window.open(teacher.cardUrl, "_blank")}
+            className="mt-3 w-32 rounded-2xl bg-blue-600 px-3 py-2 text-sm font-black text-white"
+          >
+            查看完整簡歷
+          </button>
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            {teacher.courseNames.map((course) => (
+              <span key={course} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{course}</span>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <InfoLine label="主要地區" value={teacher.primaryRegionLabel || "區域整理中"} />
+            <InfoLine label="主要專長" value={teacher.primarySpecialtyLabel || "專長整理中"} />
+            <InfoLine label="學歷摘要" value={teacher.educationSummary || "學歷資料整理中"} />
+            <InfoLine label="教學經歷" value={teacher.experienceSummary || "教學經歷整理中"} />
+            <InfoLine label="證照資格" value={teacher.certificationsSummary || "證照資料整理中"} wide />
+          </div>
+          {tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {tags.map((tag) => <span key={tag} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{tag}</span>)}
+            </div>
+          )}
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <div className="text-sm font-black text-[#142452]">教學特色</div>
+            <p className="mt-2 line-clamp-4 whitespace-pre-line text-sm leading-7 text-slate-600">
+              {teacher.teachingStyle || teacher.intro || "重視安全陪伴與互動引導，依孩子狀態調整課程節奏，讓孩子在穩定、愉快的活動中累積自信。"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function InfoLine({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={`rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-100 ${wide ? "sm:col-span-2" : ""}`}>
+      <div className="text-xs font-black text-slate-400">{label}</div>
+      <div className="mt-1 truncate font-bold text-slate-700" title={value}>{value}</div>
+    </div>
   );
 }
 

@@ -235,7 +235,16 @@ export function buildCurriculumSelectMessage(
 
 export type LineRegion = "north" | "south" | "school" | "school2";
 
-export function getLineConfig(region: LineRegion) {
+export function normalizeLineRegion(region: unknown): LineRegion {
+  const value = String(region ?? "").trim();
+  if (value === "south" || value === "南部") return "south";
+  if (value === "school2" || value === "園所2" || value === "園所 OA 2") return "school2";
+  if (value === "school" || value === "園所") return "school";
+  return "north";
+}
+
+export function getLineConfig(region: LineRegion | string | null | undefined) {
+  const normalized = normalizeLineRegion(region);
   const configs = {
     north: {
       secret: process.env.LINE_NORTH_SECRET ?? "",
@@ -254,7 +263,7 @@ export function getLineConfig(region: LineRegion) {
       token: process.env.LINE_SCHOOL2_TOKEN ?? "",
     },
   };
-  return configs[region];
+  return configs[normalized];
 }
 
 export function isSchoolLineRegion(region: LineRegion) {
@@ -277,12 +286,17 @@ export async function replyMessage(replyToken: string, messages: object[], token
 }
 
 export async function pushMessage(to: string, messages: object[], token: string) {
+  if (!token) throw new Error("LINE 官方帳號 token 尚未設定");
   const res = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     body: JSON.stringify({ to, messages }),
   });
-  if (!res.ok) console.error("LINE push error:", await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("LINE push error:", text);
+    throw new Error(`LINE 發送失敗：${text.slice(0, 180)}`);
+  }
 }
 
 // Build a class reminder message for teacher
@@ -368,7 +382,7 @@ export function buildReminderMessage(opts: {
           type: "box", layout: "vertical", backgroundColor: "#FFF8E8", cornerRadius: "10px", paddingAll: "13px",
           contents: [
             { type: "text", text: "薪資提醒", size: "sm", weight: "bold", color: "#A16207" },
-            { type: "text", text: "⚠️ 請完成課程回報，否則該堂課暫不列入薪資計算。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
+            { type: "text", text: "⚠️ 請儘速完成課程回報，行政將依回報內容核對薪資。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
           ],
         },
       ],
@@ -378,14 +392,18 @@ export function buildReminderMessage(opts: {
         type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC",
         spacing: "sm",
         contents: [
+          ...(course.address ? [{
+            type: "button" as const, style: "secondary" as const, height: "sm" as const,
+            action: {
+              type: "uri" as const,
+              label: "導航到上課地點",
+              uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${course.address} ${course.school}`.trim())}`,
+            },
+          }] : []),
           {
             type: "button", style: "primary", color: "#2C82B8", height: "sm",
             action: { type: "uri", label: "課後回報", uri: course.reportUrl || `${appUrl()}/report/${encodeURIComponent(signPublicAccessToken("report", course.attendanceId!))}` },
           },
-          ...(course.attendanceId ? [{
-            type: "button" as const, style: "secondary" as const, height: "sm" as const,
-            action: { type: "uri" as const, label: "更新人數", uri: `${appUrl()}/report/${encodeURIComponent(signPublicAccessToken("report", course.attendanceId))}` },
-          }] : []),
           // 器材確認按鈕（postback）
           ...(course.attendanceId && course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly) ? [{
             type: "button" as const, style: "secondary" as const, height: "sm" as const,
@@ -446,7 +464,7 @@ export function buildReportRequestMessage(opts: {
             type: "box", layout: "vertical", backgroundColor: "#FFF8E8", cornerRadius: "10px", paddingAll: "13px",
             contents: [
               { type: "text", text: "薪資提醒", size: "sm", weight: "bold", color: "#A16207" },
-              { type: "text", text: "⚠️ 請完成課程回報，否則該堂課暫不列入薪資計算。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
+              { type: "text", text: "⚠️ 請儘速完成課程回報，行政將依回報內容核對薪資。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
             ],
           },
         ],
@@ -457,10 +475,6 @@ export function buildReportRequestMessage(opts: {
           {
             type: "button", style: "primary", color: "#2C82B8", height: "sm",
             action: { type: "uri", label: "課後回報", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
-          },
-          {
-            type: "button", style: "secondary", height: "sm",
-            action: { type: "uri", label: "更新人數", uri: `${appUrl()}/report/${encodeURIComponent(reportToken)}` },
           },
         ],
       },
@@ -724,6 +738,121 @@ export function buildSubstituteConfirmedMessage(opts: {
   };
 }
 
+export function buildEquipmentFlowInquiryMessage(opts: {
+  flowId: number;
+  date: string;
+  time: string;
+  courseName: string;
+  schoolName: string;
+  schoolAddress?: string;
+  equipmentName: string;
+  equipmentContent?: string;
+  currentLocation?: string;
+  nextSchoolName?: string;
+  nextDate?: string;
+  nextAddress?: string;
+  deliveryMethod?: string;
+  transportSubsidyEligible?: boolean;
+  notes?: string;
+}) {
+  const line = (label: string, value?: string) => value
+    ? [{ type: "text", text: `${label}｜${value}`, size: "sm", color: "#263B40", wrap: true }]
+    : [];
+  const mapQuery = opts.nextAddress || opts.nextSchoolName || "";
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+  return {
+    type: "flex",
+    altText: `器材協助詢問 ${opts.date} ${opts.equipmentName}`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#DCEEFF",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: "器材協助詢問", color: "#174A7C", weight: "bold", size: "xl" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FFFFFF",
+        paddingAll: "16px",
+        spacing: "sm",
+        contents: [
+          { type: "text", text: "老師您好，想請問您這堂課結束後，是否方便協助將器材帶到下一站？", size: "sm", color: "#52656A", wrap: true },
+          ...(opts.transportSubsidyEligible ? [{ type: "text", text: "車程 15 分鐘以上補貼 100 元。", size: "sm", color: "#1D4ED8", weight: "bold", wrap: true }] : []),
+          { type: "separator", margin: "md", color: "#DCEEFF" },
+          ...line("器材", opts.equipmentName),
+          ...line("目前園所", opts.currentLocation || opts.schoolName),
+          ...line("下一站", opts.nextSchoolName),
+          ...line("下一站地址", opts.nextAddress),
+          ...line("下一站日期", opts.nextDate),
+          ...line("備註", opts.notes),
+          { type: "text", text: "如果不方便也沒關係，請直接點選「無法協助」，我們會另外安排，謝謝老師。", size: "xs", color: "#6B7280", wrap: true, margin: "md" },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FFFFFF",
+        spacing: "sm",
+        contents: [
+          ...(mapQuery ? [{ type: "button", style: "secondary", color: "#EAF3FF", action: { type: "uri", label: "導航到送達地點", uri: mapUrl } }] : []),
+          { type: "button", style: "primary", color: "#2563EB", action: { type: "postback", label: "可以協助", data: `action=equipment_flow_accept&id=${opts.flowId}`, displayText: "可以協助送器材" } },
+          { type: "button", style: "secondary", color: "#FDECEC", action: { type: "postback", label: "無法協助", data: `action=equipment_flow_cannot&id=${opts.flowId}`, displayText: "無法協助送器材" } },
+        ],
+      },
+    },
+  };
+}
+
+export function buildEquipmentFlowAcceptedMessage(opts: {
+  flowId: number;
+  nextSchoolName?: string;
+  nextAddress?: string;
+}) {
+  const mapQuery = opts.nextAddress || opts.nextSchoolName || "";
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+  return {
+    type: "flex",
+    altText: "謝謝老師協助器材運送",
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#DCEEFF",
+        paddingAll: "16px",
+        contents: [{ type: "text", text: "謝謝老師協助！", color: "#174A7C", weight: "bold", size: "xl" }],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FFFFFF",
+        paddingAll: "16px",
+        spacing: "sm",
+        contents: [
+          { type: "text", text: "課後請協助將器材帶至：", size: "sm", color: "#52656A", wrap: true },
+          ...(opts.nextSchoolName ? [{ type: "text" as const, text: opts.nextSchoolName, size: "lg" as const, color: "#111827", weight: "bold" as const, wrap: true }] : []),
+          ...(opts.nextAddress ? [{ type: "text" as const, text: `地址｜${opts.nextAddress}`, size: "sm" as const, color: "#263B40", wrap: true }] : []),
+          { type: "text", text: "送達後請點選「已送達」。", size: "sm", color: "#52656A", wrap: true, margin: "md" },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          ...(mapQuery ? [{ type: "button" as const, style: "secondary" as const, color: "#EAF3FF", action: { type: "uri" as const, label: "導航到送達地點", uri: mapUrl } }] : []),
+          { type: "button", style: "primary", color: "#2563EB", action: { type: "postback", label: "已送達", data: `action=equipment_flow_delivered&id=${opts.flowId}`, displayText: "器材已送達" } },
+        ],
+      },
+    },
+  };
+}
+
 // Build a text-only report reminder (used by home page "提醒老師回報" and notify page)
 export function buildReportReminderMessage(opts: {
   teacherName: string;
@@ -756,7 +885,7 @@ export function buildReportReminderMessage(opts: {
     "3️⃣ 備註或特殊狀況",
     "",
     "⚠️ 課程回報是薪資核算與園所服務紀錄的重要依據。",
-    "若未完成回報，該堂課將暫不列入薪資結算，待資料補齊後再行核算。",
+    "若未完成回報，行政無法核對該堂課資料，請儘速補回報以免影響薪資核對。",
     "",
     "感謝老師配合！",
   ].join("\n");
@@ -804,17 +933,20 @@ export function buildProgressSelectMessage(attendanceId: number) {
   };
 }
 
-// Format report for school notification (cream/coffee theme)
+// Format report for school notification (blue/white theme)
 export function buildSchoolReportMessage(opts: {
   teacherName: string;
   school: string;
   courseType: string;
   date: string;
+  expectedStudentCount?: number | null;
   studentCount: number | null;
+  portalUrl?: string;
   content: string;
   cancelled: boolean;
 }) {
   const label = courseLabel(opts.courseType);
+  const countText = (value: number | null | undefined) => value == null ? "未設定" : `${value} 人`;
   return {
     type: "flex",
     altText: `本週課程完成報告：${opts.school} ${label}`,
@@ -823,52 +955,63 @@ export function buildSchoolReportMessage(opts: {
       header: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#7B9E87",
+        backgroundColor: "#2F80C9",
         paddingAll: "16px",
-        contents: [{ type: "text", text: "🌟 本週課程完成報告", color: "#F6F3EE", weight: "bold", size: "md" }],
+        contents: [{ type: "text", text: "本週課程完成報告", color: "#FFFFFF", weight: "bold", size: "md" }],
       },
       body: {
         type: "box",
         layout: "vertical",
-        backgroundColor: "#F6F3EE",
+        backgroundColor: "#F7FBFF",
         spacing: "md",
         paddingAll: "16px",
         contents: [
-          { type: "text", text: opts.school, weight: "bold", color: "#2E2B27", size: "xl" },
-          { type: "text", text: `課程：${label}`, size: "sm", color: "#6B6358" },
-          { type: "separator", color: "#DDD8D0", margin: "sm" },
-          { type: "text", text: `教練：${opts.teacherName}`, size: "sm", color: "#2E2B27", margin: "sm" },
-          ...(opts.studentCount != null ? [{
-            type: "box", layout: "horizontal", margin: "sm",
-            contents: [
-              { type: "text", text: "✅ 完成進度：", size: "sm", color: "#7B9E87", flex: 0 },
-              { type: "text", text: opts.content || "正常上課", size: "sm", color: "#2E2B27", weight: "bold", wrap: true },
-            ],
-          }] : []),
-          ...(opts.content && !opts.studentCount ? [{
-            type: "box", layout: "vertical", margin: "sm",
-            backgroundColor: "#EAE4DC", cornerRadius: "8px", paddingAll: "10px",
-            contents: [
-              { type: "text", text: "📌 主題：", size: "xs", color: "#6B6358" },
-              { type: "text", text: opts.content, size: "sm", color: "#2E2B27", wrap: true, margin: "xs" },
-            ],
-          }] : []),
-          ...(opts.studentCount != null ? [{
-            type: "box", layout: "horizontal", margin: "sm",
-            backgroundColor: "#EAE4DC", cornerRadius: "8px", paddingAll: "10px",
-            contents: [
-              { type: "text", text: "👦 出席人數", size: "sm", color: "#6B6358", flex: 1 },
-              { type: "text", text: `${opts.studentCount} 人`, size: "md", color: "#2E2B27", weight: "bold", align: "end" },
-            ],
-          }] : []),
+          { type: "text", text: opts.school, weight: "bold", color: "#102A43", size: "xl" },
+          { type: "text", text: `課程：${label}`, size: "sm", color: "#486581" },
+          { type: "text", text: `教練：${opts.teacherName}`, size: "sm", color: "#486581" },
+          { type: "separator", color: "#D9EAF7", margin: "sm" },
           {
             type: "box", layout: "vertical", margin: "sm",
-            backgroundColor: "#EAE4DC", cornerRadius: "8px", paddingAll: "10px",
+            backgroundColor: "#FFFFFF", cornerRadius: "8px", paddingAll: "10px",
             contents: [
-              { type: "text", text: "💡 學習重點：", size: "xs", color: "#6B6358" },
-              { type: "text", text: "教練依據現場狀況與孩童需求，進行專屬客製化教學。", size: "xs", color: "#6B6358", wrap: true, margin: "xs" },
+              { type: "text", text: "完成進度", size: "xs", color: "#2F80C9", weight: "bold" },
+              { type: "text", text: opts.content || "正常上課", size: "sm", color: "#102A43", weight: "bold", wrap: true, margin: "xs" },
             ],
           },
+          {
+            type: "box", layout: "horizontal", margin: "sm", spacing: "sm",
+            contents: [
+              {
+                type: "box", layout: "vertical", backgroundColor: "#EAF4FF", cornerRadius: "8px", paddingAll: "10px", flex: 1,
+                contents: [
+                  { type: "text", text: "應到人數", size: "xs", color: "#486581" },
+                  { type: "text", text: countText(opts.expectedStudentCount), size: "md", color: "#102A43", weight: "bold", margin: "xs" },
+                ],
+              },
+              {
+                type: "box", layout: "vertical", backgroundColor: "#EAF4FF", cornerRadius: "8px", paddingAll: "10px", flex: 1,
+                contents: [
+                  { type: "text", text: "實到人數", size: "xs", color: "#486581" },
+                  { type: "text", text: countText(opts.studentCount), size: "md", color: "#102A43", weight: "bold", margin: "xs" },
+                ],
+              },
+            ],
+          },
+          {
+            type: "box", layout: "vertical", margin: "sm",
+            backgroundColor: "#FFFFFF", cornerRadius: "8px", paddingAll: "10px",
+            contents: [
+              { type: "text", text: "學習重點", size: "xs", color: "#2F80C9", weight: "bold" },
+              { type: "text", text: "教練依據現場狀況與孩童需求，進行專屬客製化教學。", size: "xs", color: "#486581", wrap: true, margin: "xs" },
+            ],
+          },
+          ...(opts.portalUrl ? [{
+            type: "button" as const,
+            style: "primary" as const,
+            color: "#2F80C9",
+            margin: "md" as const,
+            action: { type: "uri" as const, label: "查看園所學習成果", uri: opts.portalUrl },
+          }] : []),
         ],
       },
     },

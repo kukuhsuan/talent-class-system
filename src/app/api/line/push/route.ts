@@ -20,7 +20,7 @@ type ReminderTeacher = { id: number; name: string; lineUserId: string | null; li
 type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string };
 
 // POST /api/line/push
-// body: { type: "reminder" | "report_request", teacherId?, date?, dayOffset?, attendanceId? }
+// body: { type: "reminder" | "report_request", teacherId?, teacherName?, date?, dayOffset?, attendanceId? }
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
@@ -32,7 +32,16 @@ export async function POST(req: NextRequest) {
     const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
     const dayName = dayNameOfIso(dateStr);
     const { start, end } = dayBounds(dateStr);
-    const targetTeacherId = body.teacherId ? Number(body.teacherId) : null;
+    let targetTeacherId = body.teacherId ? Number(body.teacherId) : null;
+    const targetTeacherName = String(body.teacherName ?? "").trim();
+    if (!targetTeacherId && targetTeacherName) {
+      const teacher = await prisma.teacher.findFirst({
+        where: { name: { contains: targetTeacherName } },
+        select: { id: true },
+      });
+      if (!teacher) return NextResponse.json({ error: `找不到老師：${targetTeacherName}` }, { status: 404 });
+      targetTeacherId = teacher.id;
+    }
     const courseTeacherFilter = targetTeacherId ? { OR: [{ teacherId: targetTeacherId }, { assistantTeacherId: targetTeacherId }] } : {};
     const targetCourseWindow = courseDateWindowWhere(dateStr);
     const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...targetCourseWindow, ...courseTeacherFilter }, targetDate);
@@ -106,7 +115,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let sent = 0, skipped = 0;
+    let sent = 0, skipped = 0, failed = 0;
+    const errors: string[] = [];
     for (const { teacher, courses } of grouped.values()) {
       if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
       const cfg = getLineConfig(teacher.lineRegion as LineRegion);
@@ -115,11 +125,16 @@ export async function POST(req: NextRequest) {
         title: dayOffset === 1 && !body.date ? "明日課程提醒" : "課程提醒",
         courses,
       });
-      await pushMessage(teacher.lineUserId, [msg], cfg.token);
-      sent++;
+      try {
+        await pushMessage(teacher.lineUserId, [msg], cfg.token);
+        sent++;
+      } catch (error) {
+        failed++;
+        errors.push(`${teacher.name}：${(error as Error).message}`);
+      }
     }
 
-    return NextResponse.json({ ok: true, sent, skipped });
+    return NextResponse.json({ ok: failed === 0, sent, skipped, failed, errors: errors.slice(0, 5) });
   }
 
   if (body.type === "report_request") {
@@ -157,7 +172,11 @@ export async function POST(req: NextRequest) {
       courseType: att.course.courseType,
       attendanceId: att.id,
     });
-    await pushMessage(teacher.lineUserId, [msg], cfg.token);
+    try {
+      await pushMessage(teacher.lineUserId, [msg], cfg.token);
+    } catch (error) {
+      return NextResponse.json({ error: (error as Error).message || "LINE 發送失敗" }, { status: 502 });
+    }
     return NextResponse.json({ ok: true });
   }
 

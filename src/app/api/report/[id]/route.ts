@@ -1,25 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { normalizeAbilities } from "@/lib/abilityMap";
 import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
-import { COURSE_CURRICULUM } from "@/lib/line";
-import { notifySchoolReport } from "@/lib/schoolNotification";
-import { getLessonTemplateForReport, listLessonTemplates } from "@/lib/lessonTemplates";
 import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
-import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
+import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE } from "@/lib/reportWindow";
-import { assessmentSemesterRange } from "@/lib/kindergartenAssessment";
-import {
-  confirmationHistory,
-  courseConfirmationSummary,
-  getSchoolStartConfirmation,
-  parseConfirmationTerm,
-  semesterWesternLabel,
-  termLabel,
-  updateConfirmationCounts,
-} from "@/lib/courseConfirmation";
-import { writeAuditLog } from "@/lib/auditLog";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -80,6 +66,7 @@ function sanitizePhotoUrl(value: string) {
 
 async function isFinalKindergartenAttendance(attendance: { id: number; date: Date; courseId: number; course: { department: string } }) {
   if (!isKindergarten(attendance.course.department)) return false;
+  const { assessmentSemesterRange } = await import("@/lib/kindergartenAssessment");
   const semester = assessmentSemesterRange(attendance.date);
   const latest = await prisma.attendance.findFirst({
     where: {
@@ -118,9 +105,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
     }
-    const timeMap = await attendanceScheduledTimeMap([attendance.id]);
     const scheduledTime = effectiveAttendanceTime({
-      scheduledTime: timeMap.get(attendance.id),
+      scheduledTime: usableScheduledTime(attendance.scheduledTime),
       courseTime: attendance.course.time,
       attendanceHours: attendance.hours,
       isPayrollLocked: attendance.isPayrollLocked,
@@ -135,26 +121,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
     }
     const normalizedCourseType = courseLabel(attendance.course.courseType);
-    let progressRows = isKindergarten(attendance.course.department)
-      ? await listLessonTemplates(prisma, normalizedCourseType)
-      : await prisma.courseProgress.findMany({
-          where: { courseType: normalizedCourseType },
-          orderBy: { lesson: "asc" },
-        });
-    if (progressRows.length === 0 && COURSE_CURRICULUM[normalizedCourseType]) {
-      progressRows = COURSE_CURRICULUM[normalizedCourseType].map((item) => ({
+    let progressRows = await prisma.courseProgress.findMany({
+      where: { courseType: normalizedCourseType },
+      orderBy: { lesson: "asc" },
+      select: { id: true, courseType: true, lesson: true, title: true, createdAt: true },
+    });
+    if (progressRows.length === 0) {
+      const { COURSE_CURRICULUM } = await import("@/lib/line");
+      progressRows = (COURSE_CURRICULUM[normalizedCourseType] ?? []).map((item) => ({
         id: 0,
         courseType: normalizedCourseType,
         lesson: item.lesson,
         title: item.title,
         createdAt: new Date(),
-      })) as never;
+      }));
     }
 
     const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
-    const term = parseConfirmationTerm({});
-    const courseSchoolId = attendance.course.schoolId ?? null;
-    const courseConfirmation = courseSchoolId ? await getSchoolStartConfirmation(courseSchoolId, term) : null;
     return NextResponse.json({
       id: attendance.id,
       date: attendance.date.toISOString().slice(0, 10),
@@ -188,17 +171,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
       representativePhotoUrl: reportPhotoUrl(attendance.reportPhotos, id),
-      courseConfirmation,
-      courseConfirmationSummary: courseConfirmation ? courseConfirmationSummary(courseConfirmation, { multiline: true, teacher: true }) : "",
-      courseConfirmationHistory: courseConfirmation?.id ? await confirmationHistory(courseConfirmation.id) : [],
-      confirmationTerm: {
-        ...term,
-        label: termLabel(term),
-        westernLabel: semesterWesternLabel(term),
-      },
       shouldAskAssessment,
       assessmentUrl: shouldAskAssessment ? `/assessment/${encodeURIComponent(signPublicAccessToken("assessment", attendance.id))}` : "",
-      assessmentCount: await assessmentCount(attendance.id),
+      assessmentCount: shouldAskAssessment ? await assessmentCount(attendance.id) : 0,
       schoolNotifyStatus: shouldNotifySchool(attendance.course.department)
         ? (attendance as unknown as { schoolNotifyStatus?: string }).schoolNotifyStatus ?? "未通知"
         : "",
@@ -235,6 +210,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.type !== "confirmation_counts") {
       return NextResponse.json({ error: "Unknown update type" }, { status: 400 });
     }
+    const {
+      courseConfirmationSummary,
+      getSchoolStartConfirmation,
+      parseConfirmationTerm,
+      semesterWesternLabel,
+      termLabel,
+      updateConfirmationCounts,
+    } = await import("@/lib/courseConfirmation");
+    const { writeAuditLog } = await import("@/lib/auditLog");
     const term = parseConfirmationTerm(body.confirmationTerm ?? body);
     const previousConfirmation = await getSchoolStartConfirmation(attendance.course.schoolId, term);
     const courseConfirmation = await updateConfirmationCounts({
@@ -266,7 +250,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ok: true,
       courseConfirmation,
       courseConfirmationSummary: courseConfirmationSummary(courseConfirmation, { multiline: true, teacher: true }),
-      courseConfirmationHistory: courseConfirmation.id ? await confirmationHistory(courseConfirmation.id) : [],
       confirmationTerm: {
         ...term,
         label: termLabel(term),
@@ -294,9 +277,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
     }
-    const timeMap = await attendanceScheduledTimeMap([attendance.id]);
     const scheduledTime = effectiveAttendanceTime({
-      scheduledTime: timeMap.get(attendance.id),
+      scheduledTime: usableScheduledTime(attendance.scheduledTime),
       courseTime: attendance.course.time,
       attendanceHours: attendance.hours,
       isPayrollLocked: attendance.isPayrollLocked,
@@ -327,7 +309,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const incidentAction = String(data.incidentAction ?? "").trim();
     const incidentNotified = String(data.incidentNotified ?? "").trim();
     const lessonTemplate = kindergarten
-      ? await getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
+      ? await (await import("@/lib/lessonTemplates")).getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
       : null;
     const skillFocus = kindergarten
       ? normalizeAbilities(safeJsonArray(data.skillFocus), 4)
@@ -364,6 +346,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         aiTeachingNote: "",
       },
     });
+    const { writeAuditLog } = await import("@/lib/auditLog");
     await writeAuditLog(req, {
       actorName: attendance.actualTeacher.name,
       actorRole: "teacher",
@@ -384,9 +367,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       diffSummary: `老師送出課後回報：${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
     });
 
-    const notify = shouldNotifySchool(attendance.course.department)
-      ? await notifySchoolReport(attendance.id)
-      : { status: "", error: "" };
+    // 效能：園所 LINE 通知移到回應之後的背景執行，老師送出回報不必等整條通知鏈
+    const willNotify = shouldNotifySchool(attendance.course.department);
+    if (willNotify) {
+      after(async () => {
+        try {
+          await (await import("@/lib/schoolNotification")).notifySchoolReport(attendance.id);
+        } catch (error) {
+          console.error("background school notify failed", error);
+        }
+      });
+    }
     const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
     return NextResponse.json({
       ok: true,
@@ -394,8 +385,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       aiSummary: "",
       aiSkillFocus: "",
       aiTeachingNote: "",
-      schoolNotifyStatus: notify.status,
-      schoolNotifyError: notify.error ?? "",
+      schoolNotifyStatus: willNotify ? "通知處理中" : "",
+      schoolNotifyError: "",
       shouldAskAssessment,
       assessmentUrl: shouldAskAssessment ? `/assessment/${encodeURIComponent(signPublicAccessToken("assessment", attendance.id))}` : "",
       assessmentCount: await assessmentCount(attendance.id),

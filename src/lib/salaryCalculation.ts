@@ -58,6 +58,10 @@ export type SalaryResult = {
   regularHours: number; subHours: number; demoHours: number; assistantHours: number;
   regularPay: number; demoPay: number; assistantPay: number; travelPay: number;
   adjustmentTotal: number; total: number; hoursReviewCount: number; hasActivity: boolean;
+  /** 已計薪但尚未完成課後回報的堂數（政策：照算薪資，但列異常清單供行政核對） */
+  unreportedCount: number;
+  /** 未回報課堂摘要（日期 園所 課程），供薪資頁與異常清單顯示 */
+  unreportedItems: string[];
   adjustments: SalaryAdjustmentRow[];
   details?: SalaryDetail[];
 };
@@ -135,6 +139,9 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     const assistantPay = assistants.reduce((sum, row) => sum + row.hours * row.rate, 0);
     const travelPay = details.reduce((sum, row) => sum + row.travelFee, 0);
     const adjustmentTotal = teacherAdjustments.reduce((sum, row) => sum + row.amount, 0);
+    // 未回報但已計薪的課（僅主教視角；已過課程日、回報內容為空）
+    const now = new Date();
+    const unreported = lead.filter((row) => row.date < now && !String(row.reportContent ?? "").trim());
     return {
       teacher,
       regularHours: regular.reduce((sum, row) => sum + row.hours, 0),
@@ -144,6 +151,8 @@ export async function calculateSalaryMonth(year: number, month: number, options:
       regularPay, demoPay, assistantPay, travelPay, adjustmentTotal,
       total: regularPay + demoPay + assistantPay + travelPay + adjustmentTotal,
       hoursReviewCount: details.filter((row) => row.hoursNeedsReview).length,
+      unreportedCount: unreported.length,
+      unreportedItems: unreported.map((row) => `${row.date.toISOString().slice(0, 10)} ${row.course.school} ${row.course.courseType}`),
       hasActivity: details.length > 0 || teacherAdjustments.length > 0,
       adjustments: teacherAdjustments,
       ...(options.includeDetails ? { details } : {}),

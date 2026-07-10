@@ -10,6 +10,13 @@ type Teacher = {
   id: number; name: string; email: string; phone: string; rateAfterSchool: number; rateInSchool: number;
   rateDemo: number; travelFee: number; isAssistant: boolean; assistantFee: number; notes: string; lineUserId: string | null; lineRegion: string;
   bankName: string; bankCode: string; bankBranch: string; bankAccountMasked: string;
+  teachingProfile?: {
+    primaryRegionLabel: string;
+    primarySpecialtyLabel: string;
+    recentAttendanceCount: number;
+    primaryCourseTypes: string[];
+    hasTeachingRecords: boolean;
+  };
 };
 
 type TeacherForm = Omit<Teacher, "id" | "bankAccountMasked"> & { bankAccountName: string; bankAccountNumber: string };
@@ -44,11 +51,12 @@ export default function TeachersPage() {
     if (saving) return;
     setSaving(true);
     try {
+      const payload = { ...form, bankAccountName: form.name.trim() };
       if (editing !== null) {
-        const res = await fetch(`/api/teachers/${editing}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        const res = await fetch(`/api/teachers/${editing}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         await ensureOk(res, "老師資料儲存失敗");
       } else {
-        const res = await fetch("/api/teachers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+        const res = await fetch("/api/teachers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         await ensureOk(res, "老師資料新增失敗");
       }
       setForm(EMPTY); setEditing(null); setShowForm(false); load();
@@ -62,8 +70,14 @@ export default function TeachersPage() {
 
   const del = async (id: number, name: string) => {
     if (!confirm(`確定刪除老師「${name}」？`)) return;
-    await fetch(`/api/teachers/${id}`, { method: "DELETE" });
-    load();
+    try {
+      const res = await fetch(`/api/teachers/${id}`, { method: "DELETE" });
+      await ensureOk(res, "老師資料刪除失敗");
+      showToast("success", "老師資料已刪除");
+      load();
+    } catch (e) {
+      showToast("error", (e as Error).message || "老師資料刪除失敗", 5000);
+    }
   };
 
   const edit = async (t: Teacher) => {
@@ -168,16 +182,16 @@ export default function TeachersPage() {
               <input value={form.bankCode} onChange={(e) => setForm({ ...form, bankCode: e.target.value })} placeholder="例如：822" inputMode="numeric" autoComplete="off" />
             </div>
             <div>
-              <label>分行</label>
+              <label>分行（選填）</label>
               <input value={form.bankBranch} onChange={(e) => setForm({ ...form, bankBranch: e.target.value })} placeholder="分行名稱或代碼" autoComplete="off" />
-            </div>
-            <div>
-              <label>戶名</label>
-              <input value={form.bankAccountName} onChange={(e) => setForm({ ...form, bankAccountName: e.target.value })} placeholder="收款戶名" autoComplete="off" />
             </div>
             <div className="md:col-span-2">
               <label>匯款帳號</label>
               <input value={form.bankAccountNumber} onChange={(e) => setForm({ ...form, bankAccountNumber: e.target.value })} placeholder="銀行帳號" inputMode="numeric" autoComplete="off" />
+            </div>
+            <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              匯款戶名預設為老師姓名：<span className="font-semibold text-slate-800">{form.name.trim() || "尚未填寫老師姓名"}</span>
+              <div className="mt-1 text-xs text-slate-500">若需使用非本人帳戶，請聯繫行政另行處理。</div>
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">備註</div>
             <div className="md:col-span-4">
@@ -207,6 +221,15 @@ export default function TeachersPage() {
                   </div>
                   <div title={t.email || ""} className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{t.email || "—"}</div>
                   <div title={t.phone || ""} className="mt-1 text-xs text-slate-500">{t.phone || "—"}</div>
+                  {t.teachingProfile && (
+                    <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <div>{t.teachingProfile.primaryRegionLabel}｜{t.teachingProfile.primarySpecialtyLabel}</div>
+                      <div className="mt-1 text-slate-400">
+                        近 90 天 {t.teachingProfile.recentAttendanceCount} 堂
+                        {t.teachingProfile.primaryCourseTypes.length > 0 ? `｜${t.teachingProfile.primaryCourseTypes.join("、")}` : ""}
+                      </div>
+                    </div>
+                  )}
                   <div className="mt-2">
                     {t.lineUserId
                       ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] text-green-700">LINE 已綁定</span>
@@ -241,13 +264,14 @@ export default function TeachersPage() {
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">尚無資料</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1280px] text-sm">
+          <table className="w-full min-w-[1440px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="w-36 px-5 py-3 text-left font-semibold">姓名</th>
                 <th className="w-64 px-5 py-3 text-left font-semibold">Email</th>
                 <th className="w-40 px-5 py-3 text-left font-semibold">電話</th>
                 <th className="w-40 px-5 py-3 text-left font-semibold">LINE</th>
+                <th className="w-56 px-4 py-3 text-left font-semibold">排課摘要</th>
                 <th className="w-24 px-4 py-3 text-center font-semibold">身份</th>
                 <th className="px-4 py-3 text-center font-semibold">課後時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">課內時薪</th>
@@ -273,6 +297,20 @@ export default function TeachersPage() {
                       {t.lineRegion && <span className="text-[11px] text-slate-400">{LINE_REGIONS.find((r) => r.value === t.lineRegion)?.label ?? t.lineRegion}</span>}
                     </div>
                   </td>
+                  <td className="px-4 py-4 text-xs text-slate-500">
+                    {t.teachingProfile
+                      ? (
+                        <div>
+                          <div className="font-medium text-slate-700">{t.teachingProfile.primaryRegionLabel}</div>
+                          <div>{t.teachingProfile.primarySpecialtyLabel}</div>
+                          <div className="mt-1 text-slate-400">
+                            近 90 天 {t.teachingProfile.recentAttendanceCount} 堂
+                            {t.teachingProfile.primaryCourseTypes.length > 0 ? `｜${t.teachingProfile.primaryCourseTypes.join("、")}` : ""}
+                          </div>
+                        </div>
+                      )
+                      : "-"}
+                  </td>
                   <td className="px-4 py-4 text-center"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${t.isAssistant ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{t.isAssistant ? "助教" : "主教"}</span></td>
                   <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateAfterSchool}`}</td>
                   <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateInSchool}`}</td>
@@ -294,7 +332,7 @@ export default function TeachersPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={13} className="text-center text-slate-400 py-8">尚無資料</td></tr>
+                <tr><td colSpan={14} className="text-center text-slate-400 py-8">尚無資料</td></tr>
               )}
             </tbody>
           </table>

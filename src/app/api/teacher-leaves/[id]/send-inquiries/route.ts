@@ -16,9 +16,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (ids.length === 0) return NextResponse.json({ error: "請選擇要詢問的老師" }, { status: 400 });
 
     const teachers = await prisma.teacher.findMany({ where: { id: { in: ids } } });
-    let sent = 0;
     let skipped = 0;
     const skippedTeachers: string[] = [];
+    const eligible: typeof teachers = [];
 
     for (const teacher of teachers) {
       if (teacher.id === leave.teacherId) {
@@ -31,6 +31,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         skippedTeachers.push(`${teacher.name}（未綁定 LINE）`);
         continue;
       }
+      eligible.push(teacher);
+    }
+
+    // 效能：DB 寫入與 LINE 推播平行處理，避免行政按下發送後逐一等待
+    const sendResults = await Promise.allSettled(eligible.map(async (teacher) => {
       const inquiryId = await upsertSubstituteInquiry(leave.id, leave.attendanceId, teacher.id);
       const msg = buildSubstituteInquiryMessage({
         inquiryId,
@@ -40,9 +45,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         courseType: leave.courseType,
         address: leave.address,
       });
-      await pushMessage(teacher.lineUserId, [msg], getLineConfig(teacher.lineRegion as LineRegion).token);
-      sent++;
-    }
+      await pushMessage(teacher.lineUserId!, [msg], getLineConfig(teacher.lineRegion as LineRegion).token);
+      return teacher.name;
+    }));
+    let sent = 0;
+    sendResults.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        sent++;
+      } else {
+        skipped++;
+        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        skippedTeachers.push(`${eligible[index].name}（發送失敗：${reason.slice(0, 80)}）`);
+      }
+    });
 
     if (sent > 0) {
       await prisma.$executeRawUnsafe(

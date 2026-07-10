@@ -63,7 +63,7 @@ export default function ProgressPage() {
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
   useEffect(() => {
-    fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
+    fetch("/api/teachers?minimal=1").then((r) => r.json()).then(setTeachers);
     fetch("/api/course-options").then((r) => r.json()).then(setCourseOptions);
   }, []);
 

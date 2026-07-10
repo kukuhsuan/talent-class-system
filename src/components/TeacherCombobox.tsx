@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type TeacherComboboxTeacher = {
   id: number;
   name: string;
+  teachingProfile?: {
+    primaryRegionLabel: string;
+    primarySpecialtyLabel: string;
+    primaryCourseTypes: string[];
+  };
 };
 
 type TeacherComboboxProps = {
@@ -32,6 +37,7 @@ export function TeacherCombobox({
 }: TeacherComboboxProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -41,10 +47,6 @@ export function TeacherCombobox({
     [teachers, value],
   );
   const selectedLabel = selectedTeacher ? displayName(selectedTeacher) : "";
-
-  useEffect(() => {
-    if (!open) setQuery(selectedLabel);
-  }, [open, selectedLabel]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -72,15 +74,10 @@ export function TeacherCombobox({
     [allowEmpty, displayName, emptyLabel, filteredTeachers],
   );
 
-  useEffect(() => {
-    setHighlightedIndex(0);
-  }, [query, open]);
-
   const selectOption = (option: (typeof options)[number]) => {
     onChange(option.id);
     setQuery(option.label);
     setOpen(false);
-    inputRef.current?.blur();
   };
 
   return (
@@ -88,6 +85,7 @@ export function TeacherCombobox({
       <input
         ref={inputRef}
         role="combobox"
+        aria-controls={listId}
         aria-expanded={open}
         aria-autocomplete="list"
         value={open ? query : selectedLabel}
@@ -95,10 +93,12 @@ export function TeacherCombobox({
         onFocus={() => {
           setOpen(true);
           setQuery(selectedLabel);
+          setHighlightedIndex(0);
         }}
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
+          setHighlightedIndex(0);
         }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
@@ -117,7 +117,7 @@ export function TeacherCombobox({
         }}
       />
       {open && (
-        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+        <div id={listId} className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
           {options.length === 0 ? (
             <div className="px-3 py-2 text-sm text-slate-400">找不到老師</div>
           ) : (

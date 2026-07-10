@@ -76,7 +76,7 @@ export default function SubstitutesPage() {
   const load = useCallback(async () => {
     const [recordsRes, teachersRes, schoolsRes] = await Promise.all([
       fetch(`/api/substitutes?year=${filterYear}&month=${filterMonth}&page=${page}&pageSize=${pageSize}`),
-      fetch("/api/teachers"),
+      fetch("/api/teachers?minimal=1"),
       fetch("/api/substitutes/candidates"),
     ]);
     const [recordsData, teachersData, schoolsData] = await Promise.all([

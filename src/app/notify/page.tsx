@@ -66,23 +66,37 @@ export default function NotifyPage() {
   async function sendReminder(dayOffset = 0) {
     const sendingKey = dayOffset === 1 ? -997 : -999;
     setSending(sendingKey);
-    const res = await fetch("/api/line/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "reminder", dayOffset }),
-    });
-    const data = await res.json();
-    const label = dayOffset === 1 ? "明日課程提醒" : "今日課程提醒";
-    setMsg(`${label}已發送 ${data.sent} 則，${data.skipped} 位老師尚未綁定 LINE`);
-    setSending(null);
+    try {
+      const res = await fetch("/api/line/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "reminder", dayOffset }),
+      });
+      const data = await res.json();
+      const label = dayOffset === 1 ? "明日課程提醒" : "今日課程提醒";
+      if (!res.ok) throw new Error(data.error ?? `${label}發送失敗`);
+      const failedText = data.failed ? `，${data.failed} 位失敗：${(data.errors ?? []).join("；")}` : "";
+      setMsg(`${label}已發送 ${data.sent} 則，${data.skipped} 位老師尚未綁定 LINE${failedText}`);
+    } catch (error) {
+      setMsg(`課程提醒發送失敗：${(error as Error).message}`);
+    } finally {
+      setSending(null);
+    }
   }
 
   async function sendSchedule() {
     setSending(-998);
-    const res = await fetch("/api/line/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-    const data = await res.json();
-    setMsg(`課程表已發送給 ${data.sent} 位老師，${data.skipped} 位略過`);
-    setSending(null);
+    try {
+      const res = await fetch("/api/line/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "課程表傳送失敗");
+      const failedText = data.failed ? `，${data.failed} 位失敗：${(data.errors ?? []).join("；")}` : "";
+      setMsg(`課程表已發送給 ${data.sent} 位老師，${data.skipped} 位略過${failedText}`);
+    } catch (error) {
+      setMsg(`課程傳送發生錯誤：${(error as Error).message}`);
+    } finally {
+      setSending(null);
+    }
   }
 
   async function sendReportRequest(attendanceId: number) {

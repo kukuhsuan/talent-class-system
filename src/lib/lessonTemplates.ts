@@ -1,6 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
 import { courseLabel } from "@/lib/courseMeta";
-import { COURSE_CURRICULUM } from "@/lib/line";
 import { parseLessonNumber } from "@/lib/lessonContent";
 
 export type LessonTemplateForReport = {
@@ -76,7 +75,9 @@ async function syncLessonTemplatesFromProgress(prisma: PrismaClient, courseType:
     "SELECT lesson, title FROM CourseProgress WHERE courseType = ? ORDER BY lesson ASC",
     course,
   );
-  const fallbackRows = COURSE_CURRICULUM[course]?.map((item) => ({ lesson: item.lesson, title: item.title })) ?? [];
+  const fallbackRows = progressRows.length
+    ? []
+    : (await import("@/lib/line")).COURSE_CURRICULUM[course]?.map((item) => ({ lesson: item.lesson, title: item.title })) ?? [];
   const rows = progressRows.length ? progressRows : fallbackRows;
   for (const row of rows) {
     await prisma.$executeRawUnsafe(
@@ -106,12 +107,14 @@ export async function getLessonTemplateForReport(
   if (existing[0]) return rowToTemplate(existing[0]);
 
   const titleFromProgress = cleanProgressTitle(progress);
-  const titleFromCurriculum = COURSE_CURRICULUM[course]?.find((item) => item.lesson === lesson)?.title;
   const progressRow = await prisma.$queryRawUnsafe<Array<{ title: string }>>(
     "SELECT title FROM CourseProgress WHERE courseType = ? AND lesson = ? LIMIT 1",
     course,
     lesson,
   );
+  const titleFromCurriculum = progressRow[0]?.title
+    ? ""
+    : (await import("@/lib/line")).COURSE_CURRICULUM[course]?.find((item) => item.lesson === lesson)?.title;
   const title = titleFromProgress || progressRow[0]?.title || titleFromCurriculum || `${course}第${lesson}堂`;
   const template = emptyTemplateFromProgress(course, lesson, title);
 

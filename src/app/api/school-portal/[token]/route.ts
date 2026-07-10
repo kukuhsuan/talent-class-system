@@ -14,6 +14,8 @@ import {
 } from "@/lib/courseConfirmation";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { writeAuditLog } from "@/lib/auditLog";
+import { getTeacherResume } from "@/lib/teacherResume";
+import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
   if (row.studentCountA != null || row.studentCountB != null) return (row.studentCountA ?? 0) + (row.studentCountB ?? 0);
@@ -64,6 +66,17 @@ async function getSkillCards() {
   } catch {
     return [];
   }
+}
+
+function splitResumeItems(value: string) {
+  return String(value ?? "")
+    .split(/\n|、|，|,|；|;/)
+    .map((item) => item.replace(/^[-•●\s]+/, "").trim())
+    .filter(Boolean);
+}
+
+function resumeSummary(value: string) {
+  return splitResumeItems(value)[0] ?? "";
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -120,8 +133,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       reportPhotos: string;
       schoolNotifyStatus: string;
       actualTeacher: { name: string };
+      actualTeacherId: number;
       course: { id: number; school: string; courseType: string; department: string; category: string; time: string };
       assessments: Array<{ id: number; childName: string; courseName: string; scores: string; comment: string; title: string; createdAt: Date }>;
+    }>;
+
+    const activeCourses = await prisma.course.findMany({
+      where: {
+        isActive: true,
+        OR: [{ schoolId }, { school: school.name }],
+      },
+      include: {
+        teacher: true,
+        assistantTeacher: true,
+      },
+      orderBy: [{ courseType: "asc" }, { id: "asc" }],
+    }) as unknown as Array<{
+      id: number;
+      courseType: string;
+      teacherId: number;
+      assistantTeacherId: number | null;
+      teacher: { id: number; name: string };
+      assistantTeacher: { id: number; name: string } | null;
     }>;
 
     const visibleReports = records.filter((r) =>
@@ -192,6 +225,51 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     })).filter((row) => row.items.length > 0);
 
     const totalPeople = monthlyRows.reduce((sum, row) => sum + row.studentCount, 0);
+    const teacherMap = new Map<number, { id: number; name: string; courseNames: Set<string>; courseTypes: Set<string> }>();
+    const addTeacher = (teacher: { id: number; name: string } | null | undefined, courseType: string) => {
+      if (!teacher?.id) return;
+      const current = teacherMap.get(teacher.id) ?? { id: teacher.id, name: teacher.name, courseNames: new Set<string>(), courseTypes: new Set<string>() };
+      current.courseTypes.add(courseType);
+      current.courseNames.add(courseLabel(courseType));
+      teacherMap.set(teacher.id, current);
+    };
+    for (const course of activeCourses) {
+      addTeacher(course.teacher, course.courseType);
+      addTeacher(course.assistantTeacher, course.courseType);
+    }
+    for (const record of records.filter((row) => !row.cancelled)) {
+      addTeacher({ id: record.actualTeacherId, name: record.actualTeacher.name }, record.course.courseType);
+    }
+    const teacherIds = [...teacherMap.keys()];
+    const [profiles, resumes] = await Promise.all([
+      teacherTeachingProfiles(prisma, teacherIds),
+      Promise.all(teacherIds.map((id) => getTeacherResume(id))),
+    ]);
+    const resumeByTeacher = new Map(resumes.filter(Boolean).map((resume) => [resume!.teacherId, resume!]));
+    const teachers = teacherIds.map((id) => {
+      const base = teacherMap.get(id)!;
+      const resume = resumeByTeacher.get(id);
+      const profile = profiles.get(id) ?? null;
+      return {
+        id,
+        name: base.name,
+        cardUrl: `/teacher-card/${id}`,
+        courseNames: [...base.courseNames].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-Hant")),
+        courseTypes: [...base.courseTypes],
+        photoUrl: resume?.photoUrl ?? "",
+        specialties: resume?.specialties ?? "",
+        specialtyTags: splitResumeItems(resume?.specialties ?? "").slice(0, 6),
+        educationSummary: resumeSummary(resume?.education ?? ""),
+        experienceSummary: resumeSummary(resume?.experience ?? ""),
+        certificationsSummary: resumeSummary(resume?.certifications ?? ""),
+        teachingStyle: resume?.teachingStyle ?? "",
+        intro: resume?.intro ?? "",
+        status: resume?.status ?? "未填寫",
+        primaryRegionLabel: profile?.primaryRegionLabel ?? "",
+        primarySpecialtyLabel: profile?.primarySpecialtyLabel ?? "",
+        primaryCourseTypes: profile?.primaryCourseTypes ?? [],
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
 
     return NextResponse.json({
       school: {
@@ -219,6 +297,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         assessments: assessments.length,
       },
       reports,
+      teachers,
       monthlyRows,
       curriculum,
       assessments,

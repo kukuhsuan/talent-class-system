@@ -54,9 +54,9 @@ async function markCourseReminderSent(teacherId: number, targetDate: string, day
 }
 
 export async function GET(req: NextRequest) {
+  // 資安：secret 只接受 Authorization header，不接受 querystring（會留在 log / 瀏覽器歷史）
   const authHeader = req.headers.get("authorization");
-  const querySecret = req.nextUrl.searchParams.get("secret");
-  if (!process.env.CRON_SECRET || (authHeader !== `Bearer ${process.env.CRON_SECRET}` && querySecret !== process.env.CRON_SECRET)) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   await ensureCourseReminderDeliveryTable();

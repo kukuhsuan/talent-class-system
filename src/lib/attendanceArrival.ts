@@ -71,7 +71,10 @@ export type ArrivalDetail = {
 
 const ARRIVAL_GRACE_MINUTES = 10;
 
+let arrivalColumnsReady = false;
+
 export async function ensureArrivalColumns() {
+  if (arrivalColumnsReady) return;
   const statements = [
     'ALTER TABLE Attendance ADD COLUMN teacherArrivedAt DATETIME',
     'ALTER TABLE Attendance ADD COLUMN arrivalReminderSentAt DATETIME',
@@ -81,6 +84,7 @@ export async function ensureArrivalColumns() {
   for (const statement of statements) {
     await prisma.$executeRawUnsafe(statement).catch(() => undefined);
   }
+  arrivalColumnsReady = true;
 }
 
 export function parseCourseStartMinutes(time: string | null | undefined) {

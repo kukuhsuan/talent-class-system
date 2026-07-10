@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
 import { buildSchoolReportMessage, getLineConfig } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
+import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 
 type NotifyResult = { status: "通知成功" | "通知失敗" | "不需通知"; error?: string };
 
@@ -14,8 +16,12 @@ async function setNotifyStatus(attendanceId: number, status: string, error = "")
   );
 }
 
+let schoolLineRegionColumnReady = false;
+
 async function ensureSchoolLineRegionColumn() {
+  if (schoolLineRegionColumnReady) return;
   await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN lineRegion TEXT NOT NULL DEFAULT "school"').catch(() => undefined);
+  schoolLineRegionColumnReady = true;
 }
 
 async function getSchoolLineRegion(schoolId: number): Promise<LineRegion> {
@@ -28,15 +34,28 @@ async function getSchoolLineRegion(schoolId: number): Promise<LineRegion> {
   return region === "school2" ? "school2" : "school";
 }
 
+function appUrl() {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  return "https://talent-class-system.vercel.app";
+}
+
+let notifyColumnsReady = false;
+
+async function ensureNotifyColumns() {
+  if (notifyColumnsReady) return;
+  await prisma.$executeRawUnsafe(
+    'ALTER TABLE Attendance ADD COLUMN schoolNotifyStatus TEXT NOT NULL DEFAULT "未通知"',
+  ).catch(() => undefined);
+  await prisma.$executeRawUnsafe(
+    'ALTER TABLE Attendance ADD COLUMN schoolNotifyError TEXT NOT NULL DEFAULT ""',
+  ).catch(() => undefined);
+  await prisma.$executeRawUnsafe("ALTER TABLE Attendance ADD COLUMN schoolNotifiedAt DATETIME").catch(() => undefined);
+  notifyColumnsReady = true;
+}
+
 export async function notifySchoolReport(attendanceId: number): Promise<NotifyResult> {
   try {
-    await prisma.$executeRawUnsafe(
-      'ALTER TABLE Attendance ADD COLUMN schoolNotifyStatus TEXT NOT NULL DEFAULT "未通知"',
-    ).catch(() => undefined);
-    await prisma.$executeRawUnsafe(
-      'ALTER TABLE Attendance ADD COLUMN schoolNotifyError TEXT NOT NULL DEFAULT ""',
-    ).catch(() => undefined);
-    await prisma.$executeRawUnsafe("ALTER TABLE Attendance ADD COLUMN schoolNotifiedAt DATETIME").catch(() => undefined);
+    await ensureNotifyColumns();
 
     const att = await prisma.attendance.findUnique({
       where: { id: attendanceId },
@@ -71,12 +90,16 @@ export async function notifySchoolReport(attendanceId: number): Promise<NotifyRe
         ? attData.studentCountA + attData.studentCountB
         : attData.studentCountA ?? attData.studentCountB ?? null);
 
+    const expectedMap = await expectedStudentCountMap([attendanceId]);
+    const portalCode = await getOrCreatePortalCode(school.id);
     const msg = buildSchoolReportMessage({
       teacherName: att.actualTeacher.name,
       school: att.course.school,
       courseType: att.course.courseType,
       date: att.date.toISOString().slice(0, 10),
+      expectedStudentCount: expectedMap.get(attendanceId) ?? null,
       studentCount: displayCount,
+      portalUrl: `${appUrl()}/school-portal/${encodeURIComponent(portalCode)}`,
       content: att.reportContent,
       cancelled: att.cancelled,
     });

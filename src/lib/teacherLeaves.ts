@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { courseLabel } from "@/lib/courseMeta";
+import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 
 export const LEAVE_STATUS = {
   pending: "待審核",
@@ -73,6 +74,10 @@ export type TeacherLeaveListItem = {
     candidateTeacherName: string;
     candidateLineUserId: string | null;
     candidateLineRegion: string;
+    primaryRegionLabel?: string;
+    primarySpecialtyLabel?: string;
+    recentAttendanceCount?: number;
+    primaryCourseTypes?: string[];
     status: string;
     sentAt: string | null;
     respondedAt: string | null;
@@ -180,10 +185,26 @@ export async function ensureTeacherLeaveTables() {
   teacherLeaveTablesReady = true;
 }
 
-export function fixedSemesterRange() {
+// 依當下日期計算目前學期範圍：下學期 2/1–8/1、上學期 8/1–隔年 2/1
+export function fixedSemesterRange(now: Date = new Date()) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1; // 1-12
+  if (month >= 2 && month < 8) {
+    return {
+      start: new Date(Date.UTC(year, 1, 1)),
+      end: new Date(Date.UTC(year, 7, 1)),
+    };
+  }
+  if (month >= 8) {
+    return {
+      start: new Date(Date.UTC(year, 7, 1)),
+      end: new Date(Date.UTC(year + 1, 1, 1)),
+    };
+  }
+  // 1 月屬於前一年 8 月起的上學期
   return {
-    start: new Date("2026-02-01T00:00:00.000Z"),
-    end: new Date("2026-08-01T00:00:00.000Z"),
+    start: new Date(Date.UTC(year - 1, 7, 1)),
+    end: new Date(Date.UTC(year, 1, 1)),
   };
 }
 
@@ -459,6 +480,10 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
       ...ids,
     )
     : [];
+  const inquiryProfiles = await teacherTeachingProfiles(
+    prisma,
+    [...new Set(inquiryRows.map((inquiry) => Number(inquiry.candidateTeacherId)))],
+  );
   const inquiriesByLeave = new Map<number, RawInquiryRow[]>();
   for (const inquiry of inquiryRows) {
     inquiriesByLeave.set(inquiry.leaveRequestId, [...(inquiriesByLeave.get(inquiry.leaveRequestId) ?? []), inquiry]);
@@ -495,6 +520,10 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
         candidateTeacherName: inquiry.candidateTeacherName,
         candidateLineUserId: inquiry.candidateLineUserId,
         candidateLineRegion: inquiry.candidateLineRegion ?? "",
+        primaryRegionLabel: inquiryProfiles.get(Number(inquiry.candidateTeacherId))?.primaryRegionLabel,
+        primarySpecialtyLabel: inquiryProfiles.get(Number(inquiry.candidateTeacherId))?.primarySpecialtyLabel,
+        recentAttendanceCount: inquiryProfiles.get(Number(inquiry.candidateTeacherId))?.recentAttendanceCount,
+        primaryCourseTypes: inquiryProfiles.get(Number(inquiry.candidateTeacherId))?.primaryCourseTypes,
         status: inquiry.status,
         sentAt: toIsoStringOrNull(inquiry.sentAt),
         respondedAt: toIsoStringOrNull(inquiry.respondedAt),

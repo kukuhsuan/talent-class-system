@@ -1,15 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/auditLog";
+import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // 效能：minimal 模式只回下拉選單需要的欄位，跳過近 90 天出勤全量掃描（teacherTeachingProfiles）
+  if (req.nextUrl.searchParams.get("minimal") === "1") {
+    const rows = await prisma.teacher.findMany({
+      select: { id: true, name: true, isAssistant: true },
+      orderBy: { name: "asc" },
+    });
+    return NextResponse.json(rows, { headers: { "Cache-Control": "private, max-age=300" } });
+  }
+
   const teachers = await prisma.teacher.findMany({ orderBy: { name: "asc" } });
-  return NextResponse.json(teachers.map(({ bankAccountName: _bankAccountName, bankAccountNumber, ...teacher }) => ({
-    ...teacher,
-    bankAccountMasked: bankAccountNumber
-      ? `末${bankAccountNumber.replace(/\s+/g, "").slice(-5)}`
-      : "",
-  })));
+  const profiles = await teacherTeachingProfiles(prisma, teachers.map((teacher) => teacher.id));
+  return NextResponse.json(teachers.map((row) => {
+    const teacher = { ...row, bankAccountName: undefined, bankAccountNumber: undefined };
+    const teachingProfile = profiles.get(row.id);
+    return {
+      ...teacher,
+      bankAccountMasked: row.bankAccountNumber
+        ? `末${row.bankAccountNumber.replace(/\s+/g, "").slice(-5)}`
+        : "",
+      teachingProfile,
+    };
+  }));
 }
 
 export async function POST(req: NextRequest) {
@@ -24,7 +40,7 @@ export async function POST(req: NextRequest) {
       bankName: data.bankName?.trim() || "",
       bankCode: data.bankCode?.trim() || "",
       bankBranch: data.bankBranch?.trim() || "",
-      bankAccountName: data.bankAccountName?.trim() || "",
+      bankAccountName: data.bankAccountName?.trim() || data.name?.trim() || "",
       bankAccountNumber: data.bankAccountNumber?.replace(/\s+/g, "") || "",
     },
   });

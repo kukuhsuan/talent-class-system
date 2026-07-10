@@ -235,10 +235,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         { status: 409 },
       );
     }
-    await prisma.$transaction(async (tx) => {
-      await tx.attendance.deleteMany({ where: { courseId } });
-      await tx.course.delete({ where: { id: courseId } });
-    });
+    // 防呆：有任何出勤紀錄（薪資與請款依據）的課程一律禁止刪除，只能停用
+    const attendanceCount = await prisma.attendance.count({ where: { courseId } });
+    if (attendanceCount > 0) {
+      return NextResponse.json(
+        { error: `此課程已有 ${attendanceCount} 筆出勤紀錄（薪資與請款依據），不可刪除。若課程已結束，請改為「停用」。` },
+        { status: 409 },
+      );
+    }
+    await prisma.course.delete({ where: { id: courseId } });
     await writeAuditLog(req, {
       action: "delete",
       targetType: "Course",

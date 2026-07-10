@@ -45,6 +45,8 @@ const GROUPS = [
     title: "老師管理",
     items: [
       { href: "/teachers", label: "老師管理" },
+      { href: "/teacher-resumes", label: "老師簡歷" },
+      { href: "/recruitment", label: "全民招募" },
       { href: "/salary", label: "薪資計算" },
     ],
   },
@@ -59,6 +61,7 @@ const GROUPS = [
   {
     title: "系統設定",
     items: [
+      { href: "/alerts", label: "異常管理" },
       { href: "/users", label: "帳號管理" },
       { href: "/admin/audit-logs", label: "操作歷程" },
     ],
@@ -77,7 +80,14 @@ export default function NavBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  if (pathname.startsWith("/report") || pathname.startsWith("/assessment/") || pathname.startsWith("/school-portal")) return null;
+  if (
+    pathname.startsWith("/report")
+    || pathname.startsWith("/assessment/")
+    || pathname.startsWith("/school-portal")
+    || pathname.startsWith("/recruitment/")
+    || pathname.startsWith("/teacher-resume/")
+    || pathname.startsWith("/teacher-card/")
+  ) return null;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });

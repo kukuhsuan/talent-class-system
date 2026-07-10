@@ -200,6 +200,8 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
 
   let sent = 0;
   let skipped = 0;
+  let failed = 0;
+  const errors: string[] = [];
 
   for (const teacher of teachers) {
     if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
@@ -272,11 +274,16 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
       courses: sorted,
     });
 
-    await pushMessage(teacher.lineUserId, [msg], cfg.token);
-    sent++;
+    try {
+      await pushMessage(teacher.lineUserId, [msg], cfg.token);
+      sent++;
+    } catch (error) {
+      failed++;
+      errors.push(`${teacher.name}：${(error as Error).message}`);
+    }
   }
 
-  return { ok: true, sent, skipped, weekLabel };
+  return { ok: failed === 0, sent, skipped, failed, errors: errors.slice(0, 5), weekLabel };
 }
 
 // POST /api/line/schedule
