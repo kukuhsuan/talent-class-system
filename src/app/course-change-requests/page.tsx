@@ -55,6 +55,7 @@ export default function CourseChangeRequestsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [pickSchool, setPickSchool] = useState("");
   const [status, setStatus] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("status") ?? "");
   const [source, setSource] = useState("");
 
@@ -73,6 +74,7 @@ export default function CourseChangeRequestsPage() {
     const initial = body.attendances?.find((item: AttendanceOption) => item.id === attendanceId)
       ?? body.attendances?.find((item: AttendanceOption) => item.courseId === courseId);
     if (initial) {
+      setPickSchool(initial.school);
       setForm((current) => ({ ...current, attendanceId: String(initial.id), targetIds: [initial.id] }));
       setShowForm(true);
     }
@@ -96,11 +98,18 @@ export default function CourseChangeRequestsPage() {
     void Promise.resolve().then(() => loadItems()).catch((error) => setMessage(error.message)).finally(() => setLoading(false));
   }, [loadItems]);
 
-  const attendanceSelectOptions = useMemo(() => attendances.map((item) => ({
-    value: item.id,
-    label: `${item.date.replaceAll("-", "/")}｜${courseLabel(item.courseType)}｜${item.time}｜${item.teacherName}`,
-    searchText: `${item.date} ${item.school} ${item.courseType} ${courseLabel(item.courseType)} ${item.teacherName}`,
-  })), [attendances]);
+  const pickSchoolOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of attendances) counts.set(item.school, (counts.get(item.school) ?? 0) + 1);
+    return [...counts.entries()].map(([name, count]) => ({ value: name, label: `${name}（${count} 堂）`, searchText: name }));
+  }, [attendances]);
+  const attendanceSelectOptions = useMemo(() => attendances
+    .filter((item) => pickSchool && item.school === pickSchool)
+    .map((item) => ({
+      value: item.id,
+      label: `${item.date.replaceAll("-", "/")}｜${courseLabel(item.courseType)}｜${item.time}｜${item.teacherName}`,
+      searchText: `${item.date} ${item.school} ${item.courseType} ${courseLabel(item.courseType)} ${item.teacherName}`,
+    })), [attendances, pickSchool]);
   const schoolSelectOptions = useMemo(() => schools.map((school) => ({
     value: school.id,
     label: `${school.name}｜${school.region || "區域未填"}｜${school.address || "地址未填"}`,
@@ -130,6 +139,7 @@ export default function CourseChangeRequestsPage() {
 
   function resetForm() {
     setForm(EMPTY_FORM);
+    setPickSchool("");
     setEditingId(null);
     setShowForm(false);
   }
@@ -151,6 +161,8 @@ export default function CourseChangeRequestsPage() {
 
   function editItem(item: ChangeRequest) {
     setEditingId(item.id); setShowForm(true);
+    const attendance = attendances.find((row) => row.id === item.primaryAttendanceId);
+    setPickSchool(attendance?.school ?? item.originalSchoolName);
     setForm({
       attendanceId: String(item.primaryAttendanceId), scope: item.changeScope, targetIds: item.targets.map((target) => target.attendanceId),
       changeTypes: item.changeTypes, newDate: item.newDate?.slice(0, 10) ?? "", newStartTime: item.newStartTime, newEndTime: item.newEndTime,
@@ -197,7 +209,8 @@ export default function CourseChangeRequestsPage() {
       {showForm && <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
         <h2 className="mb-4 font-bold text-slate-800">{editingId ? `行政修改申請 #${editingId}` : "建立異動申請"}</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="md:col-span-2"><span className="mb-1 block text-sm font-semibold text-slate-700">選擇課程</span><SearchableSelect options={attendanceSelectOptions} value={form.attendanceId ? Number(form.attendanceId) : null} onChange={selectAttendance} allowEmpty={false} placeholder="搜尋日期、園所、課程或老師" emptyText="查無符合的課程，請確認關鍵字" /></label>
+          <label><span className="mb-1 block text-sm font-semibold text-slate-700">1. 選擇安親班／園所</span><SearchableSelect options={pickSchoolOptions} value={pickSchool || null} onChange={(value) => { setPickSchool(value ?? ""); selectAttendance(null); }} allowEmpty={false} placeholder="搜尋安親班／園所名稱" emptyText="查無符合的園所，請確認關鍵字" /></label>
+          <label><span className="mb-1 block text-sm font-semibold text-slate-700">2. 選擇課程時段</span><SearchableSelect options={attendanceSelectOptions} value={form.attendanceId ? Number(form.attendanceId) : null} onChange={selectAttendance} allowEmpty={false} placeholder={pickSchool ? "搜尋日期、課程或老師" : "請先選擇安親班／園所"} emptyText={pickSchool ? "查無符合的課程，請確認關鍵字" : "請先選擇安親班／園所"} /></label>
           {selected && <div className="md:col-span-2 rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-600">園所：{selected.school}｜老師：{selected.teacherName}｜地址：{selected.address || "未填寫"}｜原地點：{selected.location || "未填寫"}{(selected.isPayrollLocked || selected.completed) && <span className="ml-2 font-bold text-rose-600">此堂已鎖薪或完成，不可申請</span>}</div>}
           <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-semibold text-slate-700">異動類型</legend><div className="flex flex-wrap gap-3">{[["DATE", "日期異動"], ["TIME", "時間異動"], ["LOCATION", "地點異動"], ["STUDENT_COUNT", "人數變更"], ["CANCEL", "停課／取消"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={form.changeTypes.includes(value)} onChange={() => toggleType(value)} />{label}</label>)}</div></fieldset>
           <label><span className="mb-1 block text-sm font-semibold text-slate-700">異動範圍</span><select value={form.scope} onChange={(event) => setForm({ ...form, scope: event.target.value, targetIds: selected ? [selected.id] : [] })}><option value="SINGLE">只修改本次課程</option><option value="SELECTED">修改指定日期</option></select></label>
