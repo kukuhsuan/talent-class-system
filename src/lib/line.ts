@@ -487,7 +487,7 @@ export function buildLeaveCourseSelectMessage(opts: {
   semesterLeaveCount: number;
   courses: Array<{ attendanceId: number; date: string; time: string; school: string; courseType: string; role?: string }>;
 }) {
-  const courseCards = opts.courses.slice(0, 10).flatMap((course, index) => [
+  const courseCards = opts.courses.slice(0, 25).flatMap((course, index) => [
     ...(index === 0 ? [] : [{ type: "separator", color: "#E8EEF0", margin: "md" }]),
     {
       type: "box",
