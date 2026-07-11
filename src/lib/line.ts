@@ -800,7 +800,6 @@ export function buildCourseChangeInquiryMessage(opts: {
           { type: "text" as const, text: "老師您好，園所提出以下課程調整，想請您確認是否可以配合。", size: "sm" as const, color: "#52656A", wrap: true },
           { type: "separator" as const, margin: "md" as const, color: "#E2E8F0" },
           ...rows,
-          { type: "text" as const, text: "您的回覆不會直接修改課表，需由行政最後確認後才會正式套用。", size: "xs" as const, color: "#7B8B90", wrap: true, margin: "md" as const },
         ],
       },
       footer: {
@@ -811,7 +810,6 @@ export function buildCourseChangeInquiryMessage(opts: {
         contents: [
           { type: "button" as const, style: "primary" as const, color: "#2563EB", action: { type: "postback" as const, label: "可以配合", data: `action=course_change_available&requestId=${opts.requestId}`, displayText: "可以配合課程異動" } },
           { type: "button" as const, style: "secondary" as const, color: "#EEF2FF", action: { type: "postback" as const, label: "需要討論", data: `action=course_change_discuss&requestId=${opts.requestId}`, displayText: "課程異動需要討論" } },
-          { type: "button" as const, style: "secondary" as const, color: "#FDECEC", action: { type: "postback" as const, label: "無法配合", data: `action=course_change_unavailable&requestId=${opts.requestId}`, displayText: "無法配合課程異動" } },
         ],
       },
     },
