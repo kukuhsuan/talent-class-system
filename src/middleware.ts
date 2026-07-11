@@ -25,7 +25,11 @@ function isOwnerOnlyPath(path: string) {
     || path.startsWith("/admin/users/")
     || path === "/admin/audit-logs"
     || path.startsWith("/admin/audit-logs/")
-    || path === "/api/admin/audit-logs";
+    || path === "/api/admin/audit-logs"
+    || path === "/alerts"
+    || path.startsWith("/alerts/")
+    || path === "/api/alerts"
+    || path.startsWith("/api/alerts/");
 }
 
 function isSalaryPath(path: string) {

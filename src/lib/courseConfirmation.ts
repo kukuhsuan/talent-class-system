@@ -494,8 +494,17 @@ export async function courseConfirmationMapBySchoolIds(ids: number[], term = cur
     ...unique,
   );
   const map = new Map(rows.map((row) => [Number(row.schoolId), fromRow(row)]));
-  for (const schoolId of unique) {
-    if (!map.has(schoolId)) map.set(schoolId, await getSchoolStartConfirmation(schoolId, term));
+  const missing = unique.filter((schoolId) => !map.has(schoolId));
+  if (missing.length > 0) {
+    // 一次撈齊 legacy 設定，避免逐校查詢（N+1）拖慢 API
+    const legacyRows = await prisma.$queryRawUnsafe<Array<{ id: number; courseConfirmation: string | null }>>(
+      `SELECT id, courseConfirmation FROM School WHERE id IN (${missing.map(() => "?").join(",")})`,
+      ...missing,
+    );
+    const legacyMap = new Map(legacyRows.map((row) => [Number(row.id), row.courseConfirmation]));
+    for (const schoolId of missing) {
+      map.set(schoolId, { ...term, schoolId, ...parseCourseConfirmation(legacyMap.get(schoolId)) });
+    }
   }
   return map;
 }

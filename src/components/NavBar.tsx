@@ -1,8 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
+
+const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 
 const PRIMARY = [
   { href: "/", label: "今日概況" },
@@ -62,7 +64,7 @@ const GROUPS = [
   {
     title: "系統設定",
     items: [
-      { href: "/alerts", label: "異常管理" },
+      { href: "/alerts", label: "異常管理", ownerOnly: true },
       { href: "/users", label: "帳號管理" },
       { href: "/admin/audit-logs", label: "操作歷程" },
     ],
@@ -80,6 +82,25 @@ export default function NavBar() {
   const { dept, setDept } = useDepartment();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled) setIsOwner(OWNER_ROLES.has(String(data?.role ?? "")));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visibleGroups = GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !("ownerOnly" in item && item.ownerOnly) || isOwner),
+  })).filter((group) => group.items.length > 0);
 
   if (
     pathname.startsWith("/report")
@@ -133,7 +154,7 @@ export default function NavBar() {
             </button>
             {moreOpen && (
               <div className="absolute left-0 top-10 z-50 grid w-[680px] grid-cols-3 gap-3 rounded-2xl border border-blue-100 bg-white p-4 text-slate-700 shadow-xl">
-                {GROUPS.map((group) => (
+                {visibleGroups.map((group) => (
                   <div key={group.title}>
                     <div className="mb-2 text-xs font-bold tracking-wide text-slate-400">{group.title}</div>
                     <div className="space-y-1">
@@ -167,7 +188,7 @@ export default function NavBar() {
 
       {mobileOpen && (
         <nav className="space-y-4 border-t border-blue-800 px-3 py-3 md:hidden">
-          {GROUPS.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.title} className="rounded-2xl bg-blue-950/25 p-3">
               <div className="mb-2 text-xs font-bold tracking-wide text-blue-200">{group.title}</div>
               <div className="grid grid-cols-2 gap-2">
