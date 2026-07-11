@@ -4,6 +4,8 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import { ABILITY_ICON_MAP, CORE_ABILITIES, parseAbilities, type CoreAbility } from "@/lib/abilityMap";
 import { courseBearImage } from "@/lib/courseBearMap";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { courseLabel } from "@/lib/courseMeta";
 
 type PortalData = {
   school: { name: string; type: string; region: string; address: string; contact: string; phone: string };
@@ -14,7 +16,7 @@ type PortalData = {
   month: number;
   summary: { reports: number; lessons: number; totalPeople: number; assessments: number };
   reports: Array<{
-    id: number; date: string; courseType?: string; courseName: string; department: string; category: string; time: string; teacherName: string;
+    id: number; date: string; school: string; courseType?: string; courseName: string; department: string; category: string; time: string; teacherName: string;
     studentCount: number; reportContent: string; skillFocus: string; classStatus: string; incident: boolean;
     incidentChild: string; incidentProcess: string; incidentAction: string; incidentNotified: string;
     aiSummary: string; aiSkillFocus: string; aiTeachingNote: string; representativePhotoUrl: string; schoolNotifyStatus: string;
@@ -42,9 +44,20 @@ type PortalData = {
   curriculum: Array<{ courseType: string; courseName: string; items: Array<{ lesson: number; title: string }> }>;
   assessments: Array<{ id: number; childName: string; courseName: string; teacherName: string; date: string; title: string; comment: string; certificateUrl: string }>;
   skillCards: Array<{ name: string; icon: string; imageUrl: string; description: string }>;
+  courseChangeOptions: PortalChangeOption[];
+  courseChangeRequests: PortalChangeRequest[];
+  courseChangeSchools: Array<{ id: number; name: string; region: string; address: string }>;
 };
 
-type Tab = "home" | "teachers" | "outcomes" | "progress" | "certificates";
+type PortalChangeOption = { id: number; courseId: number; date: string; time: string; schoolId: number | null; school: string; address: string; location: string; courseType: string; teacherId: number; teacherName: string };
+type PortalChangeRequest = {
+  id: number; primaryAttendanceId: number; changeScope: string; changeTypes: string[]; originalDate: string; newDate: string | null;
+  originalStartTime: string; originalEndTime: string; newStartTime: string; newEndTime: string; originalSchoolName: string; newSchoolName: string;
+  originalLocation: string; newLocation: string; reasonType: string; reasonNote: string; status: string; reviewNote: string; createdAt: string;
+  course: { courseType: string }; teacher: { name: string }; targets: Array<{ attendanceId: number; originalDate: string }>;
+};
+
+type Tab = "home" | "teachers" | "changes" | "outcomes" | "progress" | "certificates";
 type CourseConfirmation = {
   smallClassCount?: string;
   middleClassCount?: string;
@@ -63,6 +76,7 @@ type CourseConfirmation = {
 const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: "home", label: "首頁", icon: "⌂" },
   { id: "teachers", label: "師資", icon: "♛" },
+  { id: "changes", label: "異動", icon: "↻" },
   { id: "outcomes", label: "成果", icon: "★" },
   { id: "progress", label: "進度", icon: "⌁" },
   { id: "certificates", label: "證書", icon: "◇" },
@@ -285,6 +299,16 @@ export default function SchoolPortalPage() {
                   />
                 )}
 
+                {tab === "changes" && (
+                  <CourseChangePanel
+                    token={params.token}
+                    options={data.courseChangeOptions ?? []}
+                    requests={data.courseChangeRequests ?? []}
+                    schools={data.courseChangeSchools ?? []}
+                    onCreated={(request) => setData((current) => current ? { ...current, courseChangeRequests: [request, ...(current.courseChangeRequests ?? [])] } : current)}
+                  />
+                )}
+
                 {tab === "progress" && (
                   <div className="space-y-5">
                     <PanelTitle title="學習進度地圖" subtitle="用時間軸看見目前學到哪、下一步會練習什麼。" />
@@ -337,7 +361,7 @@ export default function SchoolPortalPage() {
         </main>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
+      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-6 gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
         {NAV.map((item) => (
           <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-2xl px-1.5 py-2 text-center text-[10px] font-black ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
             <div className="text-base">{item.icon}</div>
@@ -347,6 +371,111 @@ export default function SchoolPortalPage() {
       </nav>
     </div>
   );
+}
+
+function CourseChangePanel({ token, options, requests, schools, onCreated }: {
+  token: string;
+  options: PortalChangeOption[];
+  requests: PortalChangeRequest[];
+  schools: Array<{ id: number; name: string; region: string; address: string }>;
+  onCreated: (request: PortalChangeRequest) => void;
+}) {
+  const [attendanceId, setAttendanceId] = useState<number | null>(null);
+  const [scope, setScope] = useState("SINGLE");
+  const [targetIds, setTargetIds] = useState<number[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
+  const [newDate, setNewDate] = useState("");
+  const [newStart, setNewStart] = useState("");
+  const [newEnd, setNewEnd] = useState("");
+  const [newSchoolId, setNewSchoolId] = useState<number | null>(null);
+  const [newSchoolName, setNewSchoolName] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newLocation, setNewLocation] = useState("");
+  const [newStudentCount, setNewStudentCount] = useState("");
+  const [reasonType, setReasonType] = useState("園所活動");
+  const [reasonNote, setReasonNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const selected = options.find((item) => item.id === attendanceId) ?? null;
+  const sameCourse = selected ? options.filter((item) => item.courseId === selected.courseId) : [];
+  const courseOptions = options.map((item) => ({
+    value: item.id,
+    label: `${item.date.replaceAll("-", "/")}｜${courseLabel(item.courseType)}｜${item.time}｜${item.teacherName}`,
+    searchText: `${item.date} ${item.school} ${item.courseType} ${courseLabel(item.courseType)} ${item.teacherName}`,
+  }));
+  const schoolOptions = schools.map((item) => ({
+    value: item.id,
+    label: `${item.name}｜${item.region || "區域未填"}｜${item.address || "地址未填"}`,
+    searchText: `${item.name} ${item.region} ${item.address}`,
+  }));
+  const toggleType = (type: string) => setTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
+  const portalStatus = (status: string) => ({
+    草稿: "退回補充",
+    待行政審核: "待行政確認",
+    待老師回覆: "等待老師回覆",
+    老師可配合: "老師已同意，等待行政確認",
+    老師無法配合: "老師目前無法配合，行政正在協助安排",
+    需要討論: "行政與老師確認中",
+    已完成: "異動已確認，正式課表已更新",
+    已取消: "申請已取消",
+  }[status] ?? status);
+
+  function chooseCourse(id: number | null) {
+    const item = options.find((row) => row.id === id);
+    setAttendanceId(id); setTargetIds(id ? [id] : []);
+    setNewDate(item?.date ?? "");
+    setNewStart(item?.time.split("-")[0] ?? "");
+    setNewEnd(item?.time.split("-")[1] ?? "");
+  }
+
+  function chooseSchool(id: number | null) {
+    const item = schools.find((row) => row.id === id);
+    setNewSchoolId(id); setNewSchoolName(item?.name ?? ""); setNewAddress(item?.address ?? "");
+  }
+
+  async function submit() {
+    if (!attendanceId) return;
+    if (!window.confirm("送出後不會直接修改課表，將由行政與老師確認。確定送出嗎？")) return;
+    setSaving(true); setMessage("");
+    try {
+      const response = await fetch(`/api/school-portal/${encodeURIComponent(token)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attendanceIds: scope === "SELECTED" ? targetIds : [attendanceId], changeScope: scope, changeTypes: types,
+          newDate, newStartTime: newStart, newEndTime: newEnd, newSchoolId, newSchoolName, newAddress, newLocation,
+          newStudentCount: newStudentCount === "" ? null : Number(newStudentCount), reasonType, reasonNote,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "送出異動申請失敗");
+      onCreated(body);
+      setMessage("已收到異動申請，將由行政確認老師是否可以配合。");
+      setAttendanceId(null); setTargetIds([]); setTypes([]); setNewSchoolId(null); setNewSchoolName(""); setNewAddress(""); setNewLocation(""); setNewStudentCount(""); setReasonNote("");
+    } catch (error) { setMessage((error as Error).message); } finally { setSaving(false); }
+  }
+
+  return <div className="space-y-5">
+    <PanelTitle title="課程異動申請" subtitle="選擇本園所的課程提出日期、時間、地點、人數調整或停課申請，送出後由行政與老師確認。" />
+    <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="md:col-span-2"><span className="mb-1 block text-sm font-black text-slate-700">選擇課程</span><SearchableSelect options={courseOptions} value={attendanceId} onChange={chooseCourse} allowEmpty={false} placeholder="搜尋日期、課程或老師" emptyText="查無符合的課程，請確認關鍵字" /></label>
+        {selected && <div className="md:col-span-2 rounded-xl bg-blue-50 p-3 text-sm leading-6 text-slate-700">原日期：{selected.date}｜原時間：{selected.time}<br />園所：{selected.school}｜老師：{selected.teacherName}<br />地址：{selected.address || "未填寫"}｜地點：{selected.location || "未填寫"}</div>}
+        <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-black text-slate-700">要調整的內容</legend><div className="flex flex-wrap gap-2">{[["DATE", "日期異動"], ["TIME", "時間異動"], ["LOCATION", "地點異動"], ["STUDENT_COUNT", "人數變更"], ["CANCEL", "停課／取消"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"><input type="checkbox" checked={types.includes(value)} onChange={() => toggleType(value)} />{label}</label>)}</div></fieldset>
+        <label><span className="mb-1 block text-sm font-black text-slate-700">異動範圍</span><select value={scope} onChange={(event) => { setScope(event.target.value); setTargetIds(attendanceId ? [attendanceId] : []); }}><option value="SINGLE">只修改本次課程</option><option value="SELECTED">修改指定日期</option></select></label>
+        {scope === "SELECTED" && selected && <div className="md:col-span-2 rounded-xl border border-slate-200 p-3"><div className="mb-2 text-sm font-black text-slate-700">指定日期</div><div className="flex flex-wrap gap-2">{sameCourse.map((item) => <label key={item.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><input type="checkbox" checked={targetIds.includes(item.id)} onChange={() => setTargetIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} />{item.date}</label>)}</div>{types.includes("DATE") && <p className="mt-2 text-xs font-bold text-amber-700">日期異動目前只能選擇一堂。</p>}</div>}
+        {types.includes("STUDENT_COUNT") && <label><span className="mb-1 block text-sm font-black text-slate-700">調整後人數</span><input type="number" min={0} value={newStudentCount} onChange={(event) => setNewStudentCount(event.target.value)} placeholder="例如 18" /></label>}
+        {types.includes("CANCEL") && <div className="md:col-span-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">停課申請請單獨送出，不可與其他異動類型同時選取。</div>}
+        {types.includes("DATE") && <label><span className="mb-1 block text-sm font-black text-slate-700">新日期</span><input type="date" value={newDate} onChange={(event) => setNewDate(event.target.value)} /></label>}
+        {types.includes("TIME") && <><label><span className="mb-1 block text-sm font-black text-slate-700">新開始時間</span><input type="time" value={newStart} onChange={(event) => setNewStart(event.target.value)} /></label><label><span className="mb-1 block text-sm font-black text-slate-700">新結束時間</span><input type="time" value={newEnd} onChange={(event) => setNewEnd(event.target.value)} /></label></>}
+        {types.includes("LOCATION") && <><label><span className="mb-1 block text-sm font-black text-slate-700">更換園所／校區</span><SearchableSelect options={schoolOptions} value={newSchoolId} onChange={chooseSchool} placeholder="搜尋園所、區域或地址" emptyLabel="同園所或其他地點" emptyText="查無符合的園所，請確認關鍵字" /></label><label><span className="mb-1 block text-sm font-black text-slate-700">新上課地點</span><input value={newLocation} onChange={(event) => setNewLocation(event.target.value)} placeholder="例如三樓禮堂" /></label><label className="md:col-span-2"><span className="mb-1 block text-sm font-black text-slate-700">新地址／其他地點</span><input value={newAddress} onChange={(event) => setNewAddress(event.target.value)} /></label></>}
+        <label><span className="mb-1 block text-sm font-black text-slate-700">異動原因</span><select value={reasonType} onChange={(event) => setReasonType(event.target.value)}>{["園所活動", "教室調整", "時間調整", "臨時狀況", "其他"].map((reason) => <option key={reason}>{reason}</option>)}</select></label>
+        <label><span className="mb-1 block text-sm font-black text-slate-700">補充說明</span><input value={reasonNote} onChange={(event) => setReasonNote(event.target.value)} /></label>
+      </div>
+      <button disabled={saving || !attendanceId || types.length === 0} onClick={submit} className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50">{saving ? "送出中…" : "送出異動申請"}</button>
+      {message && <div className="mt-3 rounded-xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{message}</div>}
+    </div>
+    <div className="space-y-3"><h3 className="text-lg font-black text-slate-900">申請進度</h3>{requests.map((request) => <div key={request.id} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div className="font-black text-slate-900">{request.originalDate.slice(0, 10)}｜{courseLabel(request.course.courseType)}</div><span className={`rounded-full px-3 py-1 text-xs font-black ${request.status === "已完成" ? "bg-emerald-50 text-emerald-700" : request.status === "老師無法配合" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{portalStatus(request.status)}</span></div><div className="mt-2 text-sm text-slate-600">老師：{request.teacher.name}｜原因：{request.reasonType}{request.reasonNote ? `・${request.reasonNote}` : ""}</div>{request.reviewNote && <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">行政回覆：{request.reviewNote}</div>}</div>)}{requests.length === 0 && <div className="rounded-[18px] border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">目前尚無課程異動申請</div>}</div>
+  </div>;
 }
 
 function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year: number; month: number; setYear: (v: number) => void; setMonth: (v: number) => void }) {
@@ -1263,7 +1392,7 @@ function shortClassStatus(value: string) {
 
 function loadCanvasImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
+    const img = new window.Image();
     if (/^https?:\/\//.test(src) && !src.startsWith(window.location.origin)) {
       img.crossOrigin = "anonymous";
     }

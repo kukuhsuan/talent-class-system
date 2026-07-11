@@ -63,7 +63,7 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
     include: { course: { include: { schoolRel: true } } },
     orderBy: { date: "asc" },
   }) as unknown as Array<{
-    id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null;
+    id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null; scheduledSchoolId?: number | null; scheduledSchoolName?: string | null; scheduledAddress?: string | null;
     studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null;
     date: Date;
     course: { id: number; school: string; schoolId?: number | null; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
@@ -71,7 +71,7 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
   const actualTimeMap = await attendanceScheduledTimeMap(actualRows.map((row) => row.id));
   const confirmationMap = await courseConfirmationMapBySchoolIds([
     ...courses.map((course) => course.schoolId ?? 0),
-    ...actualRows.map((row) => row.course.schoolId ?? 0),
+    ...actualRows.map((row) => row.scheduledSchoolId ?? row.course.schoolId ?? 0),
   ]);
   const confirmationSummaryFor = (schoolId?: number | null) => schoolId
     ? courseConfirmationSummary(confirmationMap.get(schoolId), { multiline: true, teacher: true })
@@ -100,7 +100,7 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
           return {
             date: formatMonthDay(iso),
             dayShort: weekday.replace("星期", ""),
-            school: row.course.school,
+            school: row.scheduledSchoolName?.trim() || row.course.school,
             courseType: row.course.courseType,
             time: effectiveAttendanceTime({
               scheduledTime: actualTimeMap.get(row.id),
@@ -113,8 +113,8 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
               studentCountA: row.studentCountA,
               studentCountB: row.studentCountB,
             }),
-            address: row.course.address || row.course.schoolRel?.address || "",
-            confirmationSummary: confirmationSummaryFor(row.course.schoolId),
+            address: row.scheduledAddress?.trim() || row.course.address || row.course.schoolRel?.address || "",
+            confirmationSummary: confirmationSummaryFor(row.scheduledSchoolId ?? row.course.schoolId),
             sortKey: row.date.getTime(),
           };
         }),
@@ -218,7 +218,7 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
       include: { course: { include: { schoolRel: true } } },
       orderBy: { date: "asc" },
     }) as unknown as Array<{
-      id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null;
+      id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null; scheduledSchoolId?: number | null; scheduledSchoolName?: string | null; scheduledAddress?: string | null;
       studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null;
       date: Date;
       course: { id: number; school: string; schoolId?: number | null; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
@@ -226,7 +226,7 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
     const scheduledTimeMap = await attendanceScheduledTimeMap(actualRows.map((attendance) => attendance.id));
     const confirmationMap = await courseConfirmationMapBySchoolIds([
       ...regularCourses.map((course) => course.schoolId ?? 0),
-      ...actualRows.map((row) => row.course.schoolId ?? 0),
+      ...actualRows.map((row) => row.scheduledSchoolId ?? row.course.schoolId ?? 0),
     ]);
     const confirmationSummaryFor = (schoolId?: number | null) => schoolId
       ? courseConfirmationSummary(confirmationMap.get(schoolId), { multiline: true, teacher: true })
@@ -242,7 +242,7 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
       ...actualRows.map((a) => {
         const iso = a.date.toISOString().slice(0, 10);
         return {
-          school: a.course.school,
+          school: a.scheduledSchoolName?.trim() || a.course.school,
           courseType: a.course.courseType,
           dayOfWeek: weekdayOfIso(iso),
           dateLabel: formatMonthDay(iso),
@@ -257,8 +257,8 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
             studentCountA: a.studentCountA,
             studentCountB: a.studentCountB,
           }),
-          address: a.course.address || a.course.schoolRel?.address || "",
-          confirmationSummary: confirmationSummaryFor(a.course.schoolId),
+          address: a.scheduledAddress?.trim() || a.course.address || a.course.schoolRel?.address || "",
+          confirmationSummary: confirmationSummaryFor(a.scheduledSchoolId ?? a.course.schoolId),
         };
       }),
       ...regularCourses

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { SaveButton } from "@/components/SaveButton";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { TeacherCombobox } from "@/components/TeacherCombobox";
@@ -634,6 +635,7 @@ export default function AttendancePage() {
                           {(r.cancelReason || r.notes) && <div className="mt-2 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
                           <div className="mt-4 flex gap-4">
                             <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
+                            <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
                             <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
                           </div>
                         </div>
@@ -697,6 +699,7 @@ export default function AttendancePage() {
                               <td className="px-4 py-4">
                                 <div className="flex gap-4 whitespace-nowrap">
                                   <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
+                                  <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
                                   <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
                                 </div>
                               </td>

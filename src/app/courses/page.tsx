@@ -839,6 +839,7 @@ export default function CoursesPage() {
               {c.address && <div className="mt-3 text-xs leading-5 text-slate-500">{c.address}</div>}
               <div className="mt-4 flex gap-4">
                 <button onClick={() => edit(c)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
+                <Link href={`/course-change-requests?courseId=${c.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
                 <button onClick={() => del(c.id, c.code)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
               </div>
             </div>
@@ -896,6 +897,7 @@ export default function CoursesPage() {
                   <td className="px-4 py-3">
                     <div className="flex gap-3 whitespace-nowrap">
                       <button onClick={() => edit(c)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
+                      <Link href={`/course-change-requests?courseId=${c.id}`} className="text-cyan-700 hover:text-cyan-900 text-sm font-medium">申請異動</Link>
                       <button onClick={() => del(c.id, c.code)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
                     </div>
                   </td>

@@ -13,6 +13,7 @@ type DashboardStats = {
   pendingFillableCount: number;
   unboundTeacherCount: number;
   teacherCount: number;
+  courseChanges: Record<string, number>;
 };
 type PendingDetail = {
   id: number;
@@ -41,6 +42,7 @@ const EMPTY_STATS: DashboardStats = {
   pendingFillableCount: 0,
   unboundTeacherCount: 0,
   teacherCount: 0,
+  courseChanges: {},
 };
 
 export default function Home() {
@@ -74,6 +76,7 @@ export default function Home() {
         pendingFillableCount: Number(data.pendingFillableCount ?? 0),
         unboundTeacherCount: Number(data.unboundTeacherCount ?? 0),
         teacherCount: Number(data.teacherCount ?? 0),
+        courseChanges: data.courseChanges ?? {},
       });
       setPendingDetails(Array.isArray(data.pendingDetails) ? data.pendingDetails.slice(0, 5) : []);
       setEquipmentItems(Array.isArray(data.equipment?.items) ? data.equipment.items : []);
@@ -158,6 +161,22 @@ export default function Home() {
           ))}
         </div>
       </div>
+
+      {Object.values(stats.courseChanges).some((value) => value > 0) && (
+        <div className="mt-6 rounded-xl border border-cyan-100 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-cyan-50 px-4 py-4">
+            <div><h2 className="font-semibold text-slate-800">課程異動待處理</h2><p className="mt-1 text-sm text-slate-500">園所申請、老師回覆與尚未套用的異動集中處理。</p></div>
+            <Link href="/course-change-requests" className="text-sm font-semibold text-cyan-700">查看異動中心</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-5">
+            {[["待行政審核", "待行政審核"], ["待老師回覆", "待老師回覆"], ["老師無法配合", "無法配合"], ["需要討論", "需要討論"], ["老師可配合", "同意待套用"]].map(([key, label]) => (
+              <Link key={key} href={`/course-change-requests?status=${encodeURIComponent(key)}`} className="rounded-lg bg-cyan-50 px-3 py-3 text-cyan-900">
+                <div className="text-xs font-medium text-cyan-700">{label}</div><div className="mt-1 text-2xl font-bold">{stats.courseChanges[key] ?? 0}</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 rounded-xl border border-amber-100 bg-white shadow-sm">
         <div className="flex flex-col gap-2 border-b border-amber-50 px-4 py-4 md:flex-row md:items-center md:justify-between">

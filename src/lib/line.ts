@@ -738,6 +738,86 @@ export function buildSubstituteConfirmedMessage(opts: {
   };
 }
 
+export function buildCourseChangeInquiryMessage(opts: {
+  requestId: number;
+  school: string;
+  courseType: string;
+  changeTypes: string[];
+  originalDate: string;
+  newDate?: string;
+  originalTime: string;
+  newTime?: string;
+  originalPlace: string;
+  newPlace?: string;
+  newAddress?: string;
+  newStudentCount?: number | null;
+  reason: string;
+}) {
+  const rows = [
+    { type: "text" as const, text: `園所｜${opts.school}`, size: "sm" as const, color: "#263B40", wrap: true },
+    { type: "text" as const, text: `課程｜${courseLabel(opts.courseType)}`, size: "sm" as const, color: "#263B40", wrap: true },
+    ...(opts.changeTypes.includes("DATE") ? [
+      { type: "text" as const, text: `原日期｜${opts.originalDate}`, size: "sm" as const, color: "#52656A", wrap: true },
+      { type: "text" as const, text: `新日期｜${opts.newDate || "待確認"}`, size: "sm" as const, color: "#155E75", weight: "bold" as const, wrap: true },
+    ] : []),
+    ...(opts.changeTypes.includes("TIME") ? [
+      { type: "text" as const, text: `原時間｜${opts.originalTime}`, size: "sm" as const, color: "#52656A", wrap: true },
+      { type: "text" as const, text: `新時間｜${opts.newTime || "待確認"}`, size: "sm" as const, color: "#155E75", weight: "bold" as const, wrap: true },
+    ] : []),
+    ...(opts.changeTypes.includes("LOCATION") ? [
+      { type: "text" as const, text: `原地點｜${opts.originalPlace || "未填寫"}`, size: "sm" as const, color: "#52656A", wrap: true },
+      { type: "text" as const, text: `新地點｜${opts.newPlace || "待確認"}`, size: "sm" as const, color: "#155E75", weight: "bold" as const, wrap: true },
+      ...(opts.newAddress ? [{ type: "text" as const, text: `新地址｜${opts.newAddress}`, size: "sm" as const, color: "#52656A", wrap: true }] : []),
+    ] : []),
+    ...(opts.changeTypes.includes("STUDENT_COUNT") ? [
+      { type: "text" as const, text: `人數異動｜調整後 ${opts.newStudentCount ?? "待確認"} 人`, size: "sm" as const, color: "#155E75", weight: "bold" as const, wrap: true },
+    ] : []),
+    ...(opts.changeTypes.includes("CANCEL") ? [
+      { type: "text" as const, text: `課程日期｜${opts.originalDate} ${opts.originalTime}`, size: "sm" as const, color: "#52656A", wrap: true },
+      { type: "text" as const, text: "異動內容｜本堂課申請停課", size: "sm" as const, color: "#B91C1C", weight: "bold" as const, wrap: true },
+    ] : []),
+    { type: "text" as const, text: `異動原因｜${opts.reason}`, size: "sm" as const, color: "#52656A", wrap: true },
+  ];
+  return {
+    type: "flex" as const,
+    altText: `課程異動確認 ${opts.school} ${courseLabel(opts.courseType)}`,
+    contents: {
+      type: "bubble" as const,
+      header: {
+        type: "box" as const,
+        layout: "vertical" as const,
+        backgroundColor: "#DCEEF8",
+        paddingAll: "16px",
+        contents: [{ type: "text" as const, text: "課程異動確認", color: "#164E63", weight: "bold" as const, size: "xl" as const }],
+      },
+      body: {
+        type: "box" as const,
+        layout: "vertical" as const,
+        backgroundColor: "#FBFDFF",
+        paddingAll: "16px",
+        spacing: "sm" as const,
+        contents: [
+          { type: "text" as const, text: "老師您好，園所提出以下課程調整，想請您確認是否可以配合。", size: "sm" as const, color: "#52656A", wrap: true },
+          { type: "separator" as const, margin: "md" as const, color: "#E2E8F0" },
+          ...rows,
+          { type: "text" as const, text: "您的回覆不會直接修改課表，需由行政最後確認後才會正式套用。", size: "xs" as const, color: "#7B8B90", wrap: true, margin: "md" as const },
+        ],
+      },
+      footer: {
+        type: "box" as const,
+        layout: "vertical" as const,
+        backgroundColor: "#FBFDFF",
+        spacing: "sm" as const,
+        contents: [
+          { type: "button" as const, style: "primary" as const, color: "#2563EB", action: { type: "postback" as const, label: "可以配合", data: `action=course_change_available&requestId=${opts.requestId}`, displayText: "可以配合課程異動" } },
+          { type: "button" as const, style: "secondary" as const, color: "#EEF2FF", action: { type: "postback" as const, label: "需要討論", data: `action=course_change_discuss&requestId=${opts.requestId}`, displayText: "課程異動需要討論" } },
+          { type: "button" as const, style: "secondary" as const, color: "#FDECEC", action: { type: "postback" as const, label: "無法配合", data: `action=course_change_unavailable&requestId=${opts.requestId}`, displayText: "無法配合課程異動" } },
+        ],
+      },
+    },
+  };
+}
+
 export function buildEquipmentFlowInquiryMessage(opts: {
   flowId: number;
   date: string;

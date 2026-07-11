@@ -33,6 +33,7 @@ import { equipmentNextStopLabel, type EquipmentStatus } from "@/lib/equipmentRem
 import { getEquipmentFlow, updateEquipmentFlowStatus } from "@/lib/equipmentFlow";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { pushAdminAlert, raiseSystemAlert } from "@/lib/systemAlerts";
+import { respondToCourseChange } from "@/lib/courseChangeRequests";
 
 type LineEvent = {
   type: string;
@@ -251,7 +252,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       },
       include: { course: true },
     }) as unknown as Promise<Array<{
-      id: number; date: Date; category: string; hours: number;
+      id: number; date: Date; category: string; hours: number; scheduledSchoolName?: string | null;
       studentCount: number | null; studentCountA: number | null; studentCountB: number | null;
       reportContent: string; reportSentAt?: Date | null; isPayrollLocked?: boolean; cancelled: boolean;
       course: { id: number; school: string; courseType: string; category: string; department: string; time: string };
@@ -283,7 +284,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
           course: { isActive: true },
         },
         include: { course: true },
-      }) as unknown as Promise<Array<{ id: number; course: { id: number; school: string; courseType: string; category: string; department: string; time: string } }>>,
+      }) as unknown as Promise<Array<{ id: number; scheduledSchoolName?: string | null; course: { id: number; school: string; courseType: string; category: string; department: string; time: string } }>>,
       prisma.course.findMany({
         where: {
           teacherId: teacher.id,
@@ -305,12 +306,12 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     // 過去待回報優先放入
     for (const att of pendingPast) {
       const iso = att.date instanceof Date ? att.date.toISOString().slice(0, 10) : String(att.date).slice(0, 10);
-      atts.push({ id: att.id, school: att.course.school, courseType: att.course.courseType, department: att.course.department, dateLabel: formatMonthDay(iso) });
+      atts.push({ id: att.id, school: att.scheduledSchoolName?.trim() || att.course.school, courseType: att.course.courseType, department: att.course.department, dateLabel: formatMonthDay(iso) });
     }
 
     // 今日課程
     for (const att of scheduledAttendances) {
-      atts.push({ id: att.id, school: att.course.school, courseType: att.course.courseType, department: att.course.department });
+      atts.push({ id: att.id, school: att.scheduledSchoolName?.trim() || att.course.school, courseType: att.course.courseType, department: att.course.department });
     }
     for (const course of weekdayCourses) {
       let att = await prisma.attendance.findFirst({
@@ -385,7 +386,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       include: { course: { include: { schoolRel: true } } },
       orderBy: { date: "asc" },
     }) as unknown as Array<{
-      id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null;
+      id: number; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null; scheduledSchoolId?: number | null; scheduledSchoolName?: string | null; scheduledAddress?: string | null;
       studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null;
       date: Date;
       course: { id: number; schoolId?: number | null; school: string; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
@@ -397,7 +398,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     const actualTimeMap = await attendanceScheduledTimeMap(actualRows.map((row) => row.id));
     const confirmationMap = await courseConfirmationMapBySchoolIds([
       ...courses.map((course) => course.schoolId ?? 0),
-      ...actualRows.map((row) => row.course.schoolId ?? 0),
+      ...actualRows.map((row) => row.scheduledSchoolId ?? row.course.schoolId ?? 0),
     ]);
     const confirmationSummaryFor = (schoolId?: number | null) => schoolId
       ? courseConfirmationSummary(confirmationMap.get(schoolId), { multiline: true, teacher: true })
@@ -443,7 +444,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
             return {
               date: formatMonthDay(iso),
               dayShort: weekday.replace("星期", ""),
-              school: a.course.school,
+              school: a.scheduledSchoolName?.trim() || a.course.school,
               courseType: a.course.courseType,
               time: effectiveAttendanceTime({
                 scheduledTime: actualTimeMap.get(a.id),
@@ -456,8 +457,8 @@ async function handleText(userId: string, text: string, replyToken: string, regi
                 studentCountA: a.studentCountA,
                 studentCountB: a.studentCountB,
               }),
-              address: a.course.address || a.course.schoolRel?.address || "",
-              confirmationSummary: confirmationSummaryFor(a.course.schoolId),
+              address: a.scheduledAddress?.trim() || a.course.address || a.course.schoolRel?.address || "",
+              confirmationSummary: confirmationSummaryFor(a.scheduledSchoolId ?? a.course.schoolId),
               sortKey: a.date.getTime(),
             };
           }),
@@ -665,6 +666,47 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
           ? "已收到您的取消代課回覆。若此代課已由行政確認，請等待行政重新處理；正式代課不會自動取消。"
         : "已收到您的回覆，謝謝您回覆。",
     }], token);
+    return;
+  }
+
+  if (action === "course_change_available" || action === "course_change_unavailable" || action === "course_change_discuss") {
+    const requestId = Number(params.get("requestId"));
+    const teacher = await prisma.teacher.findFirst({
+      where: { lineUserId: userId },
+      select: { id: true, name: true },
+    });
+    if (!teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+      return;
+    }
+    try {
+      const response = action === "course_change_available"
+        ? "AVAILABLE"
+        : action === "course_change_unavailable"
+          ? "UNAVAILABLE"
+          : "DISCUSS";
+      const updated = await respondToCourseChange(requestId, teacher.id, response, teacher.name);
+      await writeAuditLog(null, {
+        action: "line_update_status",
+        targetType: "CourseChangeRequest",
+        targetId: requestId,
+        targetLabel: `${updated?.originalSchoolName ?? ""} ${updated?.course.courseType ?? ""}`,
+        actorUserId: teacher.id,
+        actorName: teacher.name,
+        actorRole: "teacher",
+        afterData: { status: updated?.status, teacherResponse: response },
+        diffSummary: `${teacher.name} 回覆課程異動：${response}`,
+        sensitive: true,
+      });
+      const replyText = response === "AVAILABLE"
+        ? "已收到您的回覆，行政確認完成後會更新正式課表，謝謝老師。"
+        : response === "UNAVAILABLE"
+          ? "已收到您的回覆，我們會再協助安排，謝謝老師。"
+          : "已收到您的回覆，行政會再與您聯繫確認。";
+      await replyMessage(replyToken, [{ type: "text", text: replyText }], token);
+    } catch (error) {
+      await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "課程異動回覆失敗，請聯絡行政確認。" }], token);
+    }
     return;
   }
 

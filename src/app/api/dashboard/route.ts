@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const deptFilter = dept ? { department: { in: departmentQueryValues(dept) } } : {};
   const todayCourseWindow = courseDateWindowWhere(todayIso);
 
-  const [courses, todayAttendance, pendingCandidates, teacherCount, unboundTeacherCount, datedCourseIds] = await Promise.all([
+  const [courses, todayAttendance, pendingCandidates, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups] = await Promise.all([
     prisma.course.findMany({
       where: { isActive: true, ...todayCourseWindow, ...deptFilter },
       select: {
@@ -74,6 +74,11 @@ export async function GET(req: NextRequest) {
     prisma.teacher.count(),
     prisma.teacher.count({ where: { lineUserId: null } }),
     courseIdsWithAnyAttendance({ isActive: true, ...todayCourseWindow, ...deptFilter }, todayStart),
+    prisma.courseChangeRequest.groupBy({
+      by: ["status"],
+      where: { status: { in: ["待行政審核", "待老師回覆", "老師無法配合", "需要討論", "老師可配合"] } },
+      _count: { _all: true },
+    }),
   ]);
 
   const validTodayAttendance = todayAttendance.filter((item) => courseOccursOnIso(item.course, todayIso));
@@ -159,5 +164,6 @@ export async function GET(req: NextRequest) {
     unboundTeacherCount,
     unnotifiedCount,
     teacherCount,
+    courseChanges: Object.fromEntries(changeRequestGroups.map((row) => [row.status, row._count._all])),
   });
 }

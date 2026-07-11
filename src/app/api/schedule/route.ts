@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
   const attendances = attendancesRaw as unknown as Array<{
     id: number;
     scheduledTime?: string | null;
+    scheduledSchoolId?: number | null; scheduledSchoolName?: string | null; scheduledAddress?: string | null; scheduledLocation?: string | null;
     date: Date; hours?: number; isPayrollLocked?: boolean; reportContent?: string; reportSentAt?: Date | null;
     studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null;
     actualTeacher?: { id: number; name: string } | null;
@@ -99,9 +100,10 @@ export async function GET(req: NextRequest) {
         courseId: a.course.id,
         code: a.course.code,
         region: a.course.region,
-        school: a.course.school,
+        school: a.scheduledSchoolName?.trim() || a.course.school,
         courseType: a.course.courseType,
-        address: a.course.address || a.course.schoolRel?.address || "",
+        address: a.scheduledAddress?.trim() || a.course.address || a.course.schoolRel?.address || "",
+        location: a.scheduledLocation?.trim() || "",
         dayOfWeek: weekdayOfIso(iso),
         date: iso,
         dateLabel: formatMonthDay(iso),

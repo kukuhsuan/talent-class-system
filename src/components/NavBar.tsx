@@ -27,6 +27,7 @@ const GROUPS = [
     items: [
       { href: "/courses", label: "課程排班" },
       { href: "/teacher-leaves", label: "老師請假" },
+      { href: "/course-change-requests", label: "課程異動申請" },
       { href: "/progress", label: "課程進度" },
       { href: "/substitutes", label: "代課紀錄" },
       { href: "/equipment", label: "器材管理" },
