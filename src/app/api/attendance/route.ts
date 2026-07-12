@@ -30,8 +30,8 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = {};
   if (year && month) {
-    const start = new Date(Number(year), Number(month) - 1, 1);
-    const end = new Date(Number(year), Number(month), 1);
+    const start = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+    const end = new Date(Date.UTC(Number(year), Number(month), 1));
     where.date = { gte: start, lt: end };
   }
   const courseFilter: Record<string, unknown> = {};

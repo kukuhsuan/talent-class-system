@@ -208,9 +208,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       skillFocus: r.skillFocus,
       classStatus: r.classStatus,
       incident: r.incident,
-      incidentChild: r.incidentChild,
-      incidentProcess: r.incidentProcess,
-      incidentAction: r.incidentAction,
+      // 園所端只顯示對外摘要，避免公開孩子姓名與內部處理細節。
+      incidentChild: "",
+      incidentProcess: r.incident ? "本堂課有特殊狀況，已由老師與行政依流程處理。" : "",
+      incidentAction: r.incidentNotified === "是" ? "已通知園所窗口。" : "如需詳細資訊，請洽行政窗口。",
       incidentNotified: r.incidentNotified,
       aiSummary: r.aiSummary,
       aiSkillFocus: r.aiSkillFocus,

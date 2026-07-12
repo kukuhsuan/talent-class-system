@@ -15,13 +15,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const data = await req.json();
     const status = String(data.status ?? "");
     if (!ALLOWED_STATUS.has(status)) return NextResponse.json({ error: "狀態不合法" }, { status: 400 });
-    await updateSystemAlertStatus(alertId, status, auth.user?.name ?? "");
+    const resolutionNote = String(data.resolutionNote ?? "").trim();
+    if ((status === ALERT_STATUS.resolved || status === ALERT_STATUS.ignored) && !resolutionNote) {
+      return NextResponse.json({ error: "請填寫處理方式後再關閉異常" }, { status: 400 });
+    }
+    await updateSystemAlertStatus(alertId, status, auth.user?.name ?? "", resolutionNote);
     await writeAuditLog(req, {
       action: "update",
       targetType: "SystemAlert",
       targetId: alertId,
       targetLabel: `異常單 #${alertId}`,
-      diffSummary: `異常單狀態 → ${status}`,
+      diffSummary: `異常單狀態 → ${status}；處理方式：${resolutionNote}`,
     });
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -102,8 +102,8 @@ function isAlreadyApplied(message: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get("secret") ?? "";
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+  const authHeader = req.headers.get("authorization");
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "未授權" }, { status: 401 });
   }
   const url = process.env.TURSO_DATABASE_URL?.trim();

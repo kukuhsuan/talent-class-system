@@ -51,12 +51,15 @@ export default function AlertsPage() {
   useEffect(() => { void Promise.resolve().then(() => load()); }, [load]);
 
   async function updateStatus(id: number, status: string) {
+    const resolutionNote = window.prompt(status === "已處理" ? "請填寫處理方式：" : "請填寫忽略原因：", "");
+    if (resolutionNote == null) return;
+    if (!resolutionNote.trim()) { showToast("error", "請填寫處理方式"); return; }
     setUpdatingId(id);
     try {
       const res = await fetch(`/api/alerts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, resolutionNote: resolutionNote.trim() }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "更新失敗");
       showToast("success", `已標記為「${status}」`);

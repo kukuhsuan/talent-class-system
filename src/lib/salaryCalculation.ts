@@ -21,6 +21,7 @@ export type SalaryDetail = {
   role: "主教" | "助教";
   department: string;
   notes: string;
+  substituteFee?: number | null;
 };
 
 export type SalaryAdjustmentRow = {
@@ -67,8 +68,9 @@ export type SalaryResult = {
 };
 
 export async function calculateSalaryMonth(year: number, month: number, options: { teacherId?: number; includeDetails?: boolean } = {}) {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 1);
+  // 出勤日期以 YYYY-MM-DD 的 UTC 午夜儲存；固定用 UTC 月界線，避免 Vercel 時區造成跨月。
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
   const payoutMonth = `${year}-${String(month).padStart(2, "0")}`;
   const teacherWhere = options.teacherId ? { id: options.teacherId } : undefined;
   const attendanceWhere = {
@@ -88,6 +90,13 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   const teachers = teachersRaw as unknown as TeacherRow[];
   const rows = rowsRaw as unknown as AttendanceRow[];
   const adjustments = adjustmentsRaw as unknown as SalaryAdjustmentRow[];
+  const substituteRows = rows.length ? await prisma.substitute.findMany({
+    where: { attendanceId: { in: rows.map((row) => row.id) }, confirmed: true, fee: { not: null } },
+    select: { attendanceId: true, role: true, substituteTeacherId: true, fee: true },
+  }) : [];
+  const substituteFeeMap = new Map(
+    substituteRows.map((row) => [`${row.attendanceId}:${row.role}:${row.substituteTeacherId}`, row.fee]),
+  );
   // scheduledTime / payrollHours 已在 schema 內，include 直接帶回，省 2 次資料庫來回
   const leadByTeacher = new Map<number, AttendanceRow[]>();
   const assistantByTeacher = new Map<number, AttendanceRow[]>();
@@ -116,13 +125,15 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     const hours = salaryHours(row);
     const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
     const travelFee = role === "助教" || isDemo || hours.needsReview ? 0 : hours.payableHours * teacher.travelFee;
+    const substituteFee = substituteFeeMap.get(`${row.id}:${role}:${teacher.id}`) ?? null;
+    const teachingPay = substituteFee ?? hours.payableHours * rate;
     return {
       id: role === "助教" ? -row.id : row.id, date: row.date, school: row.course.school,
       courseType: row.course.courseType, category, hours: hours.payableHours, time: hours.time,
       hoursNeedsReview: hours.needsReview, hoursReviewReason: hours.reason, rate, travelFee,
-      amount: hours.payableHours * rate + travelFee,
+      amount: teachingPay + travelFee,
       isSub: role === "主教" && row.course.teacherId !== teacher.id, role,
-      department: row.course.department ?? "", notes: row.notes,
+      department: row.course.department ?? "", notes: row.notes, substituteFee,
     };
   };
 
@@ -134,9 +145,10 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     const demo = details.filter((row) => row.role === "主教" && row.category === "Demo");
     const assistants = details.filter((row) => row.role === "助教");
     const teacherAdjustments = adjustmentsByTeacher.get(teacher.id) ?? [];
-    const regularPay = regular.reduce((sum, row) => sum + row.hours * row.rate, 0);
-    const demoPay = demo.reduce((sum, row) => sum + row.hours * row.rate, 0);
-    const assistantPay = assistants.reduce((sum, row) => sum + row.hours * row.rate, 0);
+    const teachingAmount = (row: SalaryDetail) => row.amount - row.travelFee;
+    const regularPay = regular.reduce((sum, row) => sum + teachingAmount(row), 0);
+    const demoPay = demo.reduce((sum, row) => sum + teachingAmount(row), 0);
+    const assistantPay = assistants.reduce((sum, row) => sum + teachingAmount(row), 0);
     const travelPay = details.reduce((sum, row) => sum + row.travelFee, 0);
     const adjustmentTotal = teacherAdjustments.reduce((sum, row) => sum + row.amount, 0);
     // 未回報但已計薪的課（僅主教視角；已過課程日、回報內容為空）

@@ -13,7 +13,7 @@ import { syncSubstituteWithAttendance } from "@/lib/substituteAssignment";
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await req.json();
-  const { makeupDate, assistantTeacherId, confirmCompleted, scheduledTime, equipment, expectedStudentCount, ...rest } = data;
+  const { makeupDate, assistantTeacherId, confirmCompleted, scheduledTime, equipment, expectedStudentCount } = data;
   const current = await prisma.attendance.findUnique({
     where: { id: Number(id) },
     include: { course: { select: { id: true, code: true, school: true, courseType: true, time: true } }, actualTeacher: { select: { id: true, name: true } }, assistantTeacher: { select: { id: true, name: true } } },
@@ -28,16 +28,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     : null;
   const payrollMap = await coursePayrollHoursMap(course ? [course.id] : []);
   const calculatedHours = coursePayrollHoursForAttendance(courseId ? payrollMap.get(courseId) : null, course?.time ?? "");
-  const notes = String(rest.notes ?? current.notes ?? "");
-  const requestedHours = parsePayrollHours(rest.hours);
-  const category = rest.category ? normalizeCategory(rest.category) : current.category;
-  const reportContent = confirmCompleted === true && !requiresStudentCount(category) && !rest.cancelled
+  const notes = String(data.notes ?? current.notes ?? "");
+  const requestedHours = parsePayrollHours(data.hours);
+  const category = data.category ? normalizeCategory(data.category) : current.category;
+  const cancelled = data.cancelled === undefined ? current.cancelled : Boolean(data.cancelled);
+  const reportContent = confirmCompleted === true && !requiresStudentCount(category) && !cancelled
     ? current.reportContent?.trim() || "後台確認出課"
     : current.reportContent;
   const record = await prisma.attendance.update({
     where: { id: Number(id) },
     data: {
-      ...rest,
+      courseId,
+      actualTeacherId: data.actualTeacherId === undefined ? current.actualTeacherId : Number(data.actualTeacherId),
+      studentCount: data.studentCount === undefined ? current.studentCount : data.studentCount === "" ? null : Number(data.studentCount),
+      studentCountA: data.studentCountA === undefined ? current.studentCountA : data.studentCountA === "" ? null : Number(data.studentCountA),
+      studentCountB: data.studentCountB === undefined ? current.studentCountB : data.studentCountB === "" ? null : Number(data.studentCountB),
+      cancelled,
+      cancelReason: data.cancelReason === undefined ? current.cancelReason : String(data.cancelReason ?? ""),
+      makeupDone: data.makeupDone === undefined ? current.makeupDone : Boolean(data.makeupDone),
       hours: requestedHours ?? calculatedHours.hours,
       notes: calculatedHours.needsReview && !notes.includes("上課時間需人工確認")
         ? [notes, `上課時間需人工確認：${calculatedHours.reason}`].filter(Boolean).join("；")
@@ -103,6 +111,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!current) return NextResponse.json({ error: "找不到出勤紀錄" }, { status: 404 });
   if (current.isPayrollLocked) {
     return NextResponse.json({ error: "此筆出勤已鎖定薪資，不可刪除" }, { status: 409 });
+  }
+  const [leaveRows, substituteCount, changeTargetCount] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ id: number; status: string }>>(
+      `SELECT "id", "status" FROM "TeacherLeaveRequest" WHERE "attendanceId" = ? LIMIT 5`,
+      Number(id),
+    ).catch(() => []),
+    prisma.substitute.count({ where: { attendanceId: Number(id) } }),
+    prisma.courseChangeRequestTarget.count({ where: { attendanceId: Number(id) } }),
+  ]);
+  if (leaveRows.length || substituteCount || changeTargetCount) {
+    const relations = [
+      leaveRows.length ? `請假申請 ${leaveRows.length} 筆` : "",
+      substituteCount ? `代課紀錄 ${substituteCount} 筆` : "",
+      changeTargetCount ? `課程異動 ${changeTargetCount} 筆` : "",
+    ].filter(Boolean).join("、");
+    return NextResponse.json({ error: `此筆出勤仍關聯${relations}，請先完成或取消相關流程後再刪除` }, { status: 409 });
   }
   await deleteAttendanceEquipment(Number(id));
   await prisma.attendance.delete({ where: { id: Number(id) } });

@@ -350,6 +350,9 @@ export async function applyCourseChangeRequest(requestId: number, actor: { userI
       await tx.attendance.update({
         where: { id: target.attendanceId },
         data: {
+          studentCount: changeTypes.includes("STUDENT_COUNT") && request.newStudentCount != null
+            ? request.newStudentCount
+            : undefined,
           notes: studentCountNote
             ? [attendance.notes, studentCountNote].filter(Boolean).join("\n")
             : undefined,
@@ -366,6 +369,48 @@ export async function applyCourseChangeRequest(requestId: number, actor: { userI
             : undefined,
         },
       });
+      if (changeTypes.includes("STUDENT_COUNT") && request.newStudentCount != null) {
+        // 已存在的當月草稿請款同步更新人數與金額；正式請款不自動改動。
+        const draftDetails = await tx.$queryRawUnsafe<Array<{
+          detailId: number; itemId: number; invoiceId: number; billingType: string; unitPrice: number; minChargeCount: number;
+        }>>(
+          `SELECT d."id" AS "detailId", i."id" AS "itemId", inv."id" AS "invoiceId",
+                  i."billingType", i."unitPrice", i."minChargeCount"
+           FROM "SchoolInvoiceDetail" d
+           JOIN "SchoolInvoiceItem" i ON i."id" = d."invoiceItemId"
+           JOIN "SchoolInvoice" inv ON inv."id" = i."invoiceId"
+           WHERE d."attendanceId" = ? AND inv."status" = '草稿'`,
+          target.attendanceId,
+        ).catch(() => []);
+        for (const detail of draftDetails) {
+          const billable = detail.billingType === "perPerson"
+            ? Math.max(request.newStudentCount, Number(detail.minChargeCount) || 0)
+            : request.newStudentCount;
+          await tx.$executeRawUnsafe(
+            `UPDATE "SchoolInvoiceDetail" SET "studentCount" = ?, "billableCount" = ? WHERE "id" = ?`,
+            request.newStudentCount, billable, detail.detailId,
+          );
+          await tx.$executeRawUnsafe(
+            `UPDATE "SchoolInvoiceItem"
+             SET "actualStudentCount" = (SELECT COALESCE(SUM("studentCount"), 0) FROM "SchoolInvoiceDetail" WHERE "invoiceItemId" = ?),
+                 "billableCount" = (SELECT COALESCE(SUM("billableCount"), 0) FROM "SchoolInvoiceDetail" WHERE "invoiceItemId" = ?),
+                 "quantity" = CASE WHEN "billingType" = 'perPerson'
+                   THEN (SELECT COALESCE(SUM("billableCount"), 0) FROM "SchoolInvoiceDetail" WHERE "invoiceItemId" = ?)
+                   ELSE (SELECT COUNT(*) FROM "SchoolInvoiceDetail" WHERE "invoiceItemId" = ?) END,
+                 "subtotal" = "unitPrice" * CASE WHEN "billingType" = 'perPerson'
+                   THEN (SELECT COALESCE(SUM("billableCount"), 0) FROM "SchoolInvoiceDetail" WHERE "invoiceItemId" = ?)
+                   ELSE (SELECT COUNT(*) FROM "SchoolInvoiceDetail" WHERE "invoiceItemId" = ?) END
+             WHERE "id" = ?`,
+            detail.itemId, detail.itemId, detail.itemId, detail.itemId, detail.itemId, detail.itemId, detail.itemId,
+          );
+          await tx.$executeRawUnsafe(
+            `UPDATE "SchoolInvoice" SET "totalAmount" =
+              (SELECT COALESCE(SUM("subtotal"), 0) FROM "SchoolInvoiceItem" WHERE "invoiceId" = ?),
+              "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
+            detail.invoiceId, detail.invoiceId,
+          );
+        }
+      }
     }
 
     const completed = await tx.courseChangeRequest.update({

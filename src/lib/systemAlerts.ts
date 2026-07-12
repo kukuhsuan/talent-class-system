@@ -28,6 +28,7 @@ export type SystemAlertRow = {
   dedupeKey: string;
   status: string;
   resolvedBy: string;
+  resolutionNote: string;
   resolvedAt: string | null;
   notifiedAt: string | null;
   createdAt: string;
@@ -56,6 +57,7 @@ export async function ensureSystemAlertTable() {
   await prisma.$executeRawUnsafe(
     'CREATE UNIQUE INDEX IF NOT EXISTS "SystemAlert_dedupeKey" ON "SystemAlert"("dedupeKey") WHERE "dedupeKey" != \'\'',
   ).catch(() => undefined);
+  await prisma.$executeRawUnsafe('ALTER TABLE "SystemAlert" ADD COLUMN "resolutionNote" TEXT NOT NULL DEFAULT \'\'').catch(() => undefined);
   alertTableReady = true;
 }
 
@@ -118,7 +120,7 @@ export async function listSystemAlerts(filter: { status?: string; level?: string
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   return prisma.$queryRawUnsafe<SystemAlertRow[]>(
     `SELECT "id", "level", "category", "title", "detail", "dedupeKey", "status",
-            "resolvedBy", "resolvedAt", "notifiedAt", "createdAt"
+            "resolvedBy", "resolutionNote", "resolvedAt", "notifiedAt", "createdAt"
      FROM "SystemAlert" ${where}
      ORDER BY CASE "level" WHEN 'P1' THEN 0 WHEN 'P2' THEN 1 ELSE 2 END, "createdAt" DESC
      LIMIT 500`,
@@ -126,15 +128,16 @@ export async function listSystemAlerts(filter: { status?: string; level?: string
   );
 }
 
-export async function updateSystemAlertStatus(id: number, status: string, actorName: string) {
+export async function updateSystemAlertStatus(id: number, status: string, actorName: string, resolutionNote = "") {
   await ensureSystemAlertTable();
   const done = status === ALERT_STATUS.resolved || status === ALERT_STATUS.ignored;
   await prisma.$executeRawUnsafe(
     `UPDATE "SystemAlert"
-     SET "status" = ?, "resolvedBy" = ?, "resolvedAt" = ${done ? "CURRENT_TIMESTAMP" : "NULL"}, "updatedAt" = CURRENT_TIMESTAMP
+     SET "status" = ?, "resolvedBy" = ?, "resolutionNote" = ?, "resolvedAt" = ${done ? "CURRENT_TIMESTAMP" : "NULL"}, "updatedAt" = CURRENT_TIMESTAMP
      WHERE "id" = ?`,
     status,
     done ? actorName : "",
+    done ? resolutionNote : "",
     id,
   );
 }

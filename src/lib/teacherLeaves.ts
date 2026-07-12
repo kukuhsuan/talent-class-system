@@ -94,16 +94,16 @@ export type TeacherLeaveListOptions = {
 type RawLeaveRow = {
   id: number;
   teacherId: number;
-  teacherName: string;
+  teacherName: string | null;
   attendanceId: number;
   courseId: number;
   role: LeaveRole;
   leaveDate: string | Date;
   startTime: string;
   endTime: string;
-  school: string;
-  courseType: string;
-  address: string;
+  school: string | null;
+  courseType: string | null;
+  address: string | null;
   reason: string;
   notes: string;
   status: string;
@@ -112,7 +112,7 @@ type RawLeaveRow = {
   reviewedAt: string | Date | null;
   rejectedReason: string;
   createdAt: string | Date;
-  isPayrollLocked: boolean | number;
+  isPayrollLocked: boolean | number | null;
   studentCount: number | null;
   studentCountA: number | null;
   studentCountB: number | null;
@@ -460,9 +460,9 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
       lr."reviewedBy", lr."reviewedAt", lr."rejectedReason", lr."createdAt",
       a."isPayrollLocked", a."studentCount", a."studentCountA", a."studentCountB", a."reportContent"
      FROM "TeacherLeaveRequest" lr
-     JOIN "Teacher" t ON t."id" = lr."teacherId"
-     JOIN "Attendance" a ON a."id" = lr."attendanceId"
-     JOIN "Course" c ON c."id" = lr."courseId"
+     LEFT JOIN "Teacher" t ON t."id" = lr."teacherId"
+     LEFT JOIN "Attendance" a ON a."id" = lr."attendanceId"
+     LEFT JOIN "Course" c ON c."id" = lr."courseId"
      ${whereSql}
      ORDER BY lr."leaveDate" ASC, lr."createdAt" DESC, lr."id" DESC`,
     ...params,
@@ -493,7 +493,7 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
     return {
       id: Number(row.id),
       teacherId: Number(row.teacherId),
-      teacherName: row.teacherName,
+      teacherName: row.teacherName ?? `已刪除老師 #${row.teacherId}`,
       attendanceId: Number(row.attendanceId),
       courseId: Number(row.courseId),
       role: row.role === "助教" ? "助教" : "主教",
@@ -501,9 +501,9 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
       startTime: row.startTime,
       endTime: row.endTime,
       time,
-      school: row.school,
-      courseType: courseLabel(row.courseType),
-      address: row.address,
+      school: row.school ?? "原出勤／課程已刪除",
+      courseType: row.courseType ? courseLabel(row.courseType) : "資料異常",
+      address: row.address ?? "",
       reason: row.reason,
       notes: row.notes,
       status: row.status,

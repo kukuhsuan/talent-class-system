@@ -206,7 +206,6 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
   for (const teacher of teachers) {
     if (!teacher.lineUserId || !teacher.lineRegion) { skipped++; continue; }
     const regularCourses = [...new Map([...teacher.courses, ...teacher.assistantCourses].map((course) => [course.id, course])).values()];
-    if (regularCourses.length === 0) { skipped++; continue; }
 
     const actualRows = await prisma.attendance.findMany({
       where: {
@@ -223,6 +222,8 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
       date: Date;
       course: { id: number; school: string; schoolId?: number | null; courseType: string; time: string; address?: string; schoolRel?: { address?: string } | null };
     }>;
+    // 只代課、沒有固定排班的老師仍須收到當週課表。
+    if (regularCourses.length === 0 && actualRows.length === 0) { skipped++; continue; }
     const scheduledTimeMap = await attendanceScheduledTimeMap(actualRows.map((attendance) => attendance.id));
     const confirmationMap = await courseConfirmationMapBySchoolIds([
       ...regularCourses.map((course) => course.schoolId ?? 0),

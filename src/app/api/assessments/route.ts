@@ -17,10 +17,13 @@ export type AssessmentListRow = {
   teacherName: string;
 };
 
+let assessmentTableReady = false;
 async function ensureAssessmentTable() {
+  if (assessmentTableReady) return;
   await prisma.$executeRawUnsafe(
     'CREATE TABLE IF NOT EXISTS KindergartenAssessment (id INTEGER PRIMARY KEY AUTOINCREMENT, attendanceId INTEGER NOT NULL, childName TEXT NOT NULL, semester TEXT NOT NULL DEFAULT "", courseName TEXT NOT NULL DEFAULT "", scores TEXT NOT NULL DEFAULT "", comment TEXT NOT NULL DEFAULT "", title TEXT NOT NULL DEFAULT "", certificatePayload TEXT NOT NULL DEFAULT "", createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
   );
+  assessmentTableReady = true;
 }
 
 export async function GET(req: NextRequest) {
@@ -47,14 +50,16 @@ export async function GET(req: NextRequest) {
 
     const rows = await prisma.$queryRawUnsafe<AssessmentListRow[]>(
       `SELECT ka.id, ka.attendanceId, ka.childName, ka.semester, ka.courseName, ka.scores, ka.comment, ka.title, ka.createdAt,
-        a.date, c.school, c.department, t.name as teacherName
+        a.date, COALESCE(NULLIF(a.scheduledSchoolName, ''), c.school) AS school, c.department, t.name as teacherName
        FROM KindergartenAssessment ka
        JOIN Attendance a ON a.id = ka.attendanceId
        JOIN Course c ON c.id = a.courseId
        JOIN Teacher t ON t.id = a.actualTeacherId
        WHERE ${conditions.join(" AND ")}
-       ORDER BY a.date DESC, ka.id DESC`,
+       ORDER BY a.date DESC, ka.id DESC
+       LIMIT ?`,
       ...args,
+      Math.min(500, Math.max(20, Number(params.get("limit")) || 200)),
     );
     return NextResponse.json(rows);
   } catch (e) {

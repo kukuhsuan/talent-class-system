@@ -942,7 +942,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
           <SkillCards skills={skills} skillMap={skillMap} />
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {row.incident && <StatusBlock title="特殊事件" text={`${row.incidentChild || "未填孩子"}｜${row.incidentProcess || "未填經過"}｜${row.incidentAction || "未填處理方式"}`} warning />}
+            {row.incident && <StatusBlock title="特殊狀況通知" text={[row.incidentProcess, row.incidentAction].filter(Boolean).join("｜")} warning />}
           </div>
 
           <div className="mt-3 rounded-[20px] border border-blue-100 bg-blue-50/40 p-3 sm:mt-5 sm:rounded-[22px] sm:p-4">
