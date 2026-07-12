@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/consistency-check",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/check-teacher-arrival-reminders?slot=am",
+      "schedule": "45 1 * * *"
+    },
+    {
+      "path": "/api/cron/check-teacher-arrival-reminders?slot=pm",
+      "schedule": "45 6 * * *"
     }
   ]
 }

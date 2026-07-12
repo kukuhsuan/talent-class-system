@@ -21,13 +21,19 @@ const pages = [
   ["teachers", "老師管理", "/teachers"],
   ["salary", "薪資計算", "/salary"],
   ["notify", "LINE 通知", "/notify"],
+  ["teacher-leaves", "老師請假", "/teacher-leaves"],
+  ["course-change-requests", "課程異動申請", "/course-change-requests"],
+  ["alerts", "異常管理", "/alerts"],
   ["summer-import", "課程匯入", "/courses/summer-import"],
   ["school-stats", "園所上課報表", "/school-stats"],
   ["settings", "系統設定", "/users"],
 ];
 
 await mkdir(outputDir, { recursive: true });
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+});
 const context = await browser.newContext({
   viewport: { width: 1440, height: 1100 },
   deviceScaleFactor: 1,

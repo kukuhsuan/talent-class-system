@@ -20,6 +20,34 @@ function taipeiStamp() {
   return `${pick("year")}-${pick("month")}-${pick("day")}_${pick("hour")}${pick("minute")}${pick("second")}`;
 }
 
+// Prisma model 已於下方個別匯出；UserAccount 用 select 排除 passwordHash 後匯出
+const RAW_DUMP_EXCLUDE = new Set([
+  "School", "Teacher", "Course", "Attendance", "Substitute",
+  "CourseProgress", "CourseOption", "KindergartenAssessment", "UserAccount",
+  "sqlite_sequence", "_prisma_migrations",
+]);
+
+/**
+ * 動態匯出所有其他資料表（raw SQL 建立的表：請假、代課詢問、請款、異常、
+ * 器材、審核歷程、LINE 紀錄等）。之後新增的表也會自動納入備份。
+ */
+async function dumpRawTables() {
+  const tables = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+  );
+  const result: Record<string, unknown[]> = {};
+  for (const { name } of tables) {
+    if (RAW_DUMP_EXCLUDE.has(name)) continue;
+    try {
+      result[name] = await prisma.$queryRawUnsafe<unknown[]>(`SELECT * FROM "${name.replace(/"/g, "")}"`);
+    } catch (error) {
+      result[name] = [];
+      console.error(`backup dump failed for table ${name}:`, error);
+    }
+  }
+  return result;
+}
+
 async function buildBackupPayload() {
   const [
     schools,
@@ -46,9 +74,12 @@ async function buildBackupPayload() {
     }),
   ]);
 
+  const rawTables = await dumpRawTables();
+  const rawCounts = Object.fromEntries(Object.entries(rawTables).map(([name, rows]) => [name, rows.length]));
+
   return {
     app: "talent-class-system",
-    backupVersion: 1,
+    backupVersion: 2,
     exportedAt: new Date().toISOString(),
     exportedTimezone: "Asia/Taipei",
     counts: {
@@ -61,8 +92,10 @@ async function buildBackupPayload() {
       courseOptions: courseOptions.length,
       assessments: assessments.length,
       users: users.length,
+      ...rawCounts,
     },
     data: {
+      rawTables,
       schools,
       teachers,
       courses,
@@ -92,7 +125,8 @@ export async function GET(req: NextRequest) {
 
   const stamp = taipeiStamp();
   const payload = await buildBackupPayload();
-  const json = JSON.stringify(payload, null, 2);
+  // raw SQL 表可能回傳 BigInt，JSON.stringify 需轉換避免拋錯
+  const json = JSON.stringify(payload, (_key, value) => (typeof value === "bigint" ? Number(value) : value), 2);
   const gzipped = gzipSync(Buffer.from(json, "utf8"));
   const filename = `talent-class-system-backup-${stamp}.json.gz`;
 
@@ -113,6 +147,7 @@ export async function GET(req: NextRequest) {
           <li>出勤：${payload.counts.attendances}</li>
           <li>代課：${payload.counts.substitutes}</li>
           <li>學期評量：${payload.counts.assessments}</li>
+          <li>其他資料表（請假／代課／請款／異常／歷程等）：${Object.keys(payload.data.rawTables).length} 張</li>
         </ul>
         <p>請至少保留最近 30 天備份信件。</p>
       </div>

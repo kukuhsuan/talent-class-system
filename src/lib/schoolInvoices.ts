@@ -463,11 +463,30 @@ export async function createSchoolInvoice(input: {
   status?: string;
 }) {
   await ensureSchoolInvoiceTables();
+
+  // 月結鎖：該月薪資已結算鎖定 → 禁止再產生請款（避免月結後金額被改）
+  const { getPayrollRun } = await import("@/lib/payrollRun");
+  const payrollRun = await getPayrollRun(input.year, input.month);
+  if (payrollRun) {
+    throw new Error(`${input.year}年${input.month}月已結算鎖定，如需補開請款請先解鎖該月`);
+  }
+
   const preview = await buildSchoolInvoicePreview(input);
   const status = input.status === "草稿" ? "草稿" : "已產生";
   const invoiceDate = new Date().toISOString();
 
   return await prisma.$transaction(async (tx) => {
+    // 防重複：同園所同月已有未作廢請款單 → 擋下（交易內檢查，避免並發重複）
+    const dupRows = await tx.$queryRawUnsafe<Array<{ id: number; status: string }>>(
+      `SELECT "id", "status" FROM "SchoolInvoice"
+       WHERE "schoolId" = ? AND "invoiceMonth" = ? AND "status" != '已作廢' LIMIT 1`,
+      preview.schoolId,
+      preview.invoiceMonth,
+    );
+    if (dupRows.length > 0) {
+      throw new Error(`${preview.schoolName} ${preview.invoiceMonth} 已有請款單（#${dupRows[0].id}，${dupRows[0].status}），請先刪除或作廢舊單再重新產生`);
+    }
+
     const invoiceRows = await tx.$queryRawUnsafe<Array<{ id: number }>>(
       `INSERT INTO "SchoolInvoice"
         ("schoolId", "schoolName", "brandName", "invoiceMonth", "invoiceDate", "status", "totalAmount", "taxType", "notes", "companyName", "phone", "fax", "bankName", "bankAccount", "accountName", "createdAt", "updatedAt")
@@ -631,6 +650,15 @@ export async function deleteSchoolInvoice(id: number) {
   await ensureSchoolInvoiceTables();
   const existing = await readSchoolInvoice(id);
   if (!existing) return null;
+
+  // 月結鎖：該月已結算鎖定 → 禁止刪除請款單
+  const [lockYear, lockMonth] = String(existing.invoiceMonth).split("-").map(Number);
+  if (lockYear && lockMonth) {
+    const { getPayrollRun } = await import("@/lib/payrollRun");
+    const payrollRun = await getPayrollRun(lockYear, lockMonth);
+    if (payrollRun) throw new Error(`${lockYear}年${lockMonth}月已結算鎖定，請先解鎖該月再刪除請款單`);
+  }
+
   await prisma.$transaction(async (tx) => {
     const itemRows = await tx.$queryRawUnsafe<Array<{ id: number }>>(
       'SELECT "id" FROM "SchoolInvoiceItem" WHERE "invoiceId" = ?',

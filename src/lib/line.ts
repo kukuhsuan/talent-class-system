@@ -276,17 +276,36 @@ export function verifyLineSignature(body: string, signature: string, secret: str
   return hmac.digest("base64") === signature;
 }
 
+// 動態載入避免 line.ts ↔ systemAlerts.ts 循環引用；紀錄失敗不影響發送
+async function recordLineMessage(kind: "push" | "reply", recipient: string, messages: object[], success: boolean, error?: string) {
+  try {
+    const { logLineMessage } = await import("@/lib/lineMessageLog");
+    await logLineMessage({ kind, recipient, messages, success, error });
+  } catch (err) {
+    console.error("recordLineMessage failed:", err);
+  }
+}
+
 export async function replyMessage(replyToken: string, messages: object[], token: string) {
   const res = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     body: JSON.stringify({ replyToken, messages }),
   });
-  if (!res.ok) console.error("LINE reply error:", await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("LINE reply error:", text);
+    await recordLineMessage("reply", replyToken, messages, false, text);
+  } else {
+    await recordLineMessage("reply", replyToken, messages, true);
+  }
 }
 
 export async function pushMessage(to: string, messages: object[], token: string) {
-  if (!token) throw new Error("LINE 官方帳號 token 尚未設定");
+  if (!token) {
+    await recordLineMessage("push", to, messages, false, "LINE 官方帳號 token 尚未設定");
+    throw new Error("LINE 官方帳號 token 尚未設定");
+  }
   const res = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -295,8 +314,10 @@ export async function pushMessage(to: string, messages: object[], token: string)
   if (!res.ok) {
     const text = await res.text();
     console.error("LINE push error:", text);
+    await recordLineMessage("push", to, messages, false, text);
     throw new Error(`LINE 發送失敗：${text.slice(0, 180)}`);
   }
+  await recordLineMessage("push", to, messages, true);
 }
 
 // Build a class reminder message for teacher

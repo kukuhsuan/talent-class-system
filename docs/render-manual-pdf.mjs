@@ -111,7 +111,10 @@ const html = `<!doctype html>
 
 await writeFile(htmlPath, html);
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+});
 const page = await browser.newPage();
 await page.goto(`file://${htmlPath}`, { waitUntil: "load" });
 await page.pdf({

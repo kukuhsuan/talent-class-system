@@ -34,27 +34,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "此課程已回報，若仍要更換老師請再次確認", needsConfirmReportedChange: true }, { status: 409 });
     }
 
-    await assignSubstitute({
-      attendanceIds: [leave.attendanceId],
-      substituteTeacherId: inquiry.candidateTeacherId,
-      role: leave.role,
-      confirmed: true,
-      notes: `由請假申請 #${leave.id} 確認代課`,
-    });
+    // 原子搶佔：條件式 UPDATE 防止兩人同時確認 → 重複代課（C-4）
+    const claimed = await prisma.$executeRawUnsafe(
+      `UPDATE "TeacherLeaveRequest" SET "status" = ?, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = ? AND "status" != ?`,
+      LEAVE_STATUS.found,
+      leave.id,
+      LEAVE_STATUS.found,
+    );
+    if (Number(claimed) === 0) {
+      return NextResponse.json({ error: "此請假已確認過代課（可能有其他人同時操作），請重新整理查看" }, { status: 409 });
+    }
 
-    await prisma.$transaction([
-      prisma.$executeRawUnsafe(
+    try {
+      await assignSubstitute({
+        attendanceIds: [leave.attendanceId],
+        substituteTeacherId: inquiry.candidateTeacherId,
+        role: leave.role,
+        confirmed: true,
+        notes: `由請假申請 #${leave.id} 確認代課`,
+      });
+    } catch (error) {
+      // 建立代課失敗 → 還原狀態，避免卡在「已找到」但實際沒有代課
+      await prisma.$executeRawUnsafe(
         `UPDATE "TeacherLeaveRequest" SET "status" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
-        LEAVE_STATUS.found,
+        leave.status,
         leave.id,
-      ),
-      prisma.$executeRawUnsafe(
-        `UPDATE "SubstituteInquiry" SET "status" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "leaveRequestId" = ? AND "id" <> ?`,
-        INQUIRY_STATUS.noLongerNeeded,
-        leave.id,
-        inquiry.id,
-      ),
-    ]);
+      ).catch(() => undefined);
+      throw error;
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "SubstituteInquiry" SET "status" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "leaveRequestId" = ? AND "id" <> ?`,
+      INQUIRY_STATUS.noLongerNeeded,
+      leave.id,
+      inquiry.id,
+    );
 
     const subTeacher = await prisma.teacher.findUnique({ where: { id: inquiry.candidateTeacherId } });
 
