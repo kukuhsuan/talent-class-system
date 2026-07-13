@@ -234,7 +234,7 @@ export default function AttendancePage() {
   };
   const WAITING_TEACHER = "待排老師";
   const isCountRequired = (r: Attendance) => requiresStudentCount(r.category);
-  const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? "待回報" : "免填");
+  const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? (r.pendingReport ? "待回報" : "未上課") : "免填");
   const isReportComplete = (r: Attendance) => {
     if (r.cancelled) return true;
     const hasReport = Boolean(r.reportContent?.trim());
@@ -249,8 +249,10 @@ export default function AttendancePage() {
     if (r.cancelled) return "停課";
     if (!isCountRequired(r)) return isReportComplete(r) ? "出課完成" : "待確認出課";
     if (isReportComplete(r)) return "完成";
-    if (r.studentCount !== null && !r.reportContent?.trim()) return "缺課程進度";
-    return "出課";
+    if (!r.pendingReport) return "待上課";
+    if (r.missingItems?.includes("缺課程進度")) return "缺課程進度";
+    if (r.missingItems?.includes("缺出席人數")) return "缺出席人數";
+    return "待回報";
   };
   const hoursDisplay = (r: Attendance) => r.hoursNeedsReview ? "需人工確認" : `${r.hours}h`;
   const setEquipment = (patch: Partial<EquipmentReminderData>) => setForm((f) => ({ ...f, equipment: { ...f.equipment, ...patch } }));
@@ -676,7 +678,9 @@ export default function AttendancePage() {
                                 {!isUnassigned(r) && substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                               </td>
                               <td className="px-4 py-4 text-center">
-                                {r.studentCount ?? (isCountRequired(r) ? <span className="text-amber-600">待回報</span> : <span className="text-slate-500">免填</span>)}
+                                {r.studentCount ?? (isCountRequired(r)
+                                  ? <span className={r.pendingReport ? "text-amber-600" : "text-slate-400"}>{r.pendingReport ? "待回報" : "未上課"}</span>
+                                  : <span className="text-slate-500">免填</span>)}
                                 {r.expectedStudentCount != null && <div className="mt-0.5 text-xs text-blue-500">預計 {r.expectedStudentCount}</div>}
                               </td>
                               <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{normalizeCategory(r.category)}</span></td>
