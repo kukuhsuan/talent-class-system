@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseAttendanceDay } from "@/lib/attendanceBatch";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
+import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export const COURSE_CHANGE_STATUS = {
   draft: "草稿",
@@ -265,7 +266,7 @@ export async function getCourseChangeRequest(id: number) {
 }
 
 export async function respondToCourseChange(requestId: number, teacherId: number, response: "AVAILABLE" | "UNAVAILABLE" | "DISCUSS", teacherName: string) {
-  const request = await prisma.courseChangeRequest.findUnique({ where: { id: requestId } });
+  const request = await withDatabaseRetry(() => prisma.courseChangeRequest.findUnique({ where: { id: requestId } }));
   if (!request) throw new Error("找不到這筆課程異動");
   if (request.teacherId !== teacherId) throw new Error("這筆課程異動不是發送給您的");
   if (request.status !== COURSE_CHANGE_STATUS.pendingTeacher) {
@@ -277,7 +278,7 @@ export async function respondToCourseChange(requestId: number, teacherId: number
     : response === "UNAVAILABLE"
       ? COURSE_CHANGE_STATUS.teacherUnavailable
       : COURSE_CHANGE_STATUS.discuss;
-  return prisma.$transaction(async (tx) => {
+  return withDatabaseRetry(() => prisma.$transaction(async (tx) => {
     const updated = await tx.courseChangeRequest.update({
       where: { id: requestId },
       data: { status, teacherResponse: response, teacherRespondedAt: new Date() },
@@ -293,13 +294,15 @@ export async function respondToCourseChange(requestId: number, teacherId: number
       note: response,
     });
     return tx.courseChangeRequest.findUniqueOrThrow({ where: { id: updated.id }, include: courseChangeInclude });
-  });
+  }));
 }
 
 export async function applyCourseChangeRequest(requestId: number, actor: { userId: number | null; name: string }) {
   return prisma.$transaction(async (tx) => {
     const request = await tx.courseChangeRequest.findUnique({ where: { id: requestId }, include: courseChangeInclude });
     if (!request) throw new Error("找不到這筆課程異動");
+    // 前一次交易若已成功、但回應或後續通知失敗，重按時直接回傳完成結果。
+    if (request.status === COURSE_CHANGE_STATUS.completed) return request;
     if (request.status !== COURSE_CHANGE_STATUS.teacherAvailable) throw new Error("老師尚未回覆可以配合，不能套用異動");
     const changeTypes = parseChangeTypes(request.changeTypes);
     if (request.targets.length === 0) throw new Error("這筆異動沒有指定課程");

@@ -5,7 +5,7 @@ import { addCourseChangeEvent, COURSE_CHANGE_STATUS, courseChangeDisplay, course
 import { buildCourseChangeInquiryMessage, getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { writeAuditLog } from "@/lib/auditLog";
-import { withDatabaseRetry } from "@/lib/databaseRetry";
+import { databaseErrorMessage, withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(ADMIN_ROLES);
@@ -85,6 +85,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }).catch((error) => console.error("course change send audit failed", error));
     return NextResponse.json(courseChangeDisplay(updated));
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message || "發送老師詢問失敗" }, { status: 400 });
+    return NextResponse.json({ error: databaseErrorMessage(error, "發送老師詢問失敗") }, { status: 400 });
   }
 }

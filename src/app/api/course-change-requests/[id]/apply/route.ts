@@ -4,7 +4,7 @@ import { applyCourseChangeRequest, courseChangeDisplay, getCourseChangeRequest }
 import { getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { writeAuditLog } from "@/lib/auditLog";
-import { withDatabaseRetry } from "@/lib/databaseRetry";
+import { databaseErrorMessage, withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(ADMIN_ROLES);
@@ -40,6 +40,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
     return NextResponse.json({ ...courseChangeDisplay(updated), notifyError });
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message || "套用課程異動失敗" }, { status: 409 });
+    return NextResponse.json({ error: databaseErrorMessage(error, "套用課程異動失敗") }, { status: 409 });
   }
 }

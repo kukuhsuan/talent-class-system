@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
 import { addCourseChangeEvent, COURSE_CHANGE_STATUS, courseChangeDisplay, courseChangeInclude, getCourseChangeRequest, parseChangeTypes } from "@/lib/courseChangeRequests";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
-import { withDatabaseRetry } from "@/lib/databaseRetry";
+import { databaseErrorMessage, withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(BACKOFFICE_ROLES);
@@ -92,6 +92,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }).catch((error) => console.error("course change update audit failed", error));
     return NextResponse.json(courseChangeDisplay(updated));
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message || "更新異動申請失敗" }, { status: 400 });
+    return NextResponse.json({ error: databaseErrorMessage(error, "更新異動申請失敗") }, { status: 400 });
   }
 }
