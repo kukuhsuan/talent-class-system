@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
-import { courseChangeDisplay, courseChangeInclude, createCourseChangeRequest } from "@/lib/courseChangeRequests";
+import { courseChangeDisplay, createCourseChangeRequest, parseChangeTypes } from "@/lib/courseChangeRequests";
 import { writeAuditLog } from "@/lib/auditLog";
 import { withDatabaseRetry } from "@/lib/databaseRetry";
 
@@ -38,8 +38,23 @@ export async function GET(req: NextRequest) {
     ] }];
   }
   try {
-    const items = await withDatabaseRetry(() => prisma.courseChangeRequest.findMany({ where, include: courseChangeInclude, orderBy: { createdAt: "desc" } }));
-    return NextResponse.json({ items: items.map(courseChangeDisplay), total: items.length });
+    const items = await withDatabaseRetry(() => prisma.courseChangeRequest.findMany({
+      where,
+      select: {
+        id: true, courseId: true, teacherId: true, primaryAttendanceId: true, requestSource: true, requestedByName: true,
+        changeScope: true, changeTypes: true, originalDate: true, newDate: true,
+        originalStartTime: true, originalEndTime: true, newStartTime: true, newEndTime: true,
+        originalSchoolName: true, newSchoolId: true, newSchoolName: true, originalAddress: true, newAddress: true,
+        originalLocation: true, newLocation: true, newStudentCount: true, reasonType: true, reasonNote: true,
+        reviewNote: true, status: true, teacherResponse: true, teacherRespondedAt: true, createdAt: true, appliedAt: true,
+        course: { select: { courseType: true } },
+        teacher: { select: { name: true } },
+        targets: { select: { attendanceId: true, originalDate: true }, orderBy: { originalDate: "asc" } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }));
+    return NextResponse.json({ items: items.map((item) => ({ ...item, changeTypes: parseChangeTypes(item.changeTypes) })), total: items.length });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message || "異動申請載入失敗，請稍後重試" }, { status: 503 });
   }

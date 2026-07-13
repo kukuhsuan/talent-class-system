@@ -51,6 +51,8 @@ export default function CourseChangeRequestsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -63,11 +65,15 @@ export default function CourseChangeRequestsPage() {
   const sameCourseAttendances = selected ? attendances.filter((item) => item.courseId === selected.courseId) : [];
 
   const loadOptions = useCallback(async () => {
+    if (optionsLoaded || optionsLoading) return { attendances, schools };
+    setOptionsLoading(true);
+    try {
     const response = await fetch("/api/course-change-requests/options", { cache: "no-store" });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "選項載入失敗");
     setAttendances(body.attendances ?? []);
     setSchools(body.schools ?? []);
+    setOptionsLoaded(true);
     const params = new URLSearchParams(window.location.search);
     const attendanceId = Number(params.get("attendanceId"));
     const courseId = Number(params.get("courseId"));
@@ -78,7 +84,11 @@ export default function CourseChangeRequestsPage() {
       setForm((current) => ({ ...current, attendanceId: String(initial.id), targetIds: [initial.id] }));
       setShowForm(true);
     }
-  }, []);
+    return body;
+    } finally {
+      setOptionsLoading(false);
+    }
+  }, [attendances, optionsLoaded, optionsLoading, schools]);
 
   const loadItems = useCallback(async () => {
     const params = new URLSearchParams();
@@ -92,7 +102,10 @@ export default function CourseChangeRequestsPage() {
   }, [keyword, source, status]);
 
   useEffect(() => {
-    void Promise.resolve().then(() => loadOptions()).catch((error) => setMessage(error.message));
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("attendanceId") || params.get("courseId")) {
+      void Promise.resolve().then(() => loadOptions()).catch((error) => setMessage(error.message));
+    }
   }, [loadOptions]);
   useEffect(() => {
     void Promise.resolve().then(() => loadItems()).catch((error) => setMessage(error.message)).finally(() => setLoading(false));
@@ -159,9 +172,9 @@ export default function CourseChangeRequestsPage() {
     } catch (error) { setMessage((error as Error).message); } finally { setSaving(false); }
   }
 
-  function editItem(item: ChangeRequest) {
+  function editItem(item: ChangeRequest, attendanceRows = attendances) {
     setEditingId(item.id); setShowForm(true);
-    const attendance = attendances.find((row) => row.id === item.primaryAttendanceId);
+    const attendance = attendanceRows.find((row) => row.id === item.primaryAttendanceId);
     setPickSchool(attendance?.school ?? item.originalSchoolName);
     setForm({
       attendanceId: String(item.primaryAttendanceId), scope: item.changeScope, targetIds: item.targets.map((target) => target.attendanceId),
@@ -171,6 +184,21 @@ export default function CourseChangeRequestsPage() {
       reasonType: item.reasonType, reasonNote: item.reasonNote,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function openCreateForm() {
+    resetForm();
+    setShowForm(true);
+    setMessage("");
+    try { await loadOptions(); } catch (error) { setMessage((error as Error).message || "課程選項載入失敗"); }
+  }
+
+  async function openEditForm(item: ChangeRequest) {
+    setMessage("");
+    try {
+      const options = await loadOptions();
+      editItem(item, options?.attendances ?? attendances);
+    } catch (error) { setMessage((error as Error).message || "課程選項載入失敗"); }
   }
 
   async function action(item: ChangeRequest, name: "send" | "apply" | "cancel" | "return") {
@@ -202,12 +230,13 @@ export default function CourseChangeRequestsPage() {
     <div className="mx-auto max-w-7xl p-4 md:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-slate-900">課程異動申請</h1><p className="mt-1 text-sm text-slate-500">異動經老師回覆與行政確認後，才會更新正式課表。</p></div>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">新增異動申請</button>
+        <button onClick={openCreateForm} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">新增異動申請</button>
       </div>
       {message && <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">{message}</div>}
 
       {showForm && <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
         <h2 className="mb-4 font-bold text-slate-800">{editingId ? `行政修改申請 #${editingId}` : "建立異動申請"}</h2>
+        {optionsLoading && <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">課程選項載入中…</div>}
         <div className="grid gap-4 md:grid-cols-2">
           <label><span className="mb-1 block text-sm font-semibold text-slate-700">1. 選擇安親班／園所</span><SearchableSelect options={pickSchoolOptions} value={pickSchool || null} onChange={(value) => { setPickSchool(value ?? ""); selectAttendance(null); }} allowEmpty={false} placeholder="搜尋安親班／園所名稱" emptyText="查無符合的園所，請確認關鍵字" /></label>
           <label><span className="mb-1 block text-sm font-semibold text-slate-700">2. 選擇課程時段</span><SearchableSelect options={attendanceSelectOptions} value={form.attendanceId ? Number(form.attendanceId) : null} onChange={selectAttendance} allowEmpty={false} placeholder={pickSchool ? "搜尋日期、課程或老師" : "請先選擇安親班／園所"} emptyText={pickSchool ? "查無符合的課程，請確認關鍵字" : "請先選擇安親班／園所"} /></label>
@@ -234,7 +263,7 @@ export default function CourseChangeRequestsPage() {
           {item.status === "老師無法配合" && <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">老師無法配合，請行政另行安排。</div>}
           {item.reviewNote && <div className="mt-3 text-sm text-amber-700">行政備註：{item.reviewNote}</div>}
           <div className="mt-4 flex flex-wrap gap-2">
-            {(item.status === "待行政審核" || item.status === "草稿") && <button onClick={() => editItem(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">行政修改</button>}
+            {(item.status === "待行政審核" || item.status === "草稿") && <button onClick={() => openEditForm(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">行政修改</button>}
             {["待行政審核", "老師無法配合", "需要討論"].includes(item.status) && <button onClick={() => action(item, "send")} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">發送詢問給老師</button>}
             {item.status === "老師可配合" && <button onClick={() => action(item, "apply")} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">確認並套用異動</button>}
             {item.status === "老師無法配合" && <button onClick={() => arrangeSubstitute(item)} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white">安排代課</button>}
