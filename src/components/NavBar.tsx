@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
@@ -16,54 +16,41 @@ const PRIMARY = [
 
 const GROUPS = [
   {
-    title: "今日工作",
+    title: "日常作業",
     items: [
       { href: "/", label: "今日概況" },
       { href: "/schedule", label: "週課表" },
       { href: "/attendance", label: "出勤紀錄" },
-      { href: "/", label: "待處理提醒" },
     ],
   },
   {
-    title: "課程管理",
+    title: "課務管理",
     items: [
       { href: "/courses", label: "課程排班" },
-      { href: "/teacher-leaves", label: "老師請假" },
       { href: "/course-change-requests", label: "課程異動申請" },
       { href: "/progress", label: "課程進度" },
+      { href: "/teacher-leaves", label: "老師請假" },
       { href: "/substitutes", label: "代課紀錄" },
       { href: "/equipment", label: "器材管理" },
     ],
   },
   {
-    title: "園所管理",
+    title: "人員與成果",
+    items: [
+      { href: "/teachers", label: "老師管理" },
+      { href: "/teacher-resumes", label: "老師簡歷" },
+      { href: "/recruitment", label: "全民招募" },
+      { href: "/assessments", label: "評量、報告與證書" },
+      { href: "/salary", label: "薪資計算" },
+    ],
+  },
+  {
+    title: "園所與系統",
     items: [
       { href: "/schools", label: "園所管理" },
       { href: "/school-stats", label: "園所人數" },
       { href: "/school-invoices", label: "園所請款單" },
       { href: "/notify", label: "LINE 通知" },
-    ],
-  },
-  {
-    title: "老師管理",
-    items: [
-      { href: "/teachers", label: "老師管理" },
-      { href: "/teacher-resumes", label: "老師簡歷" },
-      { href: "/recruitment", label: "全民招募" },
-      { href: "/salary", label: "薪資計算" },
-    ],
-  },
-  {
-    title: "學期成果",
-    items: [
-      { href: "/assessments", label: "學期評量" },
-      { href: "/assessments", label: "AI 發展報告" },
-      { href: "/assessments", label: "證書管理" },
-    ],
-  },
-  {
-    title: "系統設定",
-    items: [
       { href: "/alerts", label: "異常管理", ownerOnly: true },
       { href: "/users", label: "帳號管理" },
       { href: "/admin/audit-logs", label: "操作歷程" },
@@ -83,6 +70,7 @@ export default function NavBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +84,22 @@ export default function NavBar() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function closeMenu(event: MouseEvent) {
+      if (!moreMenuRef.current?.contains(event.target as Node)) setMoreOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMoreOpen(false);
+    }
+    document.addEventListener("mousedown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [moreOpen]);
 
   const visibleGroups = GROUPS.map((group) => ({
     ...group,
@@ -145,26 +149,29 @@ export default function NavBar() {
               {n.label}
             </Link>
           ))}
-          <div className="relative">
+          <div ref={moreMenuRef} className="relative">
             <button
               onClick={() => setMoreOpen((v) => !v)}
-              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-blue-100 transition-colors hover:bg-blue-800 hover:text-white"
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${moreOpen ? "bg-blue-800 text-white" : "text-blue-100 hover:bg-blue-800 hover:text-white"}`}
             >
               更多 ▾
             </button>
             {moreOpen && (
-              <div className="absolute left-0 top-10 z-50 grid w-[680px] grid-cols-3 gap-3 rounded-2xl border border-blue-100 bg-white p-4 text-slate-700 shadow-xl">
+              <div role="menu" className="absolute right-0 top-10 z-50 grid w-[min(880px,calc(100vw-2rem))] grid-cols-4 gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-slate-700 shadow-2xl">
                 {visibleGroups.map((group) => (
-                  <div key={group.title}>
-                    <div className="mb-2 text-xs font-bold tracking-wide text-slate-400">{group.title}</div>
-                    <div className="space-y-1">
+                  <div key={group.title} className="rounded-xl bg-slate-50/80 p-2">
+                    <div className="mb-1 px-2 py-1 text-[11px] font-bold tracking-wider text-slate-400">{group.title}</div>
+                    <div className="space-y-0.5">
                       {group.items.map((item) => (
                         <Link
                           key={`${group.title}-${item.label}`}
                           href={item.href}
                           onClick={() => setMoreOpen(false)}
-                          className={`block rounded-lg px-3 py-2 text-sm font-medium ${
-                            isActive(pathname, item.href) ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"
+                          role="menuitem"
+                          className={`block rounded-lg px-2 py-1.5 text-[13px] font-medium transition-colors ${
+                            isActive(pathname, item.href) ? "bg-blue-100 text-blue-800" : "text-slate-700 hover:bg-white hover:text-blue-700 hover:shadow-sm"
                           }`}
                         >
                           {item.label}
@@ -173,9 +180,6 @@ export default function NavBar() {
                     </div>
                   </div>
                 ))}
-                <button onClick={logout} className="col-span-3 rounded-lg bg-slate-100 px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-200">
-                  登出
-                </button>
               </div>
             )}
           </div>

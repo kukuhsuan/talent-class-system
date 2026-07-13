@@ -41,13 +41,17 @@ function toMinutes(time: string) {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
+export const SUBSTITUTE_TRAVEL_BUFFER_MINUTES = 30;
+
+function overlapsOrTooClose(aStart: string, aEnd: string, bStart: string, bEnd: string, bufferMinutes = SUBSTITUTE_TRAVEL_BUFFER_MINUTES) {
   const as = toMinutes(aStart);
   const ae = toMinutes(aEnd);
   const bs = toMinutes(bStart);
   const be = toMinutes(bEnd);
   if (as == null || ae == null || bs == null || be == null) return false;
-  return as < be && ae > bs;
+  // 除了實際重疊，也排除前後銜接不足交通緩衝時間的課程。
+  // 例如既有課程 13:30-15:00、待代課 15:00-16:30，間隔為 0，應排除。
+  return as < be + bufferMinutes && ae > bs - bufferMinutes;
 }
 
 export async function listSubstituteCandidates(leave: TeacherLeaveListItem): Promise<{ items: SubstituteCandidate[]; target: SubstituteCandidateTarget }> {
@@ -81,7 +85,7 @@ export async function listSubstituteCandidates(leave: TeacherLeaveListItem): Pro
       studentCountB: row.studentCountB,
     });
     const { startTime, endTime } = splitTimeRange(time);
-    if (!overlaps(leave.startTime, leave.endTime, startTime, endTime)) continue;
+    if (!overlapsOrTooClose(leave.startTime, leave.endTime, startTime, endTime)) continue;
     conflictTeacherIds.add(row.actualTeacherId);
     if (row.assistantTeacherId) conflictTeacherIds.add(row.assistantTeacherId);
   }
@@ -129,7 +133,7 @@ export const AUTO_INQUIRY_LIMIT = 5;
 
 /**
  * 依「地區＋專長」自動挑選代課候選人並發送 LINE 詢問。
- * 規則：排除原請假老師、未綁定 LINE、當日時段衝堂者；
+ * 規則：排除原請假老師、未綁定 LINE、當日時段衝堂或前後少於 30 分鐘交通緩衝者；
  * 優先詢問地區或專長相符者，若無相符者則退回綜合分數最高者。
  */
 export async function autoSendSubstituteInquiries(leave: TeacherLeaveListItem, limit = AUTO_INQUIRY_LIMIT) {

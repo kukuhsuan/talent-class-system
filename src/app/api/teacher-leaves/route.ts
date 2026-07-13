@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLeaveRequestFromAttendance, listTeacherLeavesFiltered, normalizeLeaveStatusFilter } from "@/lib/teacherLeaves";
+import { writeAuditLog } from "@/lib/auditLog";
+import { databaseErrorMessage, withDatabaseRetry } from "@/lib/databaseRetry";
 
 export const dynamic = "force-dynamic";
 
@@ -25,14 +27,29 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
-    const result = await createLeaveRequestFromAttendance({
+    const result = await withDatabaseRetry(() => createLeaveRequestFromAttendance({
       attendanceId: Number(data.attendanceId),
       teacherId: Number(data.teacherId),
       reason: String(data.reason ?? ""),
       notes: String(data.notes ?? ""),
+    }));
+    await writeAuditLog(req, {
+      action: "create",
+      targetType: "TeacherLeaveRequest",
+      targetId: result.id,
+      targetLabel: `行政代老師建立請假 #${result.id}`,
+      afterData: {
+        attendanceId: Number(data.attendanceId),
+        teacherId: Number(data.teacherId),
+        reason: String(data.reason ?? ""),
+        notes: String(data.notes ?? ""),
+        status: "待審核",
+      },
+      diffSummary: "行政代老師建立請假申請",
+      sensitive: true,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message || "請假申請建立失敗" }, { status: 400 });
+    return NextResponse.json({ error: databaseErrorMessage(error, "請假申請建立失敗") }, { status: 400 });
   }
 }

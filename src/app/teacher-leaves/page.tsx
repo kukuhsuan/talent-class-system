@@ -70,6 +70,16 @@ type TeacherOption = {
   };
 };
 
+type LeaveCourseOption = {
+  attendanceId: number;
+  teacherId: number;
+  role: "主教" | "助教";
+  date: string;
+  time: string;
+  school: string;
+  courseType: string;
+};
+
 const statusTone: Record<string, string> = {
   "待審核": "bg-amber-50 text-amber-700",
   "已核准，待找代課": "bg-blue-50 text-blue-700",
@@ -135,6 +145,14 @@ export default function TeacherLeavesPage() {
   const [manualNotes, setManualNotes] = useState("");
   const [manualNotifyOtherCandidates, setManualNotifyOtherCandidates] = useState(true);
   const [manualNotifySubstituteTeacher, setManualNotifySubstituteTeacher] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTeacherId, setCreateTeacherId] = useState<number | null>(null);
+  const [createTeacherQuery, setCreateTeacherQuery] = useState("");
+  const [createCourses, setCreateCourses] = useState<LeaveCourseOption[]>([]);
+  const [createAttendanceId, setCreateAttendanceId] = useState<number | null>(null);
+  const [createReason, setCreateReason] = useState("");
+  const [createNotes, setCreateNotes] = useState("");
+  const [createCoursesLoading, setCreateCoursesLoading] = useState(false);
 
   const counts = useMemo(() => {
     const total = items.length;
@@ -162,6 +180,12 @@ export default function TeacherLeavesPage() {
       })
       .slice(0, 12);
   }, [manualLeave?.teacherId, manualTeacherQuery, teacherOptions]);
+  const createTeacherOptions = useMemo(() => {
+    const query = createTeacherQuery.trim().toLowerCase();
+    return teacherOptions
+      .filter((teacher) => !query || teacher.name.toLowerCase().includes(query) || (teacher.region ?? "").toLowerCase().includes(query))
+      .slice(0, 15);
+  }, [createTeacherQuery, teacherOptions]);
 
   async function load() {
     setLoading(true);
@@ -272,6 +296,75 @@ export default function TeacherLeavesPage() {
     setTeacherOptions(Array.isArray(data) ? data : []);
   }
 
+  async function openCreateLeave() {
+    setCreateOpen(true);
+    setCreateTeacherId(null);
+    setCreateTeacherQuery("");
+    setCreateCourses([]);
+    setCreateAttendanceId(null);
+    setCreateReason("");
+    setCreateNotes("");
+    try {
+      await ensureTeacherOptions();
+    } catch (error) {
+      alert((error as Error).message || "載入老師清單失敗");
+    }
+  }
+
+  async function selectCreateTeacher(teacherId: number) {
+    setCreateTeacherId(teacherId);
+    setCreateAttendanceId(null);
+    setCreateCourses([]);
+    setCreateCoursesLoading(true);
+    try {
+      const res = await fetch(`/api/teacher-leaves/options?teacherId=${teacherId}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "載入老師課程失敗");
+      setCreateCourses(data.items ?? []);
+    } catch (error) {
+      alert((error as Error).message);
+    } finally {
+      setCreateCoursesLoading(false);
+    }
+  }
+
+  async function submitCreateLeave() {
+    if (!createTeacherId) return alert("請先選擇請假老師");
+    if (!createAttendanceId) return alert("請先選擇請假課程");
+    if (!createReason.trim()) return alert("請填寫請假原因");
+    const url = "/api/teacher-leaves";
+    setBusy(url);
+    setMessage("");
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherId: createTeacherId,
+          attendanceId: createAttendanceId,
+          reason: createReason,
+          notes: createNotes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "建立請假申請失敗");
+      const course = createCourses.find((item) => item.attendanceId === createAttendanceId);
+      setCreateOpen(false);
+      setMessage(`已代老師建立請假申請${course ? `：${course.date} ${course.school}` : ""}，目前為待審核`);
+      if (course) {
+        const [year, month] = course.date.split("-").map(Number);
+        setFilterYear(year);
+        setFilterMonth(month);
+      }
+      setFilterStatus("all");
+      await load();
+    } catch (error) {
+      alert((error as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function openManualAssign(leave: LeaveItem) {
     setManualLeave(leave);
     setManualTeacherQuery("");
@@ -326,9 +419,14 @@ export default function TeacherLeavesPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">老師請假</h1>
-        <p className="mt-1 text-sm text-slate-500">老師送出請假後，管理端核准、手動發送代課詢問，最後再確認代課老師。</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">老師請假</h1>
+          <p className="mt-1 text-sm text-slate-500">老師或行政同仁可發起請假，再由管理端核准、安排代課老師。</p>
+        </div>
+        <button onClick={openCreateLeave} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700">
+          行政新增請假
+        </button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -352,7 +450,7 @@ export default function TeacherLeavesPage() {
         <div className="space-y-4 border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="font-bold text-slate-800">請假申請列表｜{filterYear} 年 {filterMonth} 月｜{titleCount}</h2>
-            <p className="mt-1 text-xs text-slate-500">老師可在 LINE 傳「申請請假」送出申請。月份以請假課程日期計算，不是申請時間。</p>
+            <p className="mt-1 text-xs text-slate-500">老師可在 LINE 申請，行政也可代為建立。月份以請假課程日期計算，不是申請時間。</p>
           </div>
           <div className="grid gap-3 md:grid-cols-[180px_180px_1fr] md:items-end">
             <label className="text-sm font-medium text-slate-700">
@@ -517,7 +615,7 @@ export default function TeacherLeavesPage() {
                                 <span className={`rounded-full px-2 py-0.5 ${teacher.hasLineBinding ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                                   {teacher.hasLineBinding ? "LINE 已綁" : "未綁 LINE"}
                                 </span>
-                                {teacher.hasConflict && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">同時段有課</span>}
+                                {teacher.hasConflict && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">衝堂或間隔不足 30 分鐘</span>}
                                 {teacher.isOriginalTeacher && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">原老師</span>}
                               </span>
                             </span>
@@ -532,6 +630,51 @@ export default function TeacherLeavesPage() {
           </div>
         )}
       </div>
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">行政新增老師請假</h2>
+                <p className="mt-1 text-sm text-slate-500">代老師建立後會進入待審核，後續核准與代課流程不變。</p>
+              </div>
+              <button onClick={() => setCreateOpen(false)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-600">關閉</button>
+            </div>
+            <div className="mt-5 space-y-5">
+              <label className="block text-sm font-semibold text-slate-700">
+                1. 搜尋請假老師
+                <input value={createTeacherQuery} onChange={(event) => setCreateTeacherQuery(event.target.value)} placeholder="輸入老師姓名" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+              </label>
+              <div className="grid max-h-44 gap-2 overflow-y-auto md:grid-cols-3">
+                {createTeacherOptions.map((teacher) => (
+                  <button key={teacher.id} type="button" onClick={() => selectCreateTeacher(teacher.id)} className={`rounded-xl border p-3 text-left text-sm font-semibold ${createTeacherId === teacher.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-700 hover:border-blue-200"}`}>
+                    {teacher.name}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-700">2. 選擇要請假的課程</div>
+                {createCoursesLoading ? <div className="mt-2 rounded-xl bg-slate-50 p-4 text-sm text-slate-400">載入課程中...</div> : createTeacherId && createCourses.length === 0 ? <div className="mt-2 rounded-xl bg-amber-50 p-4 text-sm text-amber-700">這位老師在本月與下個月沒有可申請的課程。</div> : (
+                  <div className="mt-2 grid max-h-60 gap-2 overflow-y-auto">
+                    {createCourses.map((course) => (
+                      <button key={course.attendanceId} type="button" onClick={() => setCreateAttendanceId(course.attendanceId)} className={`rounded-xl border p-3 text-left text-sm ${createAttendanceId === course.attendanceId ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-blue-200"}`}>
+                        <span className="font-semibold text-slate-800">{course.date}　{course.time}</span>
+                        <span className="mt-1 block text-slate-600">{course.school}｜{course.courseType}｜{course.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <label className="block text-sm font-semibold text-slate-700">3. 請假原因（必填）<textarea value={createReason} onChange={(event) => setCreateReason(event.target.value)} rows={3} placeholder="請填寫老師請假原因" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" /></label>
+              <label className="block text-sm font-semibold text-slate-700">行政備註（選填）<textarea value={createNotes} onChange={(event) => setCreateNotes(event.target.value)} rows={2} placeholder="例如：老師電話告知，由行政代為登記" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" /></label>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setCreateOpen(false)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600">取消</button>
+                <button disabled={Boolean(busy) || !createTeacherId || !createAttendanceId || !createReason.trim()} onClick={submitCreateLeave} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === "/api/teacher-leaves" ? "建立中..." : "建立請假申請"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {manualLeave && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
