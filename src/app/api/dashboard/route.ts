@@ -9,6 +9,8 @@ import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
 
+export const dynamic = "force-dynamic";
+
 // Single endpoint for the home page — replaces 3 separate fetches
 // Returns the compact data needed by the home page.
 export async function GET(req: NextRequest) {
@@ -165,5 +167,7 @@ export async function GET(req: NextRequest) {
     unnotifiedCount,
     teacherCount,
     courseChanges: Object.fromEntries(changeRequestGroups.map((row) => [row.status, row._count._all])),
+  }, {
+    headers: { "Cache-Control": "private, no-store, max-age=0" },
   });
 }

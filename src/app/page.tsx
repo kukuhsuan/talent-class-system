@@ -64,11 +64,13 @@ export default function Home() {
   const dateDisplay = `${year}年${month}月${now.getDate()}日 ${todayDayName}`;
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    let cancelled = false;
+    async function load(showLoading = false) {
+      if (showLoading) setLoading(true);
       const params = new URLSearchParams({ year: String(year), month: String(month), today: todayStr });
       if (dept) params.set("dept", dept);
-      const data = await fetch(`/api/dashboard?${params}`).then((r) => r.json());
+      const data = await fetch(`/api/dashboard?${params}`, { cache: "no-store" }).then((r) => r.json());
+      if (cancelled) return;
 
       setStats({
         todayCourseCount: Number(data.todayCourseCount ?? 0),
@@ -83,7 +85,19 @@ export default function Home() {
       setSeeded(Number(data.teacherCount ?? 0) > 0);
       setLoading(false);
     }
-    load();
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") void load();
+    }
+    void load(true);
+    const refreshTimer = window.setInterval(refreshWhenVisible, 30_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [dept, year, month, todayStr]);
 
   const handleRemind = async (attendanceId: number) => {
