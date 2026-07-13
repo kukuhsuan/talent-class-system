@@ -5,6 +5,7 @@ import { addCourseChangeEvent, COURSE_CHANGE_STATUS, courseChangeDisplay, course
 import { buildCourseChangeInquiryMessage, getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { writeAuditLog } from "@/lib/auditLog";
+import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(ADMIN_ROLES);
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const requestId = Number(id);
   try {
-    const current = await getCourseChangeRequest(requestId);
+    const current = await withDatabaseRetry(() => getCourseChangeRequest(requestId));
     if (!current) return NextResponse.json({ error: "找不到課程異動申請" }, { status: 404 });
     if (![COURSE_CHANGE_STATUS.pendingReview, COURSE_CHANGE_STATUS.teacherUnavailable, COURSE_CHANGE_STATUS.discuss].includes(current.status as never)) {
       throw new Error("目前狀態不能發送老師詢問");
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const types = parseChangeTypes(current.changeTypes);
     const originalPlace = [current.originalSchoolName, current.originalLocation].filter(Boolean).join("・");
     const newPlace = [current.newSchoolName || current.originalSchoolName, current.newLocation].filter(Boolean).join("・");
-    await pushMessage(current.teacher.lineUserId, [buildCourseChangeInquiryMessage({
+    const message = buildCourseChangeInquiryMessage({
       requestId: current.id,
       school: current.originalSchoolName,
       courseType: current.course.courseType,
@@ -35,9 +36,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       newAddress: current.newAddress,
       newStudentCount: current.newStudentCount,
       reason: [current.reasonType, current.reasonNote].filter(Boolean).join("："),
-    })], getLineConfig(current.teacher.lineRegion as LineRegion).token);
+    });
 
-    const updated = await prisma.$transaction(async (tx) => {
+    // 先鎖定狀態再送 LINE，避免 LINE 已送出但 DB 502 時重複發送。
+    const updated = await withDatabaseRetry(() => prisma.$transaction(async (tx) => {
       const row = await tx.courseChangeRequest.update({
         where: { id: current.id },
         data: {
@@ -61,7 +63,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         note: `發送給 ${current.teacher.name}`,
       });
       return tx.courseChangeRequest.findUniqueOrThrow({ where: { id: row.id }, include: courseChangeInclude });
-    });
+    }));
+    try {
+      await pushMessage(current.teacher.lineUserId, [message], getLineConfig(current.teacher.lineRegion as LineRegion).token);
+    } catch (error) {
+      await withDatabaseRetry(() => prisma.courseChangeRequest.update({
+        where: { id: current.id },
+        data: { status: current.status, lineSentAt: null },
+      })).catch(() => undefined);
+      throw error;
+    }
     await writeAuditLog(req, {
       action: "send_line",
       targetType: "CourseChangeRequest",
@@ -71,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       afterData: updated,
       diffSummary: `發送課程異動詢問給 ${current.teacher.name}`,
       sensitive: true,
-    });
+    }).catch((error) => console.error("course change send audit failed", error));
     return NextResponse.json(courseChangeDisplay(updated));
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message || "發送老師詢問失敗" }, { status: 400 });

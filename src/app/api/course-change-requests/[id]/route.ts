@@ -3,12 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
 import { addCourseChangeEvent, COURSE_CHANGE_STATUS, courseChangeDisplay, courseChangeInclude, getCourseChangeRequest, parseChangeTypes } from "@/lib/courseChangeRequests";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
+import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(BACKOFFICE_ROLES);
   if (auth.response) return auth.response;
   const { id } = await params;
-  const item = await getCourseChangeRequest(Number(id));
+  const item = await withDatabaseRetry(() => getCourseChangeRequest(Number(id)));
   if (!item) return NextResponse.json({ error: "找不到課程異動申請" }, { status: 404 });
   return NextResponse.json(courseChangeDisplay(item));
 }
@@ -19,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const requestId = Number(id);
   try {
-    const current = await getCourseChangeRequest(requestId);
+    const current = await withDatabaseRetry(() => getCourseChangeRequest(requestId));
     if (!current) return NextResponse.json({ error: "找不到課程異動申請" }, { status: 404 });
     const body = await req.json();
     const action = String(body.action ?? "update");
@@ -63,7 +64,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       };
       nextStatus = COURSE_CHANGE_STATUS.pendingReview;
     }
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await withDatabaseRetry(() => prisma.$transaction(async (tx) => {
       const row = await tx.courseChangeRequest.update({ where: { id: requestId }, data });
       await addCourseChangeEvent(tx, {
         requestId,
@@ -78,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         afterData: row,
       });
       return tx.courseChangeRequest.findUniqueOrThrow({ where: { id: requestId }, include: courseChangeInclude });
-    });
+    }));
     await writeAuditLog(req, {
       action: action === "cancel" ? "soft_delete" : "update",
       targetType: "CourseChangeRequest",
@@ -88,7 +89,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       afterData: updated,
       diffSummary: diffSummary(current as unknown as Record<string, unknown>, updated as unknown as Record<string, unknown>) || actionLabel,
       sensitive: true,
-    });
+    }).catch((error) => console.error("course change update audit failed", error));
     return NextResponse.json(courseChangeDisplay(updated));
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message || "更新異動申請失敗" }, { status: 400 });

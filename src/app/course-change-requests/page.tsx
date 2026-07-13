@@ -27,6 +27,13 @@ const EMPTY_FORM = {
 };
 const STATUS_OPTIONS = ["", "待行政審核", "待老師回覆", "老師可配合", "老師無法配合", "需要討論", "已完成", "已取消"];
 
+function friendlyError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /SERVER_ERROR|HTTP status 502|fetch failed/i.test(message)
+    ? `${fallback}；資料庫暫時忙碌，請稍後重新整理頁面`
+    : message || fallback;
+}
+
 function statusClass(status: string) {
   if (status === "已完成" || status === "老師可配合") return "bg-emerald-50 text-emerald-700";
   if (status === "老師無法配合" || status === "已取消") return "bg-rose-50 text-rose-700";
@@ -168,8 +175,9 @@ export default function CourseChangeRequestsPage() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "儲存失敗");
       setMessage(editingId ? "異動申請已更新" : "異動申請已建立，尚未修改正式課表");
-      resetForm(); await loadItems();
-    } catch (error) { setMessage((error as Error).message); } finally { setSaving(false); }
+      resetForm();
+      try { await loadItems(); } catch { setMessage(`${editingId ? "異動申請已更新" : "異動申請已建立"}；列表暫時無法更新，請稍後重新整理`); }
+    } catch (error) { setMessage(friendlyError(error, "儲存失敗")); } finally { setSaving(false); }
   }
 
   function editItem(item: ChangeRequest, attendanceRows = attendances) {
@@ -214,9 +222,15 @@ export default function CourseChangeRequestsPage() {
       body: JSON.stringify(name === "cancel" || name === "return" ? { action: name, note } : {}),
     });
     const body = await response.json();
-    if (!response.ok) { setMessage(body.error || "操作失敗"); return; }
-    setMessage(name === "send" ? "已發送 LINE 詢問老師" : name === "apply" ? "異動已套用至正式課表" : "申請狀態已更新");
-    await loadItems(); await loadOptions();
+    if (!response.ok) { setMessage(friendlyError(body.error, "操作失敗")); return; }
+    const successMessage = name === "send" ? "已發送 LINE 詢問老師" : name === "apply" ? "異動已套用至正式課表" : "申請狀態已更新";
+    setMessage(successMessage);
+    try {
+      await loadItems();
+      setMessage(successMessage);
+    } catch {
+      setMessage(`${successMessage}；列表暫時無法更新，請稍後重新整理頁面`);
+    }
   }
 
   async function arrangeSubstitute(item: ChangeRequest) {

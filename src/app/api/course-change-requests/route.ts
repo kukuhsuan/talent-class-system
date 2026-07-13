@@ -65,13 +65,13 @@ export async function POST(req: NextRequest) {
   if (auth.response || !auth.user) return auth.response;
   try {
     const body = await req.json();
-    const request = await createCourseChangeRequest({
+    const request = await withDatabaseRetry(() => createCourseChangeRequest({
       ...body,
       attendanceIds: Array.isArray(body.attendanceIds) ? body.attendanceIds : [body.attendanceId],
       requestSource: "ADMIN",
       requestedByUserId: auth.user.userId,
       requestedByName: auth.user.name,
-    });
+    }));
     await writeAuditLog(req, {
       action: "create",
       targetType: "CourseChangeRequest",
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       afterData: request,
       diffSummary: `建立課程異動申請：${request.originalSchoolName} ${request.course.courseType}`,
       sensitive: true,
-    });
+    }).catch((error) => console.error("course change create audit failed", error));
     return NextResponse.json(courseChangeDisplay(request), { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message || "建立課程異動失敗" }, { status: 400 });
