@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
 import { courseChangeDisplay, courseChangeInclude, createCourseChangeRequest } from "@/lib/courseChangeRequests";
 import { writeAuditLog } from "@/lib/auditLog";
+import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function GET(req: NextRequest) {
   const auth = await requireRole(BACKOFFICE_ROLES);
@@ -36,8 +37,12 @@ export async function GET(req: NextRequest) {
       { requestedByName: { contains: keyword } },
     ] }];
   }
-  const items = await prisma.courseChangeRequest.findMany({ where, include: courseChangeInclude, orderBy: { createdAt: "desc" } });
-  return NextResponse.json({ items: items.map(courseChangeDisplay), total: items.length });
+  try {
+    const items = await withDatabaseRetry(() => prisma.courseChangeRequest.findMany({ where, include: courseChangeInclude, orderBy: { createdAt: "desc" } }));
+    return NextResponse.json({ items: items.map(courseChangeDisplay), total: items.length });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message || "異動申請載入失敗，請稍後重試" }, { status: 503 });
+  }
 }
 
 export async function POST(req: NextRequest) {

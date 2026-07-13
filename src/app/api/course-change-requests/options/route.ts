@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
 import { attendanceHasCompletionData } from "@/lib/courseChangeRequests";
 import { taipeiDateIso } from "@/lib/courseDates";
+import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function GET() {
   const auth = await requireRole(BACKOFFICE_ROLES);
@@ -11,7 +12,7 @@ export async function GET() {
   start.setUTCDate(start.getUTCDate() - 7);
   const end = new Date(start);
   end.setUTCFullYear(end.getUTCFullYear() + 1);
-  const [attendances, schools] = await Promise.all([
+  const [attendances, schools] = await withDatabaseRetry(() => Promise.all([
     prisma.attendance.findMany({
       where: { date: { gte: start, lt: end }, cancelled: false, course: { isActive: true } },
       include: {
@@ -21,7 +22,7 @@ export async function GET() {
       orderBy: [{ date: "asc" }, { course: { school: "asc" } }],
     }),
     prisma.school.findMany({ orderBy: [{ region: "asc" }, { name: "asc" }] }),
-  ]);
+  ]));
   return NextResponse.json({
     attendances: attendances.map((item) => ({
       id: item.id,

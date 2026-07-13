@@ -4,6 +4,7 @@ import { applyCourseChangeRequest, courseChangeDisplay, getCourseChangeRequest }
 import { getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { writeAuditLog } from "@/lib/auditLog";
+import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(ADMIN_ROLES);
@@ -11,9 +12,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const requestId = Number(id);
   try {
-    const before = await getCourseChangeRequest(requestId);
+    const before = await withDatabaseRetry(() => getCourseChangeRequest(requestId));
     if (!before) return NextResponse.json({ error: "找不到課程異動申請" }, { status: 404 });
-    const updated = await applyCourseChangeRequest(requestId, { userId: auth.user.userId, name: auth.user.name });
+    const updated = await withDatabaseRetry(() => applyCourseChangeRequest(requestId, { userId: auth.user.userId, name: auth.user.name }));
     let notifyError = "";
     if (updated.teacher.lineUserId && updated.teacher.lineRegion) {
       try {
@@ -34,6 +35,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       afterData: updated,
       diffSummary: `確認並套用課程異動，共 ${updated.targets.length} 堂${notifyError ? `；老師通知失敗：${notifyError}` : ""}`,
       sensitive: true,
+    }).catch((error) => {
+      console.error("course change audit log failed after apply", error);
     });
     return NextResponse.json({ ...courseChangeDisplay(updated), notifyError });
   } catch (error) {
