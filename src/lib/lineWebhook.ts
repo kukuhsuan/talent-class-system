@@ -11,10 +11,10 @@ import {
 } from "@/lib/line";
 import { formatMonthDay, taipeiDateIso, weekdayOfIso } from "@/lib/courseDates";
 import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
-import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime } from "@/lib/attendanceTime";
+import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
-import { isPendingReport } from "@/lib/reportWindow";
+import { attendanceReportWindow, isPendingReport, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
 import { recordTeacherArrival } from "@/lib/attendanceArrival";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
 import {
@@ -84,6 +84,37 @@ async function ensureTeacherCanAccessAttendance(lineUserId: string, attendanceId
   return false;
 }
 
+async function ensureTeacherCanSubmitReport(lineUserId: string, attendanceId: number, replyToken: string, token: string) {
+  if (!(await teacherCanAccessAttendance(lineUserId, attendanceId))) {
+    await replyMessage(replyToken, [{ type: "text", text: UNAUTHORIZED_ATTENDANCE_REPLY }], token);
+    return false;
+  }
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+    include: { course: true },
+  });
+  if (!attendance) {
+    await replyMessage(replyToken, [{ type: "text", text: "找不到課程資料，請聯繫行政確認。" }], token);
+    return false;
+  }
+  const scheduledTime = effectiveAttendanceTime({
+    scheduledTime: usableScheduledTime(attendance.scheduledTime),
+    courseTime: attendance.course.time,
+    attendanceHours: attendance.hours,
+    isPayrollLocked: attendance.isPayrollLocked,
+    reportContent: attendance.reportContent,
+    reportSentAt: attendance.reportSentAt,
+    studentCount: attendance.studentCount,
+    studentCountA: attendance.studentCountA,
+    studentCountB: attendance.studentCountB,
+  });
+  if (!attendanceReportWindow(attendance, scheduledTime).ended) {
+    await replyMessage(replyToken, [{ type: "text", text: REPORT_NOT_STARTED_MESSAGE }], token);
+    return false;
+  }
+  return true;
+}
+
 async function ensureSchoolLineRegionColumn() {
   await prisma.$executeRawUnsafe('ALTER TABLE School ADD COLUMN lineRegion TEXT NOT NULL DEFAULT "school"').catch(() => undefined);
 }
@@ -145,7 +176,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   const pendingId = pendingDetails.get(userId);
   if (pendingId) {
     pendingDetails.delete(userId);
-    if (!(await ensureTeacherCanAccessAttendance(userId, pendingId, replyToken, token))) return;
+    if (!(await ensureTeacherCanSubmitReport(userId, pendingId, replyToken, token))) return;
     await saveDetailedReport(userId, pendingId, text, replyToken, token, region);
     return;
   }
@@ -787,7 +818,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "select_progress") {
-    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+    if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
     const attForCurriculum = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { course: true },
@@ -802,7 +833,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "report_progress") {
-    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+    if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
     const content = decodeURIComponent(params.get("content") ?? "");
     await prisma.attendance.update({
       where: { id: attendanceId },
@@ -825,7 +856,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "report") {
-    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+    if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
     const status = params.get("status");
     const cancelled = status === "cancelled";
     await prisma.attendance.update({
@@ -846,7 +877,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   }
 
   if (action === "report_detail") {
-    if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+    if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
     pendingDetails.set(userId, attendanceId);
     await replyMessage(replyToken, [{
       type: "text",
@@ -905,7 +936,7 @@ async function handleCountSubmit(
   replyToken: string,
   token: string,
 ) {
-  if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+  if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
   if (group === "A") {
     // Save A班 count, show B班 board
     await prisma.attendance.update({
@@ -953,7 +984,7 @@ async function handleCountSubmit(
 
 async function saveDetailedReport(userId: string, attendanceId: number, text: string, replyToken: string, token: string, region: LineRegion) {
   void region;
-  if (!(await ensureTeacherCanAccessAttendance(userId, attendanceId, replyToken, token))) return;
+  if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
   const content = text.replace(/^自訂[：:]\s*/, "").trim() || "";
 
   await prisma.attendance.update({

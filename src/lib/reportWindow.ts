@@ -2,6 +2,7 @@ import { requiresStudentCount } from "@/lib/courseMeta";
 
 export const REPORT_FILL_WINDOW_HOURS = 48;
 export const REPORT_LINK_EXPIRED_MESSAGE = "此回報連結已過期，請聯繫客服";
+export const REPORT_NOT_STARTED_MESSAGE = "課程尚未結束，請於下課後再進行回報";
 
 type ReportAttendanceLike = {
   date: Date | string;

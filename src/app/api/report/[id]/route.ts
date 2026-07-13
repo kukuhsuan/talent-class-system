@@ -5,7 +5,7 @@ import { normalizeAbilities } from "@/lib/abilityMap";
 import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
-import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE } from "@/lib/reportWindow";
+import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -182,8 +182,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         : "",
       reportFillable: reportWindow.fillable,
       reportExpired: reportWindow.expired,
-      reportLocked: reportWindow.expired,
-      reportPhotoLocked: reportWindow.expired && !reportWindow.complete,
+      reportNotStarted: !reportWindow.ended,
+      reportLocked: !reportWindow.ended || reportWindow.expired,
+      reportPhotoLocked: !reportWindow.ended || (reportWindow.expired && !reportWindow.complete),
+      courseEndsAt: reportWindow.endedAt.toISOString(),
       reportExpiresAt: reportWindow.expiresAt.toISOString(),
     });
   } catch (e) {
@@ -289,6 +291,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       studentCountB: attendance.studentCountB,
     });
     const reportWindow = attendanceReportWindow(attendance, scheduledTime);
+    if (!reportWindow.ended) {
+      return NextResponse.json({ error: REPORT_NOT_STARTED_MESSAGE }, { status: 409 });
+    }
     if (reportWindow.expired) {
       return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
     }

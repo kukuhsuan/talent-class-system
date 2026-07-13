@@ -36,6 +36,8 @@ type ReportInfo = {
   schoolNotifyError?: string;
   reportLocked?: boolean;
   reportPhotoLocked?: boolean;
+  reportNotStarted?: boolean;
+  courseEndsAt?: string;
 };
 
 const EMPTY = {
@@ -290,7 +292,9 @@ export default function TeacherReportPage() {
       {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
       {locked && (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-600">
-          此回報已超過 48 小時補填期限，目前僅供查看。如需修改請聯繫客服。
+          {info.reportNotStarted
+            ? `課程尚未結束，請於下課後再回報${info.courseEndsAt ? `（${new Date(info.courseEndsAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 後）` : ""}。`
+            : "此回報已超過 48 小時補填期限，目前僅供查看。如需修改請聯繫客服。"}
         </div>
       )}
 
