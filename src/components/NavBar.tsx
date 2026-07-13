@@ -159,7 +159,7 @@ export default function NavBar() {
               更多 ▾
             </button>
             {moreOpen && (
-              <div role="menu" className="absolute right-0 top-10 z-50 grid w-[min(880px,calc(100vw-2rem))] grid-cols-4 gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-slate-700 shadow-2xl">
+              <div role="menu" className="fixed left-1/2 top-[62px] z-50 grid w-[min(880px,calc(100vw-2rem))] -translate-x-1/2 grid-cols-4 gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-slate-700 shadow-2xl">
                 {visibleGroups.map((group) => (
                   <div key={group.title} className="rounded-xl bg-slate-50/80 p-2">
                     <div className="mb-1 px-2 py-1 text-[11px] font-bold tracking-wider text-slate-400">{group.title}</div>
