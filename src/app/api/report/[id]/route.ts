@@ -6,6 +6,7 @@ import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
+import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, validSignatureData } from "@/lib/schoolSignature";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -20,6 +21,8 @@ type ReportPayload = {
   incidentProcess?: string;
   incidentAction?: string;
   incidentNotified?: string;
+  schoolVerifierName?: string;
+  schoolSignatureData?: string;
 };
 
 function progressText(item: { lesson: number; title: string }) {
@@ -95,6 +98,7 @@ async function assessmentCount(attendanceId: number) {
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await ensureSchoolSignatureColumns();
     const { id } = await params;
     const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
     const attendance = await prisma.attendance.findUnique({
@@ -105,6 +109,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!attendance) {
       return NextResponse.json({ error: "找不到課程回報資料，可能這筆出勤已刪除或連結已失效" }, { status: 404 });
     }
+    const signature = (await schoolSignatureMap([attendance.id])).get(attendance.id);
     const scheduledTime = effectiveAttendanceTime({
       scheduledTime: usableScheduledTime(attendance.scheduledTime),
       courseTime: attendance.course.time,
@@ -180,6 +185,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       schoolNotifyError: shouldNotifySchool(attendance.course.department)
         ? (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? ""
         : "",
+      schoolSignatureRequired: requiresSchoolSignature(attendance.course.department),
+      schoolVerifierName: signature?.schoolVerifierName ?? "",
+      schoolSignatureData: signature?.schoolSignatureData ?? "",
+      schoolSignedAt: signature?.schoolSignedAt instanceof Date ? signature.schoolSignedAt.toISOString() : signature?.schoolSignedAt ?? null,
       reportFillable: reportWindow.fillable,
       reportExpired: reportWindow.expired,
       reportNotStarted: !reportWindow.ended,
@@ -269,6 +278,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await ensureSchoolSignatureColumns();
     const { id } = await params;
     const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
     const attendance = await prisma.attendance.findUnique({
@@ -308,6 +318,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
     const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());
     const incident = Boolean(data.incident);
+    const signatureRequired = requiresSchoolSignature(attendance.course.department);
+    const schoolVerifierName = String(data.schoolVerifierName ?? "").trim();
+    const schoolSignatureData = String(data.schoolSignatureData ?? "");
+    if (signatureRequired && !schoolVerifierName) {
+      return NextResponse.json({ error: "請填寫園所確認老師姓名" }, { status: 400 });
+    }
+    if (signatureRequired && !validSignatureData(schoolSignatureData)) {
+      return NextResponse.json({ error: "請由園所老師完成手寫簽名" }, { status: 400 });
+    }
 
     const incidentChild = String(data.incidentChild ?? "").trim();
     const incidentProcess = String(data.incidentProcess ?? "").trim();
@@ -351,6 +370,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         aiTeachingNote: "",
       },
     });
+    if (signatureRequired) await saveSchoolSignature(attendance.id, schoolVerifierName, schoolSignatureData);
     const { writeAuditLog } = await import("@/lib/auditLog");
     await writeAuditLog(req, {
       actorName: attendance.actualTeacher.name,
@@ -368,6 +388,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         studentCount: data.studentCount == null ? attendance.studentCount : Number(data.studentCount),
         reportContent,
         reportSentAt: "now",
+        ...(signatureRequired ? { schoolVerifierName, schoolSignedAt: "now" } : {}),
       },
       diffSummary: `老師送出課後回報：${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
     });

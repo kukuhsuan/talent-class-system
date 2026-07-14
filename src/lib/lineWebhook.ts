@@ -34,6 +34,8 @@ import { getEquipmentFlow, updateEquipmentFlowStatus } from "@/lib/equipmentFlow
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { pushAdminAlert, raiseSystemAlert } from "@/lib/systemAlerts";
 import { respondToCourseChange } from "@/lib/courseChangeRequests";
+import { requiresSchoolSignature } from "@/lib/schoolSignature";
+import { deleteLineConversationState, getLineConversationState, setLineConversationState } from "@/lib/lineConversationState";
 
 type LineEvent = {
   type: string;
@@ -47,8 +49,7 @@ type LineEvent = {
 const pendingDetails = new Map<string, number>();
 // Track teachers who've submitted A班, now awaiting B班 (userId -> attendanceId)
 const pendingGroupB = new Map<string, number>();
-// Track teachers who selected a leave course and now need to type a reason.
-const pendingLeaveApplications = new Map<string, number>();
+const LEAVE_REASON_ACTION = "teacher_leave_reason";
 const UNAUTHORIZED_ATTENDANCE_REPLY = "此課程資料無法由您的帳號回報，請聯繫行政確認。";
 
 async function teacherCanAccessAttendance(lineUserId: string, attendanceId: number) {
@@ -110,6 +111,13 @@ async function ensureTeacherCanSubmitReport(lineUserId: string, attendanceId: nu
   });
   if (!attendanceReportWindow(attendance, scheduledTime).ended) {
     await replyMessage(replyToken, [{ type: "text", text: REPORT_NOT_STARTED_MESSAGE }], token);
+    return false;
+  }
+  if (requiresSchoolSignature(attendance.course.department)) {
+    await replyMessage(replyToken, [
+      { type: "text", text: "安親班課程需要園所老師現場簽名，請使用下方課後回報表單完成。" },
+      buildReportRequestMessage({ school: attendance.course.school, courseType: attendance.course.courseType, attendanceId }),
+    ], token);
     return false;
   }
   return true;
@@ -181,7 +189,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
-  const pendingLeaveAttendanceId = pendingLeaveApplications.get(userId);
+  const pendingLeaveAttendanceId = await getLineConversationState(userId, LEAVE_REASON_ACTION);
   if (pendingLeaveAttendanceId) {
     if (!text.trim()) {
       await replyMessage(replyToken, [{ type: "text", text: "請輸入請假原因，原因為必填。" }], token);
@@ -189,7 +197,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     }
     const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
     if (!teacher) {
-      pendingLeaveApplications.delete(userId);
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
       await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
       return;
     }
@@ -199,13 +207,13 @@ async function handleText(userId: string, text: string, replyToken: string, regi
         teacherId: teacher.id,
         reason: text,
       });
-      pendingLeaveApplications.delete(userId);
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
       await replyMessage(replyToken, [{
         type: "text",
         text: `✅ 已送出請假申請，行政審核後會再通知您。\n本學期請假累計：${result.semesterLeaveCountAtSubmit} 次。\n\n若要取消請假，請傳「取消請假」。`,
       }], token);
     } catch (error) {
-      pendingLeaveApplications.delete(userId);
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
       await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "請假申請送出失敗，請稍後再試。" }], token);
     }
     return;
@@ -614,7 +622,12 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       return;
     }
     const leaveCount = await semesterLeaveCount(teacher.id);
-    pendingLeaveApplications.set(userId, attendanceId);
+    await setLineConversationState({
+      lineUserId: userId,
+      action: LEAVE_REASON_ACTION,
+      referenceId: attendanceId,
+      ttlMinutes: 30,
+    });
     await replyMessage(replyToken, [{
       type: "text",
       text: `請輸入請假原因（必填）。\n\n提醒：您本學期已請假 ${leaveCount} 次，本次送出後將累計為 ${leaveCount + 1} 次。`,

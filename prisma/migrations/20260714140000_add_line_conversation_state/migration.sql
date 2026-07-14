@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS "LineConversationState" (
+  "lineUserId" TEXT NOT NULL,
+  "action" TEXT NOT NULL,
+  "referenceId" INTEGER NOT NULL,
+  "expiresAt" DATETIME NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("lineUserId", "action")
+);

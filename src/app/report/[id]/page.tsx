@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useParams } from "next/navigation";
 import { requiresStudentCount } from "@/lib/courseMeta";
 import { normalizeAbilities } from "@/lib/abilityMap";
@@ -38,6 +38,10 @@ type ReportInfo = {
   reportPhotoLocked?: boolean;
   reportNotStarted?: boolean;
   courseEndsAt?: string;
+  schoolSignatureRequired?: boolean;
+  schoolVerifierName?: string;
+  schoolSignatureData?: string;
+  schoolSignedAt?: string | null;
 };
 
 const EMPTY = {
@@ -52,7 +56,85 @@ const EMPTY = {
   incidentProcess: "",
   incidentAction: "",
   incidentNotified: "否",
+  schoolVerifierName: "",
+  schoolSignatureData: "",
 };
+
+function SignaturePad({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const [hasInk, setHasInk] = useState(Boolean(value));
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#1f2937";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    if (value) {
+      const image = new Image();
+      image.onload = () => ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image.src = value;
+    }
+  }, [value]);
+
+  function point(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height };
+  }
+  function start(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (disabled) return;
+    drawingRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const ctx = event.currentTarget.getContext("2d")!;
+    const p = point(event);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    setHasInk(true);
+  }
+  function move(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (!drawingRef.current || disabled) return;
+    const ctx = event.currentTarget.getContext("2d")!;
+    const p = point(event);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    setHasInk(true);
+  }
+  function finish() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    const canvas = canvasRef.current;
+    if (canvas) onChange(canvas.toDataURL("image/jpeg", 0.68));
+  }
+  function clear() {
+    if (disabled) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    setHasInk(false);
+    onChange("");
+  }
+
+  return (
+    <div>
+      <canvas ref={canvasRef} width={600} height={220} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}
+        className={`mt-2 h-40 w-full touch-none rounded-xl border bg-white ${disabled ? "cursor-not-allowed border-slate-200 opacity-70" : "border-slate-300"}`} />
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <span>{hasInk ? "已完成簽名" : "請在上方空白處簽名"}</span>
+        <button type="button" disabled={disabled || !hasInk} onClick={clear} className="rounded-lg bg-slate-100 px-3 py-1.5 font-semibold text-slate-600 disabled:opacity-40">清除重簽</button>
+      </div>
+    </div>
+  );
+}
 
 function loadLocalImage(file: File) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -148,6 +230,8 @@ export default function TeacherReportPage() {
           incidentProcess: data.incidentProcess ?? "",
           incidentAction: data.incidentAction ?? "",
           incidentNotified: data.incidentNotified || "否",
+          schoolVerifierName: data.schoolVerifierName ?? "",
+          schoolSignatureData: data.schoolSignatureData ?? "",
         });
         setCustomProgress(Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress)));
       })
@@ -215,6 +299,14 @@ export default function TeacherReportPage() {
     }
     if (kindergarten && (form.skillFocus.length < 3 || form.skillFocus.length > 4)) {
       setError("請選擇 3～4 個本堂學習目標");
+      return;
+    }
+    if (info?.schoolSignatureRequired && !form.schoolVerifierName.trim()) {
+      setError("請填寫園所確認老師姓名");
+      return;
+    }
+    if (info?.schoolSignatureRequired && !form.schoolSignatureData) {
+      setError("請由園所老師完成手寫簽名");
       return;
     }
     setSaving(true);
@@ -455,6 +547,21 @@ export default function TeacherReportPage() {
             </div>
           )}
         </section>
+
+        {info.schoolSignatureRequired && (
+          <section className="rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 shadow-sm">
+            <div className="text-sm font-bold text-[#3F6B55]">園所老師確認簽名</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">請由現場園所老師確認以上出席與回報內容，並在同一支手機完成簽名。</p>
+            <label className="mt-4 block text-sm font-semibold text-slate-700">
+              園所確認老師姓名
+              <input value={form.schoolVerifierName} disabled={locked} onChange={(e) => setForm({ ...form, schoolVerifierName: e.target.value })}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#7B9E87]" placeholder="請輸入姓名" />
+            </label>
+            <div className="mt-4 text-sm font-semibold text-slate-700">手寫簽名</div>
+            <SignaturePad value={form.schoolSignatureData} disabled={locked} onChange={(schoolSignatureData) => setForm((current) => ({ ...current, schoolSignatureData }))} />
+            {info.schoolSignedAt && <div className="mt-3 text-xs text-slate-500">確認時間：{new Date(info.schoolSignedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div>}
+          </section>
+        )}
 
         {!locked && (
           <button onClick={submit} disabled={saving}

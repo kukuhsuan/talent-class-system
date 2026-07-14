@@ -11,6 +11,7 @@ import { resolvePayrollHours } from "@/lib/payrollHoursCore";
 import { ensureAttendanceEquipmentTable, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
 import { expectedStudentCountMap, parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { writeAuditLog } from "@/lib/auditLog";
+import { schoolSignatureMap } from "@/lib/schoolSignature";
 
 export async function GET(req: NextRequest) {
   await ensureAttendanceEquipmentTable();
@@ -118,7 +119,10 @@ export async function GET(req: NextRequest) {
     paginateInDatabase ? prisma.attendance.count({ where: where as Prisma.AttendanceWhereInput }) : Promise.resolve(0),
   ]);
   // scheduledTime / payrollHours 已在 schema 內，直接由 findMany 取得，省 2 次資料庫來回
-  const expectedMap = await expectedStudentCountMap(records.map((record) => record.id));
+  const [expectedMap, signatures] = await Promise.all([
+    expectedStudentCountMap(records.map((record) => record.id)),
+    schoolSignatureMap(records.map((record) => record.id)),
+  ]);
   const annotatedRecords = records.map((record) => {
     const scheduledTime = effectiveAttendanceTime({
       scheduledTime: usableScheduledTime(record.scheduledTime),
@@ -138,6 +142,9 @@ export async function GET(req: NextRequest) {
       ...record,
       scheduledTime,
       expectedStudentCount: expectedMap.get(record.id) ?? null,
+      schoolVerifierName: signatures.get(record.id)?.schoolVerifierName ?? "",
+      schoolSignatureData: signatures.get(record.id)?.schoolSignatureData ?? "",
+      schoolSignedAt: signatures.get(record.id)?.schoolSignedAt ?? null,
       course: { ...record.course, payrollHours: record.course.payrollHours ?? null },
       hours: payrollHours.payableHours,
       hoursNeedsReview: payrollHours.needsReview,

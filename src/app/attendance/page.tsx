@@ -24,6 +24,9 @@ type Attendance = {
   reportFillable?: boolean; reportExpired?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
   equipment?: (EquipmentReminderData & { attendanceId: number }) | null;
   expectedStudentCount?: number | null;
+  schoolVerifierName?: string;
+  schoolSignatureData?: string;
+  schoolSignedAt?: string | null;
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -696,6 +699,11 @@ export default function AttendancePage() {
                                     : "bg-slate-100 text-slate-500"
                                   }`}>{statusLabel(r)}</span>
                                   {isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
+                                  {r.schoolSignatureData && (
+                                    <a href={r.schoolSignatureData} target="_blank" rel="noreferrer" className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700" title={r.schoolSignedAt ? `簽名時間：${new Date(r.schoolSignedAt).toLocaleString("zh-TW")}` : ""}>
+                                      園所已簽 · {r.schoolVerifierName || "已確認"}
+                                    </a>
+                                  )}
                                   {equipmentLabels(r).map((label) => <span key={label} className={`rounded-full px-2.5 py-1 text-xs ${equipmentBadgeClass(label)}`}>📦 {label}</span>)}
                                 </div>
                               </td>
