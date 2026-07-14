@@ -72,6 +72,7 @@ export default function AttendancePage() {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [signaturePreview, setSignaturePreview] = useState<Attendance | null>(null);
   const { toast, showToast } = useToast();
   const showToastRef = useRef(showToast);
   const formRef = useRef<HTMLDivElement | null>(null);
@@ -324,6 +325,24 @@ export default function AttendancePage() {
   return (
     <div>
       <Toast toast={toast} />
+      {signaturePreview?.schoolSignatureData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4" onClick={() => setSignaturePreview(null)}>
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">園所確認簽名</h2>
+                <p className="mt-1 text-sm text-slate-500">{signaturePreview.course.school}｜{courseLabel(signaturePreview.course.courseType)}</p>
+              </div>
+              <button type="button" onClick={() => setSignaturePreview(null)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">關閉</button>
+            </div>
+            <div className="mt-4 aspect-[2/1] w-full rounded-xl border border-slate-200 bg-white bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${signaturePreview.schoolSignatureData})` }} />
+            <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+              <div>簽名人：<span className="font-semibold text-slate-900">{signaturePreview.schoolVerifierName || "園所老師"}</span></div>
+              <div>確認時間：<span className="font-semibold text-slate-900">{signaturePreview.schoolSignedAt ? new Date(signaturePreview.schoolSignedAt).toLocaleString("zh-TW") : "未記錄"}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
@@ -626,6 +645,7 @@ export default function AttendancePage() {
                             }`}>{statusLabel(r)}</span>
                           </div>
                           {isCountRequired(r) && r.reportFillStatus && <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.reportFillStatus}</div>}
+                          {r.schoolSignatureData && <button type="button" onClick={() => setSignaturePreview(r)} className="mt-2 block rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">園所已簽 · {r.schoolVerifierName || "已確認"}</button>}
                           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{countDisplay(r)}{r.expectedStudentCount != null && <span className="ml-1 text-xs font-normal text-blue-500">預計 {r.expectedStudentCount}</span>}</div></div>
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">類別 / 計薪</div><div className="font-medium">{normalizeCategory(r.category)}｜{hoursDisplay(r)}</div></div>
@@ -700,9 +720,9 @@ export default function AttendancePage() {
                                   }`}>{statusLabel(r)}</span>
                                   {isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
                                   {r.schoolSignatureData && (
-                                    <a href={r.schoolSignatureData} target="_blank" rel="noreferrer" className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700" title={r.schoolSignedAt ? `簽名時間：${new Date(r.schoolSignedAt).toLocaleString("zh-TW")}` : ""}>
+                                    <button type="button" onClick={() => setSignaturePreview(r)} className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700" title={r.schoolSignedAt ? `簽名時間：${new Date(r.schoolSignedAt).toLocaleString("zh-TW")}` : ""}>
                                       園所已簽 · {r.schoolVerifierName || "已確認"}
-                                    </a>
+                                    </button>
                                   )}
                                   {equipmentLabels(r).map((label) => <span key={label} className={`rounded-full px-2.5 py-1 text-xs ${equipmentBadgeClass(label)}`}>📦 {label}</span>)}
                                 </div>
