@@ -64,16 +64,22 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const [hasInk, setHasInk] = useState(Boolean(value));
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    if (!open) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = Math.max(1, Math.min(2, 1600 / Math.max(rect.width, 1), 1200 / Math.max(rect.height, 1)));
+    canvas.width = Math.round(rect.width * scale);
+    canvas.height = Math.round(rect.height * scale);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = "#1f2937";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4 * scale;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     if (value) {
@@ -81,7 +87,7 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
       image.onload = () => ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       image.src = value;
     }
-  }, [value]);
+  }, [open, value]);
 
   function point(event: ReactPointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current!;
@@ -109,8 +115,13 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
   function finish() {
     if (!drawingRef.current) return;
     drawingRef.current = false;
+  }
+  function complete() {
     const canvas = canvasRef.current;
-    if (canvas) onChange(canvas.toDataURL("image/jpeg", 0.68));
+    if (!canvas || !hasInk) return;
+    drawingRef.current = false;
+    onChange(canvas.toDataURL("image/jpeg", 0.68));
+    setOpen(false);
   }
   function clear() {
     if (disabled) return;
@@ -121,17 +132,35 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     setHasInk(false);
-    onChange("");
   }
 
   return (
     <div>
-      <canvas ref={canvasRef} width={600} height={220} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}
-        className={`mt-2 h-40 w-full touch-none rounded-xl border bg-white ${disabled ? "cursor-not-allowed border-slate-200 opacity-70" : "border-slate-300"}`} />
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-        <span>{hasInk ? "已完成簽名" : "請在上方空白處簽名"}</span>
-        <button type="button" disabled={disabled || !hasInk} onClick={clear} className="rounded-lg bg-slate-100 px-3 py-1.5 font-semibold text-slate-600 disabled:opacity-40">清除重簽</button>
-      </div>
+      {value ? (
+        <div className="mt-2 h-28 w-full rounded-xl border border-emerald-200 bg-white bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${value})` }} />
+      ) : (
+        <div className="mt-2 flex h-28 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-sm text-slate-400">尚未簽名</div>
+      )}
+      <button type="button" disabled={disabled} onClick={() => { setHasInk(Boolean(value)); setOpen(true); }} className="mt-3 w-full rounded-xl bg-[#3F6B55] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+        {value ? "重新簽名（開啟滿版）" : "開始簽名（開啟滿版）"}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900 p-3 text-white sm:p-5">
+          <div className="flex items-center justify-between gap-3 pb-3">
+            <div>
+              <div className="text-base font-bold">園所老師簽名</div>
+              <div className="mt-0.5 text-xs text-slate-300">請在下方白色區域簽名，手機橫放會更好寫</div>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold">取消</button>
+          </div>
+          <canvas ref={canvasRef} width={1200} height={600} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}
+            className="min-h-0 flex-1 touch-none rounded-2xl bg-white shadow-inner" />
+          <div className="flex gap-3 pt-3">
+            <button type="button" disabled={!hasInk} onClick={clear} className="flex-1 rounded-xl border border-slate-600 px-4 py-3 text-sm font-bold disabled:opacity-40">清除</button>
+            <button type="button" disabled={!hasInk} onClick={complete} className="flex-[2] rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-40">完成簽名</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
