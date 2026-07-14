@@ -68,8 +68,23 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const stopTouchScroll = (event: TouchEvent) => event.preventDefault();
+    canvas.addEventListener("touchstart", stopTouchScroll, { passive: false });
+    canvas.addEventListener("touchmove", stopTouchScroll, { passive: false });
     const rect = canvas.getBoundingClientRect();
     const scale = Math.max(1, Math.min(2, 1600 / Math.max(rect.width, 1), 1200 / Math.max(rect.height, 1)));
     canvas.width = Math.round(rect.width * scale);
@@ -87,6 +102,10 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
       image.onload = () => ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       image.src = value;
     }
+    return () => {
+      canvas.removeEventListener("touchstart", stopTouchScroll);
+      canvas.removeEventListener("touchmove", stopTouchScroll);
+    };
   }, [open, value]);
 
   function point(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -96,6 +115,7 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
   }
   function start(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (disabled) return;
+    event.preventDefault();
     drawingRef.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
     const ctx = event.currentTarget.getContext("2d")!;
@@ -106,6 +126,7 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
   }
   function move(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (!drawingRef.current || disabled) return;
+    event.preventDefault();
     const ctx = event.currentTarget.getContext("2d")!;
     const p = point(event);
     ctx.lineTo(p.x, p.y);
@@ -145,7 +166,7 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
         {value ? "重新簽名（開啟滿版）" : "開始簽名（開啟滿版）"}
       </button>
       {open && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900 p-3 text-white sm:p-5">
+        <div className="fixed inset-0 z-[100] flex h-[100dvh] touch-none flex-col overflow-hidden overscroll-none bg-slate-900 p-3 text-white sm:p-5">
           <div className="flex items-center justify-between gap-3 pb-3">
             <div>
               <div className="text-base font-bold">園所老師簽名</div>
@@ -154,7 +175,7 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
             <button type="button" onClick={() => setOpen(false)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold">取消</button>
           </div>
           <canvas ref={canvasRef} width={1200} height={600} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}
-            className="min-h-0 flex-1 touch-none rounded-2xl bg-white shadow-inner" />
+            style={{ touchAction: "none", overscrollBehavior: "none" }} className="min-h-0 flex-1 touch-none select-none rounded-2xl bg-white shadow-inner" />
           <div className="flex gap-3 pt-3">
             <button type="button" disabled={!hasInk} onClick={clear} className="flex-1 rounded-xl border border-slate-600 px-4 py-3 text-sm font-bold disabled:opacity-40">清除</button>
             <button type="button" disabled={!hasInk} onClick={complete} className="flex-[2] rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-40">完成簽名</button>
