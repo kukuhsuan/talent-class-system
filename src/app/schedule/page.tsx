@@ -67,13 +67,13 @@ export default function SchedulePage() {
   const scheduleTitle = isAfterSchool ? "安親班日期課表" : `${dept || "全系統"}日期課表`;
 
   useEffect(() => {
-    setLoading(true);
     const params = new URLSearchParams();
     if (filterRegion) params.set("region", filterRegion);
     if (dept) params.set("dept", dept);
     params.set("from", weekStart);
     params.set("to", weekEnd);
     const qs = params.toString();
+    void Promise.resolve().then(() => setLoading(true));
     fetch("/api/schedule" + (qs ? `?${qs}` : ""))
       .then((r) => r.json())
       .then((data) => { setCourses(data); setLoading(false); });
@@ -165,7 +165,7 @@ export default function SchedulePage() {
                 <div>課程 / 編號</div>
                 <div>老師</div>
                 <div className="text-right">類別</div>
-                <div className="text-right">人數</div>
+                <div className="text-right">預計人數</div>
               </div>
               <div className="divide-y divide-slate-100 overflow-x-auto">
                 {group.courses.map((course) => (
@@ -210,7 +210,7 @@ export default function SchedulePage() {
                       {course.enrollCount ? (
                         <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{formatEnrollCount(course.enrollCount)}</span>
                       ) : (
-                        <span className="text-xs text-slate-300">—</span>
+                        <span className="text-xs text-slate-400">未設定</span>
                       )}
                     </div>
                   </div>
