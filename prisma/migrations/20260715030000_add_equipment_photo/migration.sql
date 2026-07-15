@@ -1,0 +1,1 @@
+ALTER TABLE "EquipmentStatus" ADD COLUMN "imageUrl" TEXT NOT NULL DEFAULT '';

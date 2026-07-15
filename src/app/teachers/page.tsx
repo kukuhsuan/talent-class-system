@@ -170,7 +170,8 @@ export default function TeachersPage() {
             </div>
             <div>
               <label>助教費用（元 / 小時）</label>
-              <input type="number" value={form.assistantFee} onChange={(e) => setForm({ ...form, assistantFee: Number(e.target.value) })} disabled={!form.isAssistant} />
+              <input type="number" min="0" value={form.assistantFee} onChange={(e) => setForm({ ...form, assistantFee: Number(e.target.value) })} />
+              <p className="mt-1 text-xs text-slate-500">老師擔任助教的課堂會使用此時薪計算。</p>
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">匯款資料</div>
             <div>

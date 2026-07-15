@@ -119,6 +119,7 @@ model EquipmentStatus {
   name      String
   quantity  String   @default("")
   status    String   @default("正常")
+  imageUrl  String   @default("")
   notes     String   @default("")
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)

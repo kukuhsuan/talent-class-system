@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
 import { Toast } from "@/components/Toast";
 import { ensureOk } from "@/lib/clientApi";
@@ -22,6 +22,7 @@ type EquipmentRow = {
   name: string;
   quantity: string;
   status: string;
+  imageUrl: string;
   notes: string;
   sortOrder: number;
   isActive: boolean;
@@ -33,6 +34,7 @@ type EquipmentForm = {
   name: string;
   quantity: string;
   status: string;
+  imageUrl: string;
   notes: string;
   sortOrder: string;
 };
@@ -44,6 +46,7 @@ const EMPTY_FORM: EquipmentForm = {
   name: "",
   quantity: "",
   status: "正常",
+  imageUrl: "",
   notes: "",
   sortOrder: "0",
 };
@@ -54,6 +57,8 @@ export default function EquipmentPage() {
   const [form, setForm] = useState<EquipmentForm>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState("");
   const [search, setSearch] = useState("");
   const [schoolFilter, setSchoolFilter] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
@@ -62,10 +67,6 @@ export default function EquipmentPage() {
   const formRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLSelectElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
-
-  useEffect(() => {
-    loadInitialData();
-  }, []);
 
   const schoolMap = useMemo(() => {
     return new Map(schools.map((school) => [school.id, school]));
@@ -81,6 +82,10 @@ export default function EquipmentPage() {
     return Array.from(values);
   }, [schools]);
 
+  const getRowSchool = useCallback((row: EquipmentRow) => {
+    return row.schoolId ? schoolMap.get(row.schoolId) : schools.find((school) => school.name === row.school);
+  }, [schoolMap, schools]);
+
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return rows.filter((row) => {
@@ -94,13 +99,9 @@ export default function EquipmentPage() {
       if (statusFilter && row.status !== statusFilter) return false;
       return true;
     });
-  }, [rows, search, schoolFilter, departmentFilter, statusFilter, schoolMap]);
+  }, [rows, search, schoolFilter, departmentFilter, statusFilter, getRowSchool]);
 
-  function getRowSchool(row: EquipmentRow) {
-    return row.schoolId ? schoolMap.get(row.schoolId) : schools.find((school) => school.name === row.school);
-  }
-
-  async function loadInitialData() {
+  const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
       const [schoolsRes, equipmentRes] = await Promise.all([
@@ -117,15 +118,19 @@ export default function EquipmentPage() {
       ]);
       setSchools(schoolData);
       setRows(equipmentData);
-      if (!form.schoolId && schoolData[0]) {
-        setForm((prev) => ({ ...prev, schoolId: String(schoolData[0].id) }));
-      }
+      setForm((prev) => prev.schoolId || !schoolData[0]
+        ? prev
+        : { ...prev, schoolId: String(schoolData[0].id) });
     } catch (error) {
       showToast("error", error instanceof Error ? error.message : "讀取器材資料失敗");
     } finally {
       setLoading(false);
     }
-  }
+  }, [showToast]);
+
+  useEffect(() => {
+    void Promise.resolve().then(loadInitialData);
+  }, [loadInitialData]);
 
   async function loadEquipmentRows() {
     const res = await fetch("/api/equipment-status");
@@ -154,6 +159,7 @@ export default function EquipmentPage() {
         name: form.name.trim(),
         quantity: form.quantity.trim(),
         status: form.status,
+        imageUrl: form.imageUrl,
         notes: form.notes.trim(),
         sortOrder: Number(form.sortOrder || 0),
       };
@@ -182,6 +188,7 @@ export default function EquipmentPage() {
       name: row.name,
       quantity: row.quantity,
       status: STATUS_OPTIONS.includes(row.status) ? row.status : "正常",
+      imageUrl: row.imageUrl || "",
       notes: row.notes,
       sortOrder: String(row.sortOrder ?? 0),
     });
@@ -197,6 +204,32 @@ export default function EquipmentPage() {
       showToast("success", "器材資料已刪除");
     } catch (error) {
       showToast("error", error instanceof Error ? error.message : "刪除器材資料失敗");
+    }
+  }
+
+  async function uploadPhoto(file: File | undefined) {
+    if (!file || uploadingPhoto) return;
+    if (!file.type.startsWith("image/")) {
+      showToast("error", "請選擇圖片檔案");
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      showToast("error", "器材照片請小於 3MB");
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const body = new FormData();
+      body.append("photo", file);
+      const res = await fetch("/api/equipment-status/photo", { method: "POST", body });
+      await ensureOk(res, "器材照片上傳失敗");
+      const data = await res.json() as { url: string };
+      setForm((prev) => ({ ...prev, imageUrl: data.url }));
+      showToast("success", "器材照片已上傳，請記得儲存器材資料");
+    } catch (error) {
+      showToast("error", error instanceof Error ? error.message : "器材照片上傳失敗");
+    } finally {
+      setUploadingPhoto(false);
     }
   }
 
@@ -222,6 +255,14 @@ export default function EquipmentPage() {
   return (
     <div className="space-y-6">
       <Toast toast={toast} />
+      {photoPreview && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4" onClick={() => setPhotoPreview("")}>
+          <div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex justify-end"><button type="button" onClick={() => setPhotoPreview("")} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">關閉</button></div>
+            <div className="h-[70vh] w-full rounded-xl bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${photoPreview})` }} />
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
@@ -324,6 +365,25 @@ export default function EquipmentPage() {
               className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
           </label>
+
+          <div className="space-y-2 md:col-span-2 lg:col-span-4">
+            <span className="text-sm font-semibold text-slate-700">器材照片（選填）</span>
+            <div className="flex flex-col gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 sm:flex-row sm:items-center">
+              {form.imageUrl ? (
+                <button type="button" onClick={() => setPhotoPreview(form.imageUrl)} className="h-28 w-full shrink-0 rounded-xl bg-white bg-contain bg-center bg-no-repeat sm:w-40" style={{ backgroundImage: `url(${form.imageUrl})` }} aria-label="查看器材照片" />
+              ) : (
+                <div className="flex h-28 w-full shrink-0 items-center justify-center rounded-xl bg-white text-sm text-slate-400 sm:w-40">尚未上傳</div>
+              )}
+              <div className="flex-1">
+                <label className={`inline-flex cursor-pointer rounded-xl px-4 py-3 text-sm font-semibold text-white ${uploadingPhoto ? "cursor-not-allowed bg-slate-400" : "bg-blue-600 hover:bg-blue-700"}`}>
+                  {uploadingPhoto ? "照片上傳中..." : form.imageUrl ? "更換照片" : "選擇照片"}
+                  <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={(event) => { void uploadPhoto(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+                </label>
+                {form.imageUrl && <button type="button" onClick={() => setForm((prev) => ({ ...prev, imageUrl: "" }))} className="ml-3 px-3 py-2 text-sm font-semibold text-red-500">移除照片</button>}
+                <p className="mt-2 text-xs text-slate-500">支援 JPG、PNG、WebP，檔案上限 3MB。</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
@@ -394,6 +454,7 @@ export default function EquipmentPage() {
               <tr>
                 <th className="px-5 py-4 font-semibold">園所</th>
                 <th className="px-5 py-4 font-semibold">部門</th>
+                <th className="px-5 py-4 font-semibold">照片</th>
                 <th className="px-5 py-4 font-semibold">器材名稱</th>
                 <th className="px-5 py-4 font-semibold">數量</th>
                 <th className="px-5 py-4 font-semibold">狀態</th>
@@ -404,11 +465,11 @@ export default function EquipmentPage() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400">讀取中...</td>
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400">讀取中...</td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400">尚無器材資料</td>
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400">尚無器材資料</td>
                 </tr>
               ) : filteredRows.map((row) => {
                 const rowSchool = getRowSchool(row);
@@ -416,6 +477,9 @@ export default function EquipmentPage() {
                   <tr key={row.id} className="align-top hover:bg-slate-50/60">
                     <td className="px-5 py-4 font-semibold text-slate-900">{rowSchool?.name || row.school || "未指定園所"}</td>
                     <td className="px-5 py-4 text-slate-600">{rowSchool?.type || "未分類"}</td>
+                    <td className="px-5 py-4">
+                      {row.imageUrl ? <button type="button" onClick={() => setPhotoPreview(row.imageUrl)} className="h-14 w-20 rounded-lg bg-slate-100 bg-cover bg-center" style={{ backgroundImage: `url(${row.imageUrl})` }} aria-label={`查看 ${row.name} 照片`} /> : <span className="text-xs text-slate-400">無照片</span>}
+                    </td>
                     <td className="px-5 py-4 font-semibold text-slate-900">
                       <span className="mr-2">{equipmentIcon(row.name)}</span>{row.name}
                     </td>
@@ -448,6 +512,7 @@ export default function EquipmentPage() {
             const rowSchool = getRowSchool(row);
             return (
               <article key={row.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                {row.imageUrl && <button type="button" onClick={() => setPhotoPreview(row.imageUrl)} className="mb-4 h-44 w-full rounded-xl bg-white bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${row.imageUrl})` }} aria-label={`查看 ${row.name} 照片`} />}
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold text-slate-500">{rowSchool?.name || row.school || "未指定園所"} · {rowSchool?.type || "未分類"}</p>

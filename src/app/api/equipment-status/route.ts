@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     name,
     quantity: String(data.quantity ?? "").trim(),
     status: String(data.status ?? "正常").trim(),
+    imageUrl: String(data.imageUrl ?? "").trim(),
     notes: String(data.notes ?? "").trim(),
     sortOrder: Number(data.sortOrder ?? 0),
   });
