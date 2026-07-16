@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 
 let signatureColumnsReady = false;
-// 目前改採每月紙本核對表，手機端簽名暫停顯示；保留既有資料與程式以便日後恢復。
-const MOBILE_SCHOOL_SIGNATURE_ENABLED = false;
+// 手機端簽名開關：安親班回報頁顯示園所簽名欄（關閉時改採每月紙本核對表）。
+const MOBILE_SCHOOL_SIGNATURE_ENABLED = true;
 
 export function requiresSchoolSignature(department: string | null | undefined) {
   return MOBILE_SCHOOL_SIGNATURE_ENABLED && String(department ?? "").includes("安親");
