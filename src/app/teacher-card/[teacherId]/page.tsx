@@ -3,23 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
-// 動態載入 html2canvas（僅在下載時載入，不影響頁面速度）
-let html2canvasPromise: Promise<(el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>> | null = null;
-function loadHtml2Canvas() {
-  if (!html2canvasPromise) {
-    html2canvasPromise = new Promise((resolve, reject) => {
+// 動態載入 html-to-image（支援 Tailwind v4 的 lab/oklch 色彩；僅在下載時載入）
+type HtmlToImage = { toPng: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<string> };
+let htmlToImagePromise: Promise<HtmlToImage> | null = null;
+function loadHtmlToImage() {
+  if (!htmlToImagePromise) {
+    htmlToImagePromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.js";
       script.onload = () => {
-        const fn = (window as unknown as { html2canvas?: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement> }).html2canvas;
-        if (fn) resolve(fn);
+        const lib = (window as unknown as { htmlToImage?: HtmlToImage }).htmlToImage;
+        if (lib) resolve(lib);
         else reject(new Error("圖檔工具載入失敗"));
       };
       script.onerror = () => reject(new Error("圖檔工具載入失敗，請檢查網路後再試"));
       document.head.appendChild(script);
     });
   }
-  return html2canvasPromise;
+  return htmlToImagePromise;
 }
 
 type TeachingProfile = {
@@ -121,16 +122,15 @@ export default function TeacherCardPage() {
     setDownloading(true);
     setDownloadError("");
     try {
-      const html2canvas = await loadHtml2Canvas();
-      const canvas = await html2canvas(cardRef.current, {
-        scale: 2,
-        useCORS: true,
+      const htmlToImage = await loadHtmlToImage();
+      const dataUrl = await htmlToImage.toPng(cardRef.current, {
+        pixelRatio: 2,
         backgroundColor: "#f3f7ff",
-        logging: false,
+        cacheBust: true,
       });
       const link = document.createElement("a");
       link.download = `${resume.teacherName}老師簡歷.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.href = dataUrl;
       link.click();
     } catch (err) {
       setDownloadError((err as Error).message || "圖檔產生失敗，請再試一次");
