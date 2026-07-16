@@ -353,6 +353,17 @@ export default function AttendancePage() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => {
+              if (!filterSchool) { showToast("error", "請先選擇園所，再匯出簽名核對表", 3200); return; }
+              const params = new URLSearchParams({ school: filterSchool, year: String(filterYear), month: String(filterMonth) });
+              if (dept) params.set("dept", dept);
+              window.open(`/attendance/signature-sheet?${params}`, "_blank");
+            }}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+          >
+            簽名核對表 PDF
+          </button>
+          <button
             onClick={exportAttendance}
             disabled={exporting}
             className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"

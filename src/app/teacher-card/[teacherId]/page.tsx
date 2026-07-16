@@ -213,9 +213,8 @@ export default function TeacherCardPage() {
                   ? <img src={resume.photoUrl} alt={resume.teacherName} crossOrigin="anonymous" className="h-full w-full object-cover" />
                   : <div className="flex h-full w-full items-center justify-center text-6xl font-black text-blue-200">{initials(resume.teacherName)}</div>}
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-center md:grid-cols-1">
+              <div className="mt-4 grid gap-2 text-center">
                 <Stat label="主要區域" value={derived.region} />
-                <Stat label="近 90 天排課" value={derived.classCount} />
               </div>
             </div>
 
