@@ -9,6 +9,36 @@ import { deleteAttendanceEquipment, parseEquipmentInput, saveAttendanceEquipment
 import { parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { syncSubstituteWithAttendance } from "@/lib/substituteAssignment";
+import { schoolSignatureMap } from "@/lib/schoolSignature";
+
+// 單堂出勤（供電子簽到表列印頁使用）
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const attendanceId = Number(id);
+  if (!Number.isFinite(attendanceId)) return NextResponse.json({ error: "編號不正確" }, { status: 400 });
+  const record = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+    include: {
+      course: { select: { school: true, courseType: true, time: true } },
+      actualTeacher: { select: { name: true } },
+    },
+  });
+  if (!record) return NextResponse.json({ error: "找不到這筆上課紀錄" }, { status: 404 });
+  const signature = (await schoolSignatureMap([record.id])).get(record.id);
+  return NextResponse.json({
+    id: record.id,
+    date: record.date,
+    cancelled: record.cancelled,
+    hours: record.hours,
+    studentCount: record.studentCount,
+    scheduledTime: record.scheduledTime ?? "",
+    course: record.course,
+    actualTeacher: record.actualTeacher,
+    schoolVerifierName: signature?.schoolVerifierName ?? "",
+    schoolSignatureData: signature?.schoolSignatureData ?? "",
+    schoolSignedAt: signature?.schoolSignedAt ?? null,
+  });
+}
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

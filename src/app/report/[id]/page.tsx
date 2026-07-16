@@ -742,12 +742,16 @@ export default function TeacherReportPage() {
           <section className="rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 shadow-sm">
             <div className="text-sm font-bold text-[#3F6B55]">園所老師確認簽名</div>
             <p className="mt-1 text-xs leading-5 text-slate-500">請由現場園所老師確認以上出席與回報內容，並在同一支手機完成簽名。</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+              <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">日期：{new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
+              <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">實際上課人數：{form.studentCount || "請於上方填寫"}</div>
+            </div>
             <label className="mt-4 block text-sm font-semibold text-slate-700">
-              園所確認老師姓名
+              園所確認老師姓名（請以正楷簽署本名）
               <input value={form.schoolVerifierName} disabled={locked} onChange={(e) => setForm({ ...form, schoolVerifierName: e.target.value })}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#7B9E87]" placeholder="請輸入姓名" />
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#7B9E87]" placeholder="請輸入本名（正楷）" />
             </label>
-            <div className="mt-4 text-sm font-semibold text-slate-700">手寫簽名</div>
+            <div className="mt-4 text-sm font-semibold text-slate-700">手寫簽名（請以正楷簽署本名）</div>
             <SignaturePad value={form.schoolSignatureData} disabled={locked} onChange={(schoolSignatureData) => setForm((current) => ({ ...current, schoolSignatureData }))} />
             {info.schoolSignedAt && <div className="mt-3 text-xs text-slate-500">確認時間：{new Date(info.schoolSignedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div>}
           </section>

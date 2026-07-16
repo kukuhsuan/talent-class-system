@@ -672,6 +672,7 @@ export default function AttendancePage() {
                           <div className="mt-4 flex gap-4">
                             <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
                             <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
+                            <a href={`/attendance/sign-in-sheet?id=${r.id}`} target="_blank" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">簽到表</a>
                             <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
                           </div>
                         </div>
@@ -743,6 +744,7 @@ export default function AttendancePage() {
                                 <div className="flex gap-4 whitespace-nowrap">
                                   <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
                                   <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
+                                  <a href={`/attendance/sign-in-sheet?id=${r.id}`} target="_blank" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">簽到表</a>
                                   <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
                                 </div>
                               </td>
