@@ -25,10 +25,12 @@ export async function GET(req: NextRequest) {
   const pageSize = pageSizeRaw ? Math.min(50, Math.max(20, pageSizeRaw)) : 0;
   const search = (searchParams.get("search") ?? "").trim();
   const region = normalizeRegion(searchParams.get("region") ?? "");
-  const type = searchParams.get("type") ? normalizeDepartment(searchParams.get("type") ?? "") : "";
+  const rawType = (searchParams.get("type") ?? "").trim();
+  const type = rawType ? normalizeDepartment(rawType) : "";
   const where: Record<string, unknown> = {};
   if (region) where.region = region;
-  if (type) where.type = type === "未分類" ? "" : type;
+  // 「未分類」代表篩選尚未設定類別的園所（type 為空字串）
+  if (rawType) where.type = rawType === "未分類" ? "" : type;
   if (search) {
     where.OR = [
       { name: { contains: search } },
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest) {
       { phone: { contains: search } },
     ];
   }
-  const query = { where, orderBy: [{ region: "asc" }, { name: "asc" }] } as const;
+  const query = { where, orderBy: [{ region: "asc" as const }, { name: "asc" as const }] };
   if (minimal) {
     const [schools, total] = await Promise.all([
       prisma.school.findMany({
@@ -53,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   await ensureCourseConfirmationColumn();
   const [schools, total] = await Promise.all([
-    prisma.school.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
+    prisma.school.findMany({ ...query, ...(pageSize ? { skip: (page - 1) * pageSize, take: pageSize } : {}) }),
     pageSize ? prisma.school.count({ where }) : Promise.resolve(0),
   ]);
   const ids = schools.map((school) => school.id);

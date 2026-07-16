@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     const input = parseInvoiceRequest(body);
     const invoice = await createSchoolInvoice(input);
+    if (!invoice) throw new Error("請款單建立後讀取失敗，請重新整理確認");
     await writeAuditLog(req, {
       action: "create",
       targetType: "SchoolInvoice",

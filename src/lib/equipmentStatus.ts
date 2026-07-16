@@ -43,7 +43,7 @@ function mapEquipmentStatus(row: RawEquipmentStatusRow): EquipmentStatusRow {
     imageUrl: row.imageUrl ?? "",
     notes: row.notes ?? "",
     sortOrder: Number(row.sortOrder ?? 0),
-    isActive: row.isActive === true || row.isActive === 1,
+    isActive: row.isActive === true || Number(row.isActive) === 1,
   };
 }
 

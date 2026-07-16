@@ -17,7 +17,7 @@ async function hasActiveOwner() {
 async function requireUserManager() {
   const auth = await requireRole(BOOTSTRAP_MANAGER_ROLES);
   if (auth.response) return auth;
-  if (auth.user && OWNER_ROLES.includes(auth.user.role)) return auth;
+  if (auth.user && (OWNER_ROLES as readonly string[]).includes(auth.user.role)) return auth;
   if (!(await hasActiveOwner())) return auth;
   return {
     ...auth,

@@ -31,11 +31,11 @@ export async function GET(req: NextRequest) {
   const query = {
     where,
     include: { course: true, actualTeacher: true },
-    orderBy: [{ date: "desc" }],
-  } as const;
+    orderBy: [{ date: "desc" as const }],
+  };
 
   const [records, total] = await Promise.all([
-    prisma.attendance.findMany(pageSize ? { ...query, skip: (page - 1) * pageSize, take: pageSize } : query),
+    prisma.attendance.findMany({ ...query, ...(pageSize ? { skip: (page - 1) * pageSize, take: pageSize } : {}) }),
     pageSize ? prisma.attendance.count({ where }) : Promise.resolve(0),
   ]);
 

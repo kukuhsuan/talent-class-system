@@ -1,7 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+
+// 動態載入 html2canvas（僅在下載時載入，不影響頁面速度）
+let html2canvasPromise: Promise<(el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>> | null = null;
+function loadHtml2Canvas() {
+  if (!html2canvasPromise) {
+    html2canvasPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      script.onload = () => {
+        const fn = (window as unknown as { html2canvas?: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement> }).html2canvas;
+        if (fn) resolve(fn);
+        else reject(new Error("圖檔工具載入失敗"));
+      };
+      script.onerror = () => reject(new Error("圖檔工具載入失敗，請檢查網路後再試"));
+      document.head.appendChild(script);
+    });
+  }
+  return html2canvasPromise;
+}
 
 type TeachingProfile = {
   primaryRegionLabel: string;
@@ -93,6 +112,32 @@ export default function TeacherCardPage() {
   const [resume, setResume] = useState<Resume | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  async function downloadImage() {
+    if (downloading || !cardRef.current || !resume) return;
+    setDownloading(true);
+    setDownloadError("");
+    try {
+      const html2canvas = await loadHtml2Canvas();
+      const canvas = await html2canvas(cardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#f3f7ff",
+        logging: false,
+      });
+      const link = document.createElement("a");
+      link.download = `${resume.teacherName}老師簡歷.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (err) {
+      setDownloadError((err as Error).message || "圖檔產生失敗，請再試一次");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   useEffect(() => {
     fetch(`/api/teacher-resumes/card/${encodeURIComponent(params.teacherId)}`, { cache: "no-store" })
@@ -136,13 +181,27 @@ export default function TeacherCardPage() {
   return (
     <main className="min-h-screen bg-[#f3f7ff] px-4 py-6 text-slate-900 md:px-6 md:py-10">
       <div className="mx-auto max-w-4xl">
+        <div className="mb-4 flex items-center justify-end gap-3">
+          {downloadError && <span className="text-sm text-red-600">{downloadError}</span>}
+          <button
+            onClick={downloadImage}
+            disabled={downloading}
+            className="rounded-full bg-blue-700 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:opacity-60"
+          >
+            {downloading ? "圖檔產生中..." : "下載簡歷圖檔"}
+          </button>
+        </div>
+        <div ref={cardRef} className="bg-[#f3f7ff] p-1">
         <section className="overflow-hidden rounded-[32px] bg-white shadow-sm ring-1 ring-blue-100">
-          <div className="relative bg-blue-700 px-6 pb-20 pt-6 text-white md:px-8">
+          <div className="relative bg-gradient-to-br from-blue-700 via-blue-700 to-indigo-800 px-6 pb-20 pt-7 text-white md:px-8">
             <div className="absolute right-8 top-8 h-28 w-28 rounded-full bg-white/10" />
             <div className="absolute right-24 top-24 h-10 w-10 rounded-full bg-white/10" />
+            <div className="absolute -left-6 bottom-2 h-20 w-20 rounded-full bg-white/5" />
             <div className="relative">
-              <div className="text-sm font-semibold text-blue-100">WaysLeader AI 師資簡歷</div>
-              <h1 className="mt-3 text-4xl font-black tracking-normal md:text-5xl">{resume.teacherName} 老師</h1>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-bold tracking-wide text-blue-50">
+                WaysLeader AI 師資簡歷
+              </div>
+              <h1 className="mt-4 text-4xl font-black tracking-normal md:text-5xl">{resume.teacherName} 老師</h1>
               <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-blue-50">{derived.tagline}</p>
             </div>
           </div>
@@ -151,7 +210,7 @@ export default function TeacherCardPage() {
             <div className="relative">
               <div className="mx-auto h-52 w-52 overflow-hidden rounded-full border-8 border-white bg-blue-50 shadow-sm md:mx-0">
                 {resume.photoUrl
-                  ? <img src={resume.photoUrl} alt={resume.teacherName} className="h-full w-full object-cover" />
+                  ? <img src={resume.photoUrl} alt={resume.teacherName} crossOrigin="anonymous" className="h-full w-full object-cover" />
                   : <div className="flex h-full w-full items-center justify-center text-6xl font-black text-blue-200">{initials(resume.teacherName)}</div>}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-center md:grid-cols-1">
@@ -220,9 +279,15 @@ export default function TeacherCardPage() {
           </Section>
         </div>
 
-        <div className="mt-5 rounded-3xl bg-blue-700 px-5 py-5 text-white shadow-sm">
-          <div className="text-sm font-semibold text-blue-100">WaysLeader AI 幼兒園學習成果平台</div>
-          <div className="mt-1 text-xl font-bold">專業師資，安心陪伴孩子成長</div>
+        <div className="mt-5 flex items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-blue-700 to-indigo-800 px-6 py-5 text-white shadow-sm">
+          <div>
+            <div className="text-sm font-semibold text-blue-100">WaysLeader AI 幼兒園學習成果平台</div>
+            <div className="mt-1 text-xl font-bold">專業師資，安心陪伴孩子成長</div>
+          </div>
+          <div className="hidden text-right text-xs font-semibold leading-5 text-blue-100 md:block">
+            師資均經公司審核培訓<br />課程與教學品質有保障
+          </div>
+        </div>
         </div>
       </div>
     </main>

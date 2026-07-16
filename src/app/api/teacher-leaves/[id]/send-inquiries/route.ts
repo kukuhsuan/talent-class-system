@@ -12,7 +12,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (leave.isPayrollLocked) return NextResponse.json({ error: "此課程已鎖定薪資，不可發送代課詢問" }, { status: 409 });
 
     const data = await req.json();
-    const ids = [...new Set((Array.isArray(data.candidateTeacherIds) ? data.candidateTeacherIds : []).map(Number).filter(Number.isFinite))];
+    const rawIds: unknown[] = Array.isArray(data.candidateTeacherIds) ? data.candidateTeacherIds : [];
+    const ids = [...new Set(rawIds.map((value) => Number(value)).filter((value): value is number => Number.isFinite(value)))];
     if (ids.length === 0) return NextResponse.json({ error: "請選擇要詢問的老師" }, { status: 400 });
 
     const teachers = await prisma.teacher.findMany({ where: { id: { in: ids } } });
