@@ -37,23 +37,27 @@ function shouldNotifySchool(department: string | null | undefined) {
   return !(department ?? "").includes("安親");
 }
 
-function firstPhotoUrl(value: string | null | undefined) {
+// 解析 reportPhotos（JSON 陣列；相容舊資料單一字串）
+function parseStoredPhotos(value: string | null | undefined): string[] {
   const raw = String(value ?? "").trim();
-  if (!raw) return "";
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return String(parsed[0] ?? "").trim();
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
   } catch {
     // Older data can be a plain URL string.
   }
-  return raw;
+  return [raw];
 }
 
-function reportPhotoUrl(value: string | null | undefined, token: string) {
-  const first = firstPhotoUrl(value);
-  if (!first.startsWith("private:")) return first;
-  const path = first.slice("private:".length);
+function storedPhotoToUrl(stored: string, token: string) {
+  if (!stored.startsWith("private:")) return stored;
+  const path = stored.slice("private:".length);
   return `/api/report/${encodeURIComponent(token)}/photo?path=${encodeURIComponent(path)}`;
+}
+
+function reportPhotoUrls(value: string | null | undefined, token: string): string[] {
+  return parseStoredPhotos(value).map((stored) => storedPhotoToUrl(stored, token));
 }
 
 function sanitizePhotoUrl(value: string) {
@@ -175,7 +179,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSummary: attendance.aiSummary,
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
-      representativePhotoUrl: reportPhotoUrl(attendance.reportPhotos, id),
+      representativePhotoUrl: reportPhotoUrls(attendance.reportPhotos, id)[0] ?? "",
+      photoUrls: reportPhotoUrls(attendance.reportPhotos, id),
       shouldAskAssessment,
       assessmentUrl: shouldAskAssessment ? `/assessment/${encodeURIComponent(signPublicAccessToken("assessment", attendance.id))}` : "",
       assessmentCount: shouldAskAssessment ? await assessmentCount(attendance.id) : 0,
@@ -364,7 +369,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         incidentProcess: incident ? incidentProcess : "",
         incidentAction: incident ? incidentAction : "",
         incidentNotified: incident ? incidentNotified : "",
-        ...(representativePhotoUrl ? { reportPhotos: JSON.stringify([representativePhotoUrl]) } : {}),
+        // 上傳照片已即時寫入 reportPhotos；此處只把「公開圖片連結」附加進陣列（上限 4，不覆蓋已上傳照片）
+        ...(representativePhotoUrl && !parseStoredPhotos(attendance.reportPhotos).includes(representativePhotoUrl)
+          ? { reportPhotos: JSON.stringify([...parseStoredPhotos(attendance.reportPhotos), representativePhotoUrl].slice(0, 4)) }
+          : {}),
         aiSummary: "",
         aiSkillFocus: "",
         aiTeachingNote: "",

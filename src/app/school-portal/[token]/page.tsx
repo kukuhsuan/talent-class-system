@@ -19,7 +19,7 @@ type PortalData = {
     id: number; date: string; school: string; courseType?: string; courseName: string; department: string; category: string; time: string; teacherName: string;
     studentCount: number; reportContent: string; skillFocus: string; classStatus: string; incident: boolean;
     incidentChild: string; incidentProcess: string; incidentAction: string; incidentNotified: string;
-    aiSummary: string; aiSkillFocus: string; aiTeachingNote: string; representativePhotoUrl: string; schoolNotifyStatus: string;
+    aiSummary: string; aiSkillFocus: string; aiTeachingNote: string; representativePhotoUrl: string; photoUrls?: string[]; schoolNotifyStatus: string;
   }>;
   teachers: Array<{
     id: number;
@@ -870,6 +870,8 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   const canExpand = mainText.length > 95;
   const lesson = extractLesson(progressText);
   const courseBear = courseBearImage(`${row.courseName} ${progressText}`);
+  // 課堂照片（多張；相容舊資料只有 representativePhotoUrl）
+  const classPhotos = (row.photoUrls?.length ? row.photoUrls : [row.representativePhotoUrl]).filter(Boolean);
 
   async function copyShareText() {
     try {
@@ -944,6 +946,19 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {row.incident && <StatusBlock title="特殊狀況通知" text={[row.incidentProcess, row.incidentAction].filter(Boolean).join("｜")} warning />}
           </div>
+
+          {classPhotos.length > 0 && (
+            <div className="mt-3 rounded-[18px] border border-blue-100 bg-white p-3 sm:mt-5 sm:rounded-[20px] sm:p-4">
+              <div className="text-sm font-black text-[#142452]">課堂活動照片（{classPhotos.length}）</div>
+              <div className={`mt-2 grid gap-2 ${classPhotos.length === 1 ? "grid-cols-1 sm:max-w-[360px]" : "grid-cols-2"}`}>
+                {classPhotos.map((url) => (
+                  <a key={url} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl border border-slate-100 bg-slate-50">
+                    <img src={url} alt="課堂活動照片" loading="lazy" className="h-40 w-full object-cover sm:h-48" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-3 rounded-[20px] border border-blue-100 bg-blue-50/40 p-3 sm:mt-5 sm:rounded-[22px] sm:p-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">

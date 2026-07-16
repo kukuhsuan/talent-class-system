@@ -18,6 +18,28 @@ function imageExtension(type: string) {
   return "jpg";
 }
 
+const REPORT_PHOTO_LIMIT = 4; // 每堂課照片上限（route 檔不可任意 export，勿改成 export）
+
+// 解析 reportPhotos 欄位（JSON 陣列字串；相容舊資料的單一字串）
+function parseStoredPhotos(raw: string): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item)).filter(Boolean);
+  } catch {
+    // 舊資料可能是單一網址字串
+  }
+  return raw.trim() ? [raw.trim()] : [];
+}
+
+// 儲存值轉成前端可用的網址（私有照片走代理連結）
+function storedToUrl(stored: string, tokenParam: string) {
+  if (stored.startsWith("private:")) {
+    return `/api/report/${encodeURIComponent(tokenParam)}/photo?path=${encodeURIComponent(stored.slice("private:".length))}`;
+  }
+  return stored;
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -106,10 +128,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
     }
 
+    const existingPhotos = parseStoredPhotos(String(attendance.reportPhotos ?? ""));
+    if (existingPhotos.length >= REPORT_PHOTO_LIMIT) {
+      return NextResponse.json({ error: `每堂課最多上傳 ${REPORT_PHOTO_LIMIT} 張照片，請先移除一張再上傳` }, { status: 409 });
+    }
+
     const form = await req.formData();
     const file = form.get("photo");
     if (!(file instanceof File)) {
-      return NextResponse.json({ error: "請選擇一張代表照片" }, { status: 400 });
+      return NextResponse.json({ error: "請選擇一張活動照片" }, { status: 400 });
     }
     if (!file.type.startsWith("image/")) {
       return NextResponse.json({ error: "只支援圖片檔案" }, { status: 400 });
@@ -136,17 +163,74 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       responseUrl = blob.url;
     }
 
+    // 附加到既有照片陣列（不再覆蓋），上限 4 張
+    const updatedPhotos = [...existingPhotos, stored].slice(0, REPORT_PHOTO_LIMIT);
     await prisma.attendance.update({
       where: { id: attendanceId },
-      data: { reportPhotos: JSON.stringify([stored]) },
+      data: { reportPhotos: JSON.stringify(updatedPhotos) },
     });
 
-    return NextResponse.json({ ok: true, url: responseUrl });
+    return NextResponse.json({
+      ok: true,
+      url: responseUrl,
+      photoUrls: updatedPhotos.map((item) => storedToUrl(item, id)),
+    });
   } catch (e) {
     if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
       return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
     }
     console.error("report photo upload failed", e);
     return NextResponse.json({ error: `照片上傳失敗：${(e as Error).message}` }, { status: 500 });
+  }
+}
+
+// 刪除單張照片（以代理連結或公開網址指定）
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
+    const body = await req.json().catch(() => ({}));
+    const target = String(body.url ?? "").trim();
+    if (!target) return NextResponse.json({ error: "請指定要移除的照片" }, { status: 400 });
+
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: attendanceId },
+      include: { course: { select: { time: true } } },
+    });
+    if (!attendance) return NextResponse.json({ error: "找不到課程回報資料" }, { status: 404 });
+
+    const timeMap = await attendanceScheduledTimeMap([attendance.id]);
+    const scheduledTime = effectiveAttendanceTime({
+      scheduledTime: timeMap.get(attendance.id),
+      courseTime: attendance.course.time,
+      attendanceHours: attendance.hours,
+      isPayrollLocked: attendance.isPayrollLocked,
+      reportContent: attendance.reportContent,
+      reportSentAt: attendance.reportSentAt,
+      studentCount: attendance.studentCount,
+      studentCountA: attendance.studentCountA,
+      studentCountB: attendance.studentCountB,
+    });
+    const reportWindow = attendanceReportWindow(attendance, scheduledTime);
+    if (reportWindow.expired && !reportWindow.complete) {
+      return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
+    }
+
+    const existingPhotos = parseStoredPhotos(String(attendance.reportPhotos ?? ""));
+    const remaining = existingPhotos.filter((stored) => storedToUrl(stored, id) !== target && stored !== target);
+    if (remaining.length === existingPhotos.length) {
+      return NextResponse.json({ error: "找不到這張照片，可能已被移除" }, { status: 404 });
+    }
+    await prisma.attendance.update({
+      where: { id: attendanceId },
+      data: { reportPhotos: JSON.stringify(remaining) },
+    });
+    return NextResponse.json({ ok: true, photoUrls: remaining.map((item) => storedToUrl(item, id)) });
+  } catch (e) {
+    if ((e as Error).message.includes("token") || (e as Error).message.includes("Expired")) {
+      return NextResponse.json({ error: "回報連結無效或已過期" }, { status: 401 });
+    }
+    console.error("report photo delete failed", e);
+    return NextResponse.json({ error: "照片移除失敗，請稍後再試" }, { status: 500 });
   }
 }

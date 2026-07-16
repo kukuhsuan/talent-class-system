@@ -29,6 +29,7 @@ type ReportInfo = {
   aiSkillFocus: string;
   aiTeachingNote: string;
   representativePhotoUrl?: string;
+  photoUrls?: string[];
   shouldAskAssessment?: boolean;
   assessmentUrl?: string;
   assessmentCount?: number;
@@ -38,6 +39,7 @@ type ReportInfo = {
   reportPhotoLocked?: boolean;
   reportNotStarted?: boolean;
   courseEndsAt?: string;
+  reportExpiresAt?: string;
   schoolSignatureRequired?: boolean;
   schoolVerifierName?: string;
   schoolSignatureData?: string;
@@ -216,6 +218,19 @@ async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
   });
 }
 
+const PHOTO_LIMIT = 4;
+
+// 成果回報常用句型（一鍵帶入後可再修改）
+const OUTCOME_TEMPLATES = [
+  "孩子今天能跟著老師完成挑戰，課堂參與穩定，也願意嘗試不同任務。",
+  "本堂練習新動作，多數孩子能掌握基本要領，會再於下堂課加強熟練度。",
+  "孩子的秩序與專注有進步，分組活動時能互相配合、輪流等待。",
+];
+
+function isHeicLike(file: File) {
+  return /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+}
+
 async function compressReportPhoto(file: File) {
   const img = await loadLocalImage(file);
   const maxSide = 1280;
@@ -250,9 +265,22 @@ export default function TeacherReportPage() {
   const [assessmentUrl, setAssessmentUrl] = useState("");
   const [notifyStatus, setNotifyStatus] = useState("");
   const [notifyError, setNotifyError] = useState("");
-  const [photoPreview, setPhotoPreview] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftKey = `report-draft-${params.id}`;
+  const draftReadyRef = useRef(false);
+
+  // 草稿自動暫存：老師填到一半離開（接電話、切 LINE）回來不會消失
+  useEffect(() => {
+    if (!draftReadyRef.current) return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ form, customProgress, savedAt: Date.now() }));
+    } catch {
+      // localStorage 滿或無痕模式：略過即可，不影響填寫
+    }
+  }, [form, customProgress, draftKey]);
 
   useEffect(() => {
     fetch(`/api/report/${params.id}`)
@@ -267,8 +295,8 @@ export default function TeacherReportPage() {
         setNotifyStatus(data.schoolNotifyStatus || "");
         setNotifyError(data.schoolNotifyError || "");
         setAssessmentUrl(data.assessmentUrl || "");
-        setPhotoPreview(data.representativePhotoUrl ?? "");
-        setForm({
+        setPhotos(data.photoUrls ?? (data.representativePhotoUrl ? [data.representativePhotoUrl] : []));
+        const serverForm = {
           studentCount: data.studentCount?.toString() ?? "",
           progress: savedProgress,
           outcomeText: extractReportField(data.reportContent ?? "", "成果回報") || data.aiTeachingNote || "",
@@ -282,8 +310,31 @@ export default function TeacherReportPage() {
           incidentNotified: data.incidentNotified || "否",
           schoolVerifierName: data.schoolVerifierName ?? "",
           schoolSignatureData: data.schoolSignatureData ?? "",
-        });
-        setCustomProgress(Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress)));
+        };
+        let restoredCustom = Boolean(savedProgress && !data.progressOptions?.some((item) => item.value === savedProgress));
+        // 還原未送出的草稿（只在可填寫時；不覆蓋伺服器已有的簽名紀錄）
+        const reportDone = Boolean(data.reportContent?.trim());
+        if (!reportDone && !data.reportLocked) {
+          try {
+            const raw = localStorage.getItem(`report-draft-${params.id}`);
+            if (raw) {
+              const draft = JSON.parse(raw);
+              if (draft?.form && typeof draft.form === "object") {
+                Object.assign(serverForm, {
+                  ...draft.form,
+                  schoolSignatureData: serverForm.schoolSignatureData || draft.form.schoolSignatureData || "",
+                });
+                if (typeof draft.customProgress === "boolean") restoredCustom = draft.customProgress;
+                setDraftRestored(true);
+              }
+            }
+          } catch {
+            // 草稿損毀就忽略
+          }
+        }
+        setForm(serverForm);
+        setCustomProgress(restoredCustom);
+        draftReadyRef.current = true;
       })
       .catch((e) => setError((e as Error).message || "讀取回報表單失敗，請稍後再試"))
       .finally(() => setLoading(false));
@@ -302,26 +353,41 @@ export default function TeacherReportPage() {
   }
 
   async function uploadPhoto(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!file || photoUploading) return;
+    if (!files.length || photoUploading) return;
 
     setPhotoError("");
     setPhotoUploading(true);
     try {
-      const compressed = await compressReportPhoto(file);
-      if (compressed.size > 900 * 1024) {
-        throw new Error("圖片壓縮後仍太大，請換一張照片再試");
+      let current = photos;
+      for (const file of files) {
+        if (current.length >= PHOTO_LIMIT) {
+          setPhotoError(`每堂課最多 ${PHOTO_LIMIT} 張照片，多餘的照片未上傳`);
+          break;
+        }
+        let compressed: File;
+        try {
+          compressed = await compressReportPhoto(file);
+        } catch (err) {
+          // iPhone HEIC 在部分瀏覽器無法讀取，給明確指引
+          if (isHeicLike(file)) {
+            throw new Error("這張是 iPhone HEIC 格式，此瀏覽器無法處理。請到「設定 → 相機 → 格式」改為「最相容」，或改傳截圖。");
+          }
+          throw err;
+        }
+        if (compressed.size > 900 * 1024) {
+          throw new Error("圖片壓縮後仍太大，請換一張照片再試");
+        }
+
+        const body = new FormData();
+        body.append("photo", compressed);
+        const res = await fetch(`/api/report/${params.id}/photo`, { method: "POST", body });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "照片上傳失敗，請稍後再試");
+        current = Array.isArray(data.photoUrls) ? data.photoUrls : [...current, data.url];
+        setPhotos(current);
       }
-
-      const body = new FormData();
-      body.append("photo", compressed);
-      const res = await fetch(`/api/report/${params.id}/photo`, { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "照片上傳失敗，請稍後再試");
-
-      setPhotoPreview(data.url);
-      setForm((current) => ({ ...current, representativePhotoUrl: data.url }));
     } catch (err) {
       setPhotoError((err as Error).message || "照片上傳失敗，請稍後再試");
     } finally {
@@ -329,10 +395,20 @@ export default function TeacherReportPage() {
     }
   }
 
-  function removePhoto() {
-    setPhotoPreview("");
+  async function removePhoto(url: string) {
     setPhotoError("");
-    setForm((current) => ({ ...current, representativePhotoUrl: "" }));
+    try {
+      const res = await fetch(`/api/report/${params.id}/photo`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "照片移除失敗，請稍後再試");
+      setPhotos(Array.isArray(data.photoUrls) ? data.photoUrls : photos.filter((item) => item !== url));
+    } catch (err) {
+      setPhotoError((err as Error).message || "照片移除失敗，請稍後再試");
+    }
   }
 
   async function submit() {
@@ -350,6 +426,12 @@ export default function TeacherReportPage() {
     if (kindergarten && (form.skillFocus.length < 3 || form.skillFocus.length > 4)) {
       setError("請選擇 3～4 個本堂學習目標");
       return;
+    }
+    // 特殊事件必填：這是事件紀錄，不可留空送出
+    if (form.incident) {
+      if (!form.incidentChild.trim()) { setError("特殊事件請填寫孩子姓名"); return; }
+      if (!form.incidentProcess.trim()) { setError("特殊事件請填寫發生經過"); return; }
+      if (!form.incidentAction.trim()) { setError("特殊事件請填寫處理方式"); return; }
     }
     if (info?.schoolSignatureRequired && !form.schoolVerifierName.trim()) {
       setError("請填寫園所確認老師姓名");
@@ -380,6 +462,7 @@ export default function TeacherReportPage() {
       setNotifyStatus(responseData.schoolNotifyStatus || "");
       setNotifyError(responseData.schoolNotifyError || "");
       setDone(true);
+      try { localStorage.removeItem(draftKey); } catch { /* 忽略 */ }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setError((e as Error).message || "送出失敗，請稍後再試");
@@ -395,6 +478,31 @@ export default function TeacherReportPage() {
   const locked = Boolean(info.reportLocked);
   const photoLocked = Boolean(info.reportPhotoLocked);
   const showAssessmentEntry = Boolean(assessmentUrl && info.shouldAskAssessment);
+
+  // 缺項提示：常駐顯示還缺什麼，不用按送出才發現
+  const missingItems = [
+    needsStudentCount && !form.studentCount ? "出席人數" : "",
+    !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
+    isKindergarten && form.skillFocus.length < 3 ? `學習目標（已選 ${form.skillFocus.length}／需 3～4 項）` : "",
+    form.incident && (!form.incidentChild.trim() || !form.incidentProcess.trim() || !form.incidentAction.trim()) ? "特殊事件內容" : "",
+    info.schoolSignatureRequired && !form.schoolVerifierName.trim() ? "園所老師姓名" : "",
+    info.schoolSignatureRequired && !form.schoolSignatureData ? "園所簽名" : "",
+  ].filter(Boolean);
+
+  // 48 小時補填期限倒數
+  const remainMs = info.reportExpiresAt && !locked && !done ? new Date(info.reportExpiresAt).getTime() - Date.now() : null;
+  const remainLabel = remainMs != null && remainMs > 0
+    ? remainMs >= 3600000
+      ? `${Math.floor(remainMs / 3600000)} 小時 ${Math.floor((remainMs % 3600000) / 60000)} 分`
+      : `${Math.max(1, Math.floor(remainMs / 60000))} 分鐘`
+    : null;
+
+  function adjustStudentCount(delta: number) {
+    if (locked) return;
+    const current = Number(form.studentCount);
+    const base = Number.isFinite(current) && form.studentCount !== "" ? current : 0;
+    setForm({ ...form, studentCount: String(Math.max(0, base + delta)) });
+  }
 
   return (
     <div className="mx-auto max-w-md pb-10">
@@ -431,6 +539,16 @@ export default function TeacherReportPage() {
           </a>
         </div>
       )}
+      {draftRestored && !done && (
+        <div className="mb-4 rounded-2xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-700">
+          已帶回您上次未送出的填寫內容，可直接繼續。
+        </div>
+      )}
+      {remainLabel && (
+        <div className="mb-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+          ⏰ 回報期限剩 {remainLabel}，逾時將無法補填
+        </div>
+      )}
       {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
       {locked && (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-600">
@@ -444,10 +562,16 @@ export default function TeacherReportPage() {
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">出席人數{needsStudentCount ? "" : "（免填）"}</label>
           {needsStudentCount ? (
-            <input inputMode="numeric" type="number" value={form.studentCount} disabled={locked}
-              onChange={(e) => setForm({ ...form, studentCount: e.target.value })}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-semibold outline-none focus:border-[#7B9E87]"
-              placeholder="請輸入人數" />
+            <div className="mt-2 flex items-stretch gap-2">
+              <button type="button" disabled={locked} onClick={() => adjustStudentCount(-1)}
+                className="w-14 rounded-xl border border-slate-200 text-2xl font-bold text-slate-500 active:bg-slate-100 disabled:opacity-40">−</button>
+              <input inputMode="numeric" type="number" value={form.studentCount} disabled={locked}
+                onChange={(e) => setForm({ ...form, studentCount: e.target.value })}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-center text-lg font-semibold outline-none focus:border-[#7B9E87]"
+                placeholder="人數" />
+              <button type="button" disabled={locked} onClick={() => adjustStudentCount(1)}
+                className="w-14 rounded-xl border border-slate-200 text-2xl font-bold text-slate-500 active:bg-slate-100 disabled:opacity-40">＋</button>
+            </div>
           ) : (
             <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">
               課內課固定班級，免填每堂出席人數
@@ -522,6 +646,19 @@ export default function TeacherReportPage() {
           <textarea value={form.outcomeText} disabled={locked} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
             className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#7B9E87]"
             placeholder="例：孩子今天能跟著老師完成挑戰，練習控制方向與力道。課堂中大家參與穩定，也願意嘗試不同任務。" />
+          {!locked && (
+            <div className="mt-2">
+              <div className="text-xs font-semibold text-slate-400">常用句型（點選帶入後可再修改）</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {OUTCOME_TEMPLATES.map((text) => (
+                  <button key={text} type="button" onClick={() => setForm({ ...form, outcomeText: text })}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs leading-5 text-slate-600 active:bg-slate-100">
+                    {text.slice(0, 16)}…
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
@@ -530,25 +667,31 @@ export default function TeacherReportPage() {
             ⚠️ 點名表請傳到 LINE 官方帳號，這裡只上傳課堂活動照片。
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-500">
-            每堂課最多 1 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
+            每堂課最多 {PHOTO_LIMIT} 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
           </p>
-          <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading || photoLocked ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
-            {photoLocked ? "已超過補填期限" : photoUploading ? "照片上傳中..." : "選擇或拍攝活動照片"}
-            <input type="file" accept="image/*" className="hidden" disabled={photoUploading || photoLocked} onChange={uploadPhoto} />
-          </label>
+          {photos.length > 0 && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {photos.map((url) => (
+                <div key={url} className="overflow-hidden rounded-2xl border border-slate-100 bg-slate-50">
+                  <img src={url} alt="課堂活動照片" className="h-32 w-full object-cover" />
+                  {!photoLocked && (
+                    <button type="button" onClick={() => void removePhoto(url)} className="w-full bg-white px-2 py-2 text-xs font-semibold text-red-500">
+                      移除
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {photos.length < PHOTO_LIMIT && (
+            <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading || photoLocked ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
+              {photoLocked ? "已超過補填期限" : photoUploading ? "照片上傳中..." : `選擇或拍攝活動照片（${photos.length}／${PHOTO_LIMIT}）`}
+              <input type="file" accept="image/*" multiple className="hidden" disabled={photoUploading || photoLocked} onChange={uploadPhoto} />
+            </label>
+          )}
           {photoError && (
             <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
               {photoError}
-            </div>
-          )}
-          {photoPreview && (
-            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50">
-              <img src={photoPreview} alt="代表照片預覽" className="h-44 w-full object-cover" />
-              {!locked && (
-                <button type="button" onClick={removePhoto} className="w-full bg-white px-4 py-3 text-sm font-semibold text-red-500">
-                  移除照片
-                </button>
-              )}
             </div>
           )}
           <details className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
@@ -558,12 +701,9 @@ export default function TeacherReportPage() {
               inputMode="url"
               value={form.representativePhotoUrl}
               disabled={locked}
-              onChange={(e) => {
-                setForm({ ...form, representativePhotoUrl: e.target.value });
-                setPhotoPreview(e.target.value);
-              }}
+              onChange={(e) => setForm({ ...form, representativePhotoUrl: e.target.value })}
               className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
-              placeholder="https://..."
+              placeholder="https://...（送出時會一併加入照片）"
             />
           </details>
         </section>
@@ -613,6 +753,11 @@ export default function TeacherReportPage() {
           </section>
         )}
 
+        {!locked && !done && missingItems.length > 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-500">
+            尚未完成：{missingItems.join("、")}
+          </div>
+        )}
         {!locked && (
           <button onClick={submit} disabled={saving}
             className="sticky bottom-4 w-full rounded-2xl bg-[#3F6B55] px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-900/15 disabled:cursor-not-allowed disabled:opacity-60">

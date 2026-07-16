@@ -40,23 +40,31 @@ function monthRange(year: number, month: number) {
   };
 }
 
-function firstPhotoUrl(value: string | null | undefined) {
+// 解析 reportPhotos（JSON 陣列字串；相容舊資料的單一網址）
+function parseStoredPhotos(value: string | null | undefined): string[] {
   const raw = String(value ?? "").trim();
-  if (!raw) return "";
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return String(parsed[0] ?? "").trim();
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
   } catch {
     // Existing rows may contain a plain URL.
   }
-  return raw;
+  return [raw];
+}
+
+function toPortalUrl(stored: string, token: string) {
+  if (!stored.startsWith("private:")) return stored;
+  const path = stored.slice("private:".length);
+  return `/api/school-portal/${encodeURIComponent(token)}/photo?path=${encodeURIComponent(path)}`;
+}
+
+function portalPhotoUrls(value: string | null | undefined, token: string): string[] {
+  return parseStoredPhotos(value).map((stored) => toPortalUrl(stored, token));
 }
 
 function portalPhotoUrl(value: string | null | undefined, token: string) {
-  const first = firstPhotoUrl(value);
-  if (!first.startsWith("private:")) return first;
-  const path = first.slice("private:".length);
-  return `/api/school-portal/${encodeURIComponent(token)}/photo?path=${encodeURIComponent(path)}`;
+  return portalPhotoUrls(value, token)[0] ?? "";
 }
 
 async function getSkillCards() {
@@ -217,6 +225,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       aiSkillFocus: r.aiSkillFocus,
       aiTeachingNote: r.aiTeachingNote,
       representativePhotoUrl: portalPhotoUrl(r.reportPhotos, token),
+      photoUrls: portalPhotoUrls(r.reportPhotos, token),
       schoolNotifyStatus: r.schoolNotifyStatus,
     }));
 
