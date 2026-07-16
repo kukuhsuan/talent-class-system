@@ -92,7 +92,7 @@ async function ensureTeacherCanSubmitReport(lineUserId: string, attendanceId: nu
   }
   const attendance = await prisma.attendance.findUnique({
     where: { id: attendanceId },
-    include: { course: true },
+    include: { course: true, actualTeacher: { select: { name: true } } },
   });
   if (!attendance) {
     await replyMessage(replyToken, [{ type: "text", text: "找不到課程資料，請聯繫行政確認。" }], token);
@@ -113,7 +113,7 @@ async function ensureTeacherCanSubmitReport(lineUserId: string, attendanceId: nu
     await replyMessage(replyToken, [{ type: "text", text: REPORT_NOT_STARTED_MESSAGE }], token);
     return false;
   }
-  if (requiresSchoolSignature(attendance.course.department)) {
+  if (requiresSchoolSignature(attendance.course.department, attendance.actualTeacher?.name)) {
     await replyMessage(replyToken, [
       { type: "text", text: "安親班課程需要園所老師現場簽名，請使用下方課後回報表單完成。" },
       buildReportRequestMessage({ school: attendance.course.school, courseType: attendance.course.courseType, attendanceId }),

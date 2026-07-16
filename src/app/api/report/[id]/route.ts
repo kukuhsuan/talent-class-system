@@ -190,7 +190,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       schoolNotifyError: shouldNotifySchool(attendance.course.department)
         ? (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? ""
         : "",
-      schoolSignatureRequired: requiresSchoolSignature(attendance.course.department),
+      schoolSignatureRequired: requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name),
       schoolVerifierName: signature?.schoolVerifierName ?? "",
       schoolSignatureData: signature?.schoolSignatureData ?? "",
       schoolSignedAt: signature?.schoolSignedAt instanceof Date ? signature.schoolSignedAt.toISOString() : signature?.schoolSignedAt ?? null,
@@ -323,7 +323,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
     const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());
     const incident = Boolean(data.incident);
-    const signatureRequired = requiresSchoolSignature(attendance.course.department);
+    const signatureRequired = requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name);
     const schoolVerifierName = String(data.schoolVerifierName ?? "").trim();
     const schoolSignatureData = String(data.schoolSignatureData ?? "");
     if (signatureRequired && !schoolVerifierName) {

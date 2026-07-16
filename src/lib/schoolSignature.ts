@@ -2,9 +2,13 @@ import { prisma } from "@/lib/prisma";
 
 let signatureColumnsReady = false;
 // 手機端簽名開關：安親班回報頁顯示園所簽名欄（關閉時改採每月紙本核對表）。
-const MOBILE_SCHOOL_SIGNATURE_ENABLED = true;
+const MOBILE_SCHOOL_SIGNATURE_ENABLED = false;
+// 測試白名單：這些老師的課即使開關關閉仍會顯示簽名欄（測試完可清空）
+const SIGNATURE_TEST_TEACHERS = ["咕咕瑄"];
 
-export function requiresSchoolSignature(department: string | null | undefined) {
+export function requiresSchoolSignature(department: string | null | undefined, teacherName?: string | null) {
+  const name = String(teacherName ?? "");
+  if (name && SIGNATURE_TEST_TEACHERS.some((test) => name.includes(test))) return true;
   return MOBILE_SCHOOL_SIGNATURE_ENABLED && String(department ?? "").includes("安親");
 }
 
