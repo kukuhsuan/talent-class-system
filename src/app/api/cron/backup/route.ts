@@ -2,6 +2,7 @@ import { gzipSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createTransport } from "@/lib/mailer";
+import { ensureSchoolSignatureColumns } from "@/lib/schoolSignature";
 
 export const runtime = "nodejs";
 
@@ -74,6 +75,15 @@ async function buildBackupPayload() {
     }),
   ]);
 
+  // 園所簽名欄位為 raw SQL 加欄（不在 Prisma schema），需另外匯出才不會漏備份
+  await ensureSchoolSignatureColumns();
+  const attendanceSignatures = await prisma.$queryRawUnsafe<
+    Array<{ id: number; schoolVerifierName: string; schoolSignatureData: string; schoolSignedAt: string | null }>
+  >(
+    `SELECT "id", "schoolVerifierName", "schoolSignatureData", "schoolSignedAt"
+     FROM "Attendance" WHERE "schoolSignatureData" != '' ORDER BY "id" ASC`,
+  );
+
   const rawTables = await dumpRawTables();
   const rawCounts = Object.fromEntries(Object.entries(rawTables).map(([name, rows]) => [name, rows.length]));
 
@@ -92,10 +102,12 @@ async function buildBackupPayload() {
       courseOptions: courseOptions.length,
       assessments: assessments.length,
       users: users.length,
+      attendanceSignatures: attendanceSignatures.length,
       ...rawCounts,
     },
     data: {
       rawTables,
+      attendanceSignatures,
       schools,
       teachers,
       courses,
@@ -147,6 +159,7 @@ export async function GET(req: NextRequest) {
           <li>出勤：${payload.counts.attendances}</li>
           <li>代課：${payload.counts.substitutes}</li>
           <li>學期評量：${payload.counts.assessments}</li>
+          <li>園所簽名：${payload.counts.attendanceSignatures}</li>
           <li>其他資料表（請假／代課／請款／異常／歷程等）：${Object.keys(payload.data.rawTables).length} 張</li>
         </ul>
         <p>請至少保留最近 30 天備份信件。</p>
