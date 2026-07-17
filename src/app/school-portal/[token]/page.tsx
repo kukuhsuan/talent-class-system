@@ -123,6 +123,37 @@ export default function SchoolPortalPage() {
   const [confirmationMessage, setConfirmationMessage] = useState("");
   const [teacherSearch, setTeacherSearch] = useState("");
   const [teacherCourseFilter, setTeacherCourseFilter] = useState("");
+  const [installEvent, setInstallEvent] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
+  const [showInstallHint, setShowInstallHint] = useState(false);
+
+  // PWA：改用園所專屬 manifest，加入主畫面後直接開啟本園所看板
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    const original = link?.href ?? "";
+    if (link) link.href = `/api/school-portal/${encodeURIComponent(params.token)}/manifest`;
+    return () => { if (link && original) link.href = original; };
+  }, [params.token]);
+
+  // 安裝提示：Android 用原生安裝、iOS 顯示教學（已安裝或已關閉不再顯示）
+  useEffect(() => {
+    if (window.matchMedia("(display-mode: standalone)").matches) return;
+    if (localStorage.getItem("portalInstallHintDismissed")) return;
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallEvent(e as Event & { prompt: () => Promise<void> });
+      setShowInstallHint(true);
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    // iOS 沒有 beforeinstallprompt，直接顯示教學提示
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    if (isIOS) setShowInstallHint(true);
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+  }, []);
+
+  const dismissInstallHint = () => {
+    setShowInstallHint(false);
+    localStorage.setItem("portalInstallHintDismissed", "1");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -278,6 +309,26 @@ export default function SchoolPortalPage() {
                   <TabPill key={item.id} active={tab === item.id} onClick={() => setTab(item.id)} icon={item.icon}>{item.label}</TabPill>
                 ))}
               </div>
+
+              {showInstallHint && (
+                <div className="mt-3 flex items-center gap-3 rounded-2xl bg-blue-600 px-4 py-3 text-white shadow-md">
+                  <span className="text-xl">📲</span>
+                  <div className="flex-1 text-xs font-semibold leading-5">
+                    {installEvent
+                      ? "把園所看板安裝到手機桌面，之後點圖示直接開啟"
+                      : "用 Safari 開啟後，點「分享」→「加入主畫面」，即可像 App 一樣使用"}
+                  </div>
+                  {installEvent && (
+                    <button
+                      onClick={() => { void installEvent.prompt(); dismissInstallHint(); }}
+                      className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-blue-700"
+                    >
+                      安裝
+                    </button>
+                  )}
+                  <button onClick={dismissInstallHint} className="shrink-0 text-white/70" aria-label="關閉">✕</button>
+                </div>
+              )}
 
               <section className="mt-4 sm:mt-5">
                 {tab === "home" && (
