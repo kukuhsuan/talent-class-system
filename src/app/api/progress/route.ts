@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { departmentQueryValues } from "@/lib/courseMeta";
 
+// 解析 reportPhotos（JSON 陣列；相容舊資料單一字串），private 路徑轉成回報頁的照片端點
+function reportPhotoUrls(value: string | null | undefined, attendanceId: number): string[] {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+  let stored: string[] = [raw];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) stored = parsed.map((item) => String(item).trim()).filter(Boolean);
+  } catch { /* 舊資料為單一網址字串 */ }
+  return stored.map((item) => item.startsWith("private:")
+    ? `/api/report/${attendanceId}/photo?path=${encodeURIComponent(item.slice("private:".length))}`
+    : item);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const year = searchParams.get("year");
@@ -39,6 +53,10 @@ export async function GET(req: NextRequest) {
     pageSize ? prisma.attendance.count({ where }) : Promise.resolve(0),
   ]);
 
-  if (pageSize) return NextResponse.json({ items: records, total, page, pageSize });
-  return NextResponse.json(records);
+  const items = records.map((record) => ({
+    ...record,
+    photoUrls: reportPhotoUrls((record as { reportPhotos?: string }).reportPhotos, record.id),
+  }));
+  if (pageSize) return NextResponse.json({ items, total, page, pageSize });
+  return NextResponse.json(items);
 }

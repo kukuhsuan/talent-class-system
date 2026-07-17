@@ -18,6 +18,7 @@ type ProgressRecord = {
   skillFocus?: string; classStatus?: string; incident?: boolean; incidentChild?: string; incidentProcess?: string;
   incidentAction?: string; incidentNotified?: string;
   schoolNotifyStatus?: string; schoolNotifyError?: string; schoolNotifiedAt?: string | null;
+  photoUrls?: string[];
 };
 type LessonTemplate = {
   id: number;
@@ -171,6 +172,20 @@ export default function ProgressPage() {
     if (!value) return "";
     const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
     return lines[0] ?? "";
+  }
+
+  // 取出回報中指定段落（例如「成果回報」），到下一個「xx：」標籤為止
+  function reportField(content: string | undefined, label: string) {
+    const lines = (content || "").split("\n");
+    const start = lines.findIndex((line) => line.trim().startsWith(`${label}：`));
+    if (start < 0) return "";
+    const first = lines[start].replace(`${label}：`, "").trim();
+    const rest: string[] = [];
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^[^：:]{2,8}[：:]/.test(lines[index].trim())) break;
+      rest.push(lines[index]);
+    }
+    return [first, ...rest].join("\n").trim();
   }
 
   async function resendSchoolNotify(id: number) {
@@ -384,6 +399,23 @@ export default function ProgressPage() {
                           <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
                             {primaryReportText(r.reportContent)}
                           </p>
+                        )}
+                        {reportField(r.reportContent, "成果回報") && (
+                          <div className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                            <div className="text-xs font-semibold text-indigo-700">成果回報</div>
+                            <p className="mt-0.5 whitespace-pre-wrap">{reportField(r.reportContent, "成果回報")}</p>
+                          </div>
+                        )}
+                        {(r.photoUrls?.length ?? 0) > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {r.photoUrls!.map((url, index) => (
+                              <a key={`${r.id}-photo-${index}`} href={url} target="_blank" rel="noreferrer" title="點擊看大圖">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={url} alt={`課程照片 ${index + 1}`} loading="lazy"
+                                  className="h-20 w-20 rounded-lg border border-slate-200 object-cover hover:opacity-80" />
+                              </a>
+                            ))}
+                          </div>
                         )}
                         {((r.course.department.includes("幼兒園") && (parseList(r.skillFocus).length > 0 || r.classStatus)) || r.incident) && (
                           <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
