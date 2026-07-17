@@ -129,11 +129,20 @@ export default function SchoolPortalPage() {
 
   // 依園所類型顯示不同分頁：安親班以「評分」取代「證書」
   const isAfterSchoolPortal = (data?.school.type ?? "").includes("安親");
-  const nav = useMemo<Array<{ id: Tab; label: string; icon: string }>>(
-    () => (isAfterSchoolPortal ? NAV.map((item) => (item.id === "certificates" ? { id: "ratings" as Tab, label: "評分", icon: "✎" } : item)) : NAV),
-    [isAfterSchoolPortal],
-  );
+  const hasCurriculum = (data?.curriculum?.length ?? 0) > 0;
+  const nav = useMemo<Array<{ id: Tab; label: string; icon: string }>>(() => {
+    if (!isAfterSchoolPortal) return NAV;
+    // 安親班（營隊）：證書改評分；沒有課綱進度就隱藏「進度」
+    return NAV
+      .filter((item) => item.id !== "progress" || hasCurriculum)
+      .map((item) => (item.id === "certificates" ? { id: "ratings" as Tab, label: "評分", icon: "✎" } : item));
+  }, [isAfterSchoolPortal, hasCurriculum]);
   const pendingRatings = useMemo(() => (data?.ratingTasks ?? []).filter((t) => t.status === "open"), [data]);
+
+  // 若目前分頁被隱藏（例如安親班無進度），自動回首頁
+  useEffect(() => {
+    if (!nav.some((item) => item.id === tab)) setTab("home");
+  }, [nav, tab]);
 
   // 分頁切換：立即回到頁面最上方，讓使用者確定有切換
   const selectTab = (next: Tab) => {
@@ -385,6 +394,7 @@ export default function SchoolPortalPage() {
                     courseFilter={teacherCourseFilter}
                     onCourseFilter={setTeacherCourseFilter}
                     courseOptions={teacherCourseOptions}
+                    isAfterSchool={isAfterSchoolPortal}
                   />
                 )}
 
@@ -490,12 +500,15 @@ export default function SchoolPortalPage() {
                     </section>
                   )}
 
-                  <section className="mt-5">
-                    <PanelTitle title="本學期進度" subtitle="目前學到哪、已完成多少堂，一眼就能看懂。" />
-                    <div className="mt-3">
-                      <LearningMaps maps={learningMaps.slice(0, 2)} compact />
-                    </div>
-                  </section>
+                  {/* 安親班為一期一期的營隊，沒有課綱進度時不顯示此區 */}
+                  {learningMaps.length > 0 && (
+                    <section className="mt-5">
+                      <PanelTitle title={isAfterSchoolPortal ? "本期進度" : "本學期進度"} subtitle="目前學到哪、已完成多少堂，一眼就能看懂。" />
+                      <div className="mt-3">
+                        <LearningMaps maps={learningMaps.slice(0, 2)} compact />
+                      </div>
+                    </section>
+                  )}
 
                   <section className="mt-3 grid grid-cols-4 gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
                     <SummaryCard label="本月堂數" value={data.summary.lessons} helper="已完成課程" icon="▣" />
@@ -547,7 +560,7 @@ export default function SchoolPortalPage() {
         </main>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-6 gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
+      <nav className={`fixed inset-x-3 bottom-3 z-30 grid ${nav.length === 5 ? "grid-cols-5" : "grid-cols-6"} gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden`}>
         {nav.map((item) => (
           <button key={item.id} onClick={() => selectTab(item.id)} className={`relative rounded-2xl px-1.5 py-2 text-center text-[10px] font-black transition-colors ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
             {item.id === "ratings" && pendingRatings.length > 0 && (
@@ -704,6 +717,7 @@ function TeachersPanel({
   courseFilter,
   onCourseFilter,
   courseOptions,
+  isAfterSchool,
 }: {
   teachers: PortalData["teachers"];
   allCount: number;
@@ -712,10 +726,14 @@ function TeachersPanel({
   courseFilter: string;
   onCourseFilter: (value: string) => void;
   courseOptions: string[];
+  isAfterSchool?: boolean;
 }) {
   return (
     <div className="space-y-4">
-      <PanelTitle title="本學期授課老師" subtitle="以下為本學期安排至貴園授課的專業老師，提供園所參考。" />
+      <PanelTitle
+        title={isAfterSchool ? "本期授課老師" : "本學期授課老師"}
+        subtitle={isAfterSchool ? "以下為本期營隊安排至貴班授課的專業老師，提供參考。" : "以下為本學期安排至貴園授課的專業老師，提供園所參考。"}
+      />
       <div className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:p-5">
         <div className="grid gap-3 lg:grid-cols-[1fr_260px_auto]">
           <input
