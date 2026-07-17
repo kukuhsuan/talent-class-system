@@ -303,6 +303,7 @@ export default function SchoolsPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-3">
+                  {(s.type ?? "").includes("安親") && <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-sm font-medium text-amber-600">評分</a>}
                   <button onClick={() => copyPortalLink(s.id)} className="text-sm font-medium text-emerald-600">連結</button>
                   <button onClick={() => rotatePortalLink(s.id)} className="text-sm font-medium text-amber-600">重生</button>
                   <button onClick={() => edit(s)} className="text-sm font-medium text-blue-600">編輯</button>
@@ -351,6 +352,7 @@ export default function SchoolsPage() {
                     : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
                 </td>
                 <td className="px-4 py-3 text-right space-x-2">
+                  {(s.type ?? "").includes("安親") && <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-amber-600 hover:underline text-xs">歷史評分</a>}
                   <button onClick={() => copyPortalLink(s.id)} className="text-emerald-600 hover:underline text-xs">複製園所端連結</button>
                   <button onClick={() => rotatePortalLink(s.id)} className="text-amber-600 hover:underline text-xs">重生連結</button>
                   <button onClick={() => edit(s)} className="text-blue-600 hover:underline text-xs">編輯</button>

@@ -21,6 +21,18 @@ type Teacher = {
 
 type TeacherForm = Omit<Teacher, "id" | "bankAccountMasked"> & { bankAccountName: string; bankAccountNumber: string };
 
+// 安親班評分統計（來自 /api/course-ratings/stats）
+type RatingStat = {
+  teacherId: number;
+  count: number;
+  avgPunctuality: number;
+  avgTeaching: number;
+  avgOrder: number;
+  avgInteraction: number;
+  avgOverall: number;
+  recentFeedback: { date: string; school: string; feedback: string; continueWish: string }[];
+};
+
 const EMPTY: TeacherForm = {
   name: "", email: "", phone: "", rateAfterSchool: 500, rateInSchool: 500, rateDemo: 200, travelFee: 0, isAssistant: false, assistantFee: 0, notes: "", lineUserId: "", lineRegion: "north",
   bankName: "", bankCode: "", bankBranch: "", bankAccountName: "", bankAccountNumber: "",
@@ -43,8 +55,20 @@ export default function TeachersPage() {
   const firstInputRef = useRef<HTMLInputElement | null>(null);
   const scrollToFormOnEdit = useScrollToFormOnEdit(formRef, firstInputRef);
 
+  const [ratingStats, setRatingStats] = useState<Record<number, RatingStat>>({});
+
   const load = () => fetch("/api/teachers").then((r) => r.json()).then(setTeachers);
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    fetch("/api/course-ratings/stats")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: RatingStat[]) => {
+        const map: Record<number, RatingStat> = {};
+        for (const stat of list) map[stat.teacherId] = stat;
+        setRatingStats(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const save = async () => {
     if (!form.name.trim()) return alert("請填寫老師姓名");
@@ -231,6 +255,7 @@ export default function TeachersPage() {
                       </div>
                     </div>
                   )}
+                  <RatingSummary stat={ratingStats[t.id]} />
                   <div className="mt-2">
                     {t.lineUserId
                       ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] text-green-700">LINE 已綁定</span>
@@ -311,6 +336,7 @@ export default function TeachersPage() {
                         </div>
                       )
                       : "-"}
+                    <RatingSummary stat={ratingStats[t.id]} />
                   </td>
                   <td className="px-4 py-4 text-center"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${t.isAssistant ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{t.isAssistant ? "助教" : "主教"}</span></td>
                   <td className="px-4 py-4 text-center text-slate-700">{t.isAssistant ? "-" : `$${t.rateAfterSchool}`}</td>
@@ -339,6 +365,31 @@ export default function TeachersPage() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 安親班評分摘要：平均、次數、各項平均與最近意見
+function RatingSummary({ stat }: { stat?: RatingStat }) {
+  if (!stat) return null;
+  const low = stat.avgOverall < 3;
+  return (
+    <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${low ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"}`}>
+      <div className="font-medium">
+        ⭐ 安親班評分 {stat.avgOverall} 分（{stat.count} 次）
+      </div>
+      <div className="mt-0.5 text-[11px] opacity-80">
+        準時 {stat.avgPunctuality}｜教學 {stat.avgTeaching}｜秩序 {stat.avgOrder}｜互動 {stat.avgInteraction}
+      </div>
+      {stat.recentFeedback.length > 0 && (
+        <div className="mt-1 space-y-0.5 text-[11px] opacity-80">
+          {stat.recentFeedback.map((fb, i) => (
+            <div key={i} className="truncate" title={`${fb.date} ${fb.school}：${fb.feedback}`}>
+              💬 {fb.date} {fb.school}：{fb.feedback || fb.continueWish}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

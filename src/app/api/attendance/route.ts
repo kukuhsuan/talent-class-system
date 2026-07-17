@@ -94,6 +94,7 @@ export async function GET(req: NextRequest) {
           code: true,
           school: true,
           courseType: true,
+          department: true,
           time: true,
           payrollHours: true,
           teacherId: true,

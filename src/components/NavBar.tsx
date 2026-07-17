@@ -52,6 +52,7 @@ const GROUPS = [
       { href: "/school-invoices", label: "園所請款單" },
       { href: "/notify", label: "LINE 通知" },
       { href: "/pre-class-meeting", label: "課前會議" },
+      { href: "/ratings", label: "安親班評分" },
       { href: "/alerts", label: "異常管理", ownerOnly: true },
       { href: "/users", label: "帳號管理" },
       { href: "/admin/audit-logs", label: "操作歷程" },
