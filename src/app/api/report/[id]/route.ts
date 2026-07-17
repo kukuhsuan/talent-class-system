@@ -33,8 +33,9 @@ function isKindergarten(department: string | null | undefined) {
   return (department ?? "").includes("幼兒園");
 }
 
-function shouldNotifySchool(department: string | null | undefined) {
-  return !(department ?? "").includes("安親");
+function shouldNotifySchool(_department: string | null | undefined) {
+  // 幼兒園發課後回報、安親班發評分邀請，皆由 notifySchoolReport 內部判斷
+  return true;
 }
 
 // 解析 reportPhotos（JSON 陣列；相容舊資料單一字串）

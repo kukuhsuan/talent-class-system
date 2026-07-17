@@ -66,7 +66,9 @@ export async function notifySchoolReport(attendanceId: number): Promise<NotifyRe
       return { status: "通知失敗", error: "找不到出勤紀錄" };
     }
 
-    if ((att.course.department ?? "").includes("安親")) {
+    const isAfterSchool = (att.course.department ?? "").includes("安親");
+    if (isAfterSchool && (att.cancelled || !att.course.schoolRel?.lineUserId)) {
+      // 安親班：停課或未綁 LINE 就不發（評分連結仍可由後台手動複製轉發）
       return { status: "不需通知" };
     }
 
@@ -82,6 +84,37 @@ export async function notifySchoolReport(attendanceId: number): Promise<NotifyRe
       const missingKey = schoolRegion === "school2" ? "LINE_SCHOOL2_TOKEN 尚未設定" : "LINE_SCHOOL_TOKEN 尚未設定";
       await setNotifyStatus(attendanceId, "通知失敗", missingKey);
       return { status: "通知失敗", error: missingKey };
+    }
+
+    // 安親班：課後改發「評分邀請」而不是幼兒園回報訊息
+    if (isAfterSchool) {
+      const { getOrCreateRating } = await import("@/lib/courseRating");
+      const rating = await getOrCreateRating(attendanceId);
+      if (rating.status !== "open") return { status: "不需通知" }; // 已評分/已關閉不再發邀請
+      const text = [
+        `【課程評分邀請】${att.course.school}`,
+        `課程：${att.course.courseType}（${att.course.code}）`,
+        `日期：${att.date.toISOString().slice(0, 10)}`,
+        `授課老師：${att.actualTeacher.name}`,
+        "",
+        "今天的課程已結束，麻煩協助評分（約 1 分鐘，點連結即可填寫、免登入）：",
+        `${appUrl()}/rating/${rating.token}`,
+        "",
+        "感謝您的回饋！",
+      ].join("\n");
+      const res = await fetch("https://api.line.me/v2/bot/message/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${schoolCfg.token}` },
+        body: JSON.stringify({ to: school.lineUserId, messages: [{ type: "text", text }] }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        const error = `LINE ${res.status}: ${body.slice(0, 300)}`;
+        await setNotifyStatus(attendanceId, "通知失敗", error);
+        return { status: "通知失敗", error };
+      }
+      await setNotifyStatus(attendanceId, "通知成功");
+      return { status: "通知成功" };
     }
 
     const attData = att as unknown as { studentCount: number | null; studentCountA: number | null; studentCountB: number | null };

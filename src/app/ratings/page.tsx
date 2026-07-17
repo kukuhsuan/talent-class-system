@@ -88,11 +88,23 @@ export default function RatingsPage() {
 
   const copyLink = async (item: RatingItem) => {
     const url = `${window.location.origin}/rating/${item.token}`;
+    // 一鍵複製整段 LINE 訊息（含課程資訊＋填寫說明），貼上就能直接發送
+    const message = [
+      `【課程評分邀請】${item.school}`,
+      `課程：${item.courseName}（${item.courseCode}）`,
+      `日期：${item.date}`,
+      `授課老師：${item.teacherName}`,
+      "",
+      "麻煩協助為這堂課評分（約 1 分鐘，點連結即可填寫、免登入）：",
+      url,
+      "",
+      "感謝您的回饋！",
+    ].join("\n");
     try {
-      await navigator.clipboard.writeText(url);
-      showToast("success", "評分連結已複製");
+      await navigator.clipboard.writeText(message);
+      showToast("success", "評分邀請訊息已複製，可直接貼到 LINE 發送");
     } catch {
-      window.prompt("請手動複製評分連結：", url);
+      window.prompt("請手動複製評分邀請訊息：", message);
     }
   };
 

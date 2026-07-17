@@ -192,21 +192,33 @@ export default function AttendancePage() {
   };
 
   // 安親班課程：產生專屬評分連結並複製，方便用 LINE 傳給安親班
-  const copyRatingLink = async (attendanceId: number) => {
+  const copyRatingLink = async (r: Attendance) => {
     try {
       const res = await fetch("/api/course-ratings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attendanceId }),
+        body: JSON.stringify({ attendanceId: r.id }),
       });
       const data = await res.json();
       if (!res.ok) { showToast("error", data.error ?? "產生評分連結失敗"); return; }
       const url = `${window.location.origin}${data.path}`;
+      // 一鍵複製整段 LINE 訊息（含課程資訊＋填寫說明），貼上就能直接發送
+      const message = [
+        `【課程評分邀請】${r.course.school}`,
+        `課程：${r.course.courseType}（${r.course.code}）`,
+        `日期：${r.date.slice(0, 10)}`,
+        `授課老師：${r.actualTeacher.name}`,
+        "",
+        "麻煩協助為這堂課評分（約 1 分鐘，點連結即可填寫、免登入）：",
+        url,
+        "",
+        "感謝您的回饋！",
+      ].join("\n");
       try {
-        await navigator.clipboard.writeText(url);
-        showToast("success", "評分連結已複製，可直接貼到 LINE");
+        await navigator.clipboard.writeText(message);
+        showToast("success", "評分邀請訊息已複製，可直接貼到 LINE 發送");
       } catch {
-        window.prompt("請手動複製評分連結：", url);
+        window.prompt("請手動複製評分邀請訊息：", message);
       }
     } catch {
       showToast("error", "產生評分連結失敗");
@@ -695,7 +707,7 @@ export default function AttendancePage() {
                             <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
                             <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
                             <a href={`/attendance/sign-in-sheet?id=${r.id}`} target="_blank" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">簽到表</a>
-                            {(r.course.department ?? "").includes("安親") && <button onClick={() => copyRatingLink(r.id)} className="text-sm font-medium text-amber-600 hover:text-amber-800">評分連結</button>}
+                            {(r.course.department ?? "").includes("安親") && <button onClick={() => copyRatingLink(r)} className="text-sm font-medium text-amber-600 hover:text-amber-800">評分連結</button>}
                             <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
                           </div>
                         </div>
@@ -768,7 +780,7 @@ export default function AttendancePage() {
                                   <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
                                   <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
                                   <a href={`/attendance/sign-in-sheet?id=${r.id}`} target="_blank" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">簽到表</a>
-                                  {(r.course.department ?? "").includes("安親") && <button onClick={() => copyRatingLink(r.id)} className="text-sm font-medium text-amber-600 hover:text-amber-800">評分連結</button>}
+                                  {(r.course.department ?? "").includes("安親") && <button onClick={() => copyRatingLink(r)} className="text-sm font-medium text-amber-600 hover:text-amber-800">評分連結</button>}
                                   <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
                                 </div>
                               </td>
