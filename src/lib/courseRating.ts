@@ -5,14 +5,15 @@ import { raiseSystemAlert } from "@/lib/systemAlerts";
 // 安親班課程評分：每堂課產生專屬評分連結，安親班免登入填寫，一堂課一次評分。
 
 export const RATING_FIELDS = [
-  { key: "scorePunctuality", label: "老師準時度" },
-  { key: "scoreTeaching", label: "教學表現" },
-  { key: "scoreOrder", label: "班級秩序" },
-  { key: "scoreInteraction", label: "與學生互動" },
-  { key: "scoreOverall", label: "整體滿意度" },
+  { key: "scorePunctuality", label: "準時與課前準備" },
+  { key: "scoreTeaching", label: "教學內容與專業" },
+  { key: "scoreOrder", label: "課堂帶領與秩序" },
+  { key: "scoreInteraction", label: "與孩子的互動" },
+  { key: "scoreOverall", label: "整體課程滿意度" },
 ] as const;
 
-export const CONTINUE_WISH_OPTIONS = ["願意", "需要再觀察", "不建議"] as const;
+// 相容舊資料：資料庫仍可能存在「願意／需要再觀察／不建議」
+export const CONTINUE_WISH_OPTIONS = ["願意繼續安排", "仍需觀察", "暫不安排"] as const;
 
 let tablesReady = false;
 export async function ensureCourseRatingTables() {

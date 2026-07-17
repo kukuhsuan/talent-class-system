@@ -347,15 +347,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
           feedback: row.feedback,
         };
       }).sort((a, b) => b.date.localeCompare(a.date));
-      ratingTasks = normalized.filter((row) => row.status !== "closed").map((row) => {
-        const record = byId.get(row.attendanceId)!;
+      // 每堂未停課的課都要有狀態：open=待評分、submitted=已完成、closed=已關閉、not_ready=尚未開放（回報完成後開放）
+      const rowByAttendance = new Map(normalized.map((row) => [row.attendanceId, row]));
+      ratingTasks = records.filter((r) => !r.cancelled).map((record) => {
+        const row = rowByAttendance.get(record.id);
         return {
-          attendanceId: row.attendanceId,
+          attendanceId: record.id,
           date: dateText(record.date),
           courseName: courseLabel(record.course.courseType),
           teacherName: record.actualTeacher.name,
-          status: row.status, // open=待填寫、submitted=已完成
-          ratingUrl: `/rating/${encodeURIComponent(row.token)}`,
+          status: row ? row.status : "not_ready",
+          ratingUrl: row ? `/rating/${encodeURIComponent(row.token)}` : "",
         };
       }).sort((a, b) => b.date.localeCompare(a.date));
     }

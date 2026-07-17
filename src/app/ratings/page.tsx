@@ -194,8 +194,8 @@ export default function RatingsPage() {
                     <td className="px-3 py-3 whitespace-nowrap">
                       {item.status === "submitted" ? (
                         <span className={`rounded-full px-2 py-0.5 text-xs ${
-                          item.continueWish === "願意" ? "bg-green-100 text-green-700"
-                          : item.continueWish === "不建議" ? "bg-rose-100 text-rose-700"
+                          item.continueWish.includes("願意") ? "bg-green-100 text-green-700"
+                          : (item.continueWish.includes("不建議") || item.continueWish.includes("暫不")) ? "bg-rose-100 text-rose-700"
                           : "bg-amber-100 text-amber-700"
                         }`}>{item.continueWish}</span>
                       ) : <span className="text-slate-300">-</span>}

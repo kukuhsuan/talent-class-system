@@ -439,9 +439,13 @@ export default function SchoolPortalPage() {
                               <div className="mt-0.5 text-xs font-semibold text-slate-500">老師：{t.teacherName}</div>
                             </div>
                             {t.status === "open" ? (
-                              <a href={t.ratingUrl} className="shrink-0 rounded-full bg-blue-600 px-4 py-2 text-xs font-black text-white shadow-sm">開始評分</a>
-                            ) : (
+                              <a href={t.ratingUrl} className="shrink-0 rounded-full bg-blue-600 px-4 py-2 text-xs font-black text-white shadow-sm">評分本堂課</a>
+                            ) : t.status === "submitted" ? (
                               <span className="shrink-0 rounded-full bg-green-100 px-3 py-1.5 text-xs font-bold text-green-700">✓ 已完成</span>
+                            ) : t.status === "closed" ? (
+                              <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1.5 text-right text-xs font-bold text-amber-700">已關閉<span className="block text-[10px] font-semibold">請聯繫我們重新開放</span></span>
+                            ) : (
+                              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-400">尚未開放</span>
                             )}
                           </div>
                         ))}
@@ -457,8 +461,8 @@ export default function SchoolPortalPage() {
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="text-sm font-black text-[#142452]">{r.date}｜{r.courseName}</div>
                                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                                  r.continueWish === "願意" ? "bg-green-100 text-green-700"
-                                  : r.continueWish === "不建議" ? "bg-rose-100 text-rose-700"
+                                  r.continueWish.includes("願意") ? "bg-green-100 text-green-700"
+                                  : (r.continueWish.includes("不建議") || r.continueWish.includes("暫不")) ? "bg-rose-100 text-rose-700"
                                   : "bg-amber-100 text-amber-700"
                                 }`}>{r.continueWish}</span>
                               </div>

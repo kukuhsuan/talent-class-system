@@ -1,21 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
-// 安親班課程評分頁（免登入、手機友善）
+// 安親班課程評分頁（免登入、手機友善）— 運動班長品牌
 
 const SCORE_FIELDS = [
-  { key: "scorePunctuality", label: "老師準時度", hint: "老師是否準時到班與下課" },
-  { key: "scoreTeaching", label: "教學表現", hint: "課程內容與帶班的專業度" },
-  { key: "scoreOrder", label: "班級秩序", hint: "上課秩序與孩子的專注度" },
-  { key: "scoreInteraction", label: "與學生互動", hint: "與孩子的互動、鼓勵與關心" },
-  { key: "scoreOverall", label: "整體滿意度", hint: "這堂課的整體表現" },
+  { key: "scorePunctuality", label: "準時與課前準備", hint: "老師是否準時到班、課前準備充分" },
+  { key: "scoreTeaching", label: "教學內容與專業", hint: "課程內容與教學的專業度" },
+  { key: "scoreOrder", label: "課堂帶領與秩序", hint: "活動帶領的流暢度與課堂氛圍" },
+  { key: "scoreInteraction", label: "與孩子的互動", hint: "與孩子的互動、鼓勵與關心" },
+  { key: "scoreOverall", label: "整體課程滿意度", hint: "這堂課的整體表現" },
 ] as const;
 
 const SCORE_WORDS = ["", "需加強", "待改進", "普通", "滿意", "非常滿意"];
 
-const WISH_OPTIONS = ["願意", "需要再觀察", "不建議"] as const;
+const WISH_OPTIONS = ["願意繼續安排", "仍需觀察", "暫不安排"] as const;
 
 type Lesson = {
   attendanceId: number;
@@ -27,6 +27,12 @@ type Lesson = {
 };
 
 type Scores = Record<(typeof SCORE_FIELDS)[number]["key"], number>;
+
+// 2026-07-09 → 7月9日
+function dateLabel(iso: string) {
+  const [, m, d] = iso.split("-").map(Number);
+  return m && d ? `${m}月${d}日` : iso;
+}
 
 export default function RatingPage() {
   const params = useParams<{ token: string }>();
@@ -43,6 +49,7 @@ export default function RatingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [formError, setFormError] = useState("");
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = useCallback(async () => {
     try {
@@ -64,10 +71,32 @@ export default function RatingPage() {
   const doneSteps = SCORE_FIELDS.filter(({ key }) => scores[key] > 0).length + (wish ? 1 : 0);
   const totalSteps = SCORE_FIELDS.length + 1;
 
+  // 選完一題後平順滑到下一題（重選已完成的題目則留在原處）
+  const pickScore = (key: keyof Scores, n: number) => {
+    const firstTime = scores[key] === 0;
+    setScores((prev) => ({ ...prev, [key]: n }));
+    if (!firstTime) return;
+    const idx = SCORE_FIELDS.findIndex((f) => f.key === key);
+    const nextKey = idx < SCORE_FIELDS.length - 1 ? SCORE_FIELDS[idx + 1].key : "wish";
+    window.setTimeout(() => {
+      itemRefs.current[nextKey]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
+  };
+
+  const pickWish = (option: string) => {
+    const firstTime = !wish;
+    setWish(option);
+    if (!firstTime) return;
+    window.setTimeout(() => {
+      itemRefs.current.feedback?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
+  };
+
   const submit = async () => {
+    if (submitting) return; // 防止重複送出
     setFormError("");
     if (SCORE_FIELDS.some(({ key }) => !scores[key])) { setFormError("每個評分項目都需要選擇 1–5 分"); return; }
-    if (!wish) { setFormError("請選擇是否願意繼續安排此老師"); return; }
+    if (!wish) { setFormError("請選擇是否繼續安排此老師"); return; }
     setSubmitting(true);
     try {
       const res = await fetch(`/api/rating/${token}`, {
@@ -86,18 +115,44 @@ export default function RatingPage() {
     }
   };
 
-  if (loading) return <Shell><p className="py-16 text-center text-gray-500">載入中…</p></Shell>;
-  if (error) return <Shell><p className="py-16 text-center text-red-600">{error}</p></Shell>;
+  if (loading) {
+    // 骨架畫面：避免長時間空白
+    return (
+      <Shell>
+        <BrandHeader />
+        <div className="mt-4 animate-pulse space-y-4">
+          <div className="h-24 rounded-2xl bg-slate-200/70" />
+          {[0, 1, 2].map((i) => <div key={i} className="h-32 rounded-2xl bg-slate-100" />)}
+        </div>
+        <p className="mt-6 text-center text-xs font-semibold text-gray-400">正在載入課程資料…</p>
+      </Shell>
+    );
+  }
+  if (error) return <Shell><BrandHeader /><p className="py-16 text-center text-red-600">{error}</p><Footer /></Shell>;
 
   if (done) {
     return (
       <Shell>
-        <div className="space-y-4 py-14 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl">✓</div>
-          <h1 className="text-xl font-bold text-gray-800">感謝您的回饋</h1>
-          <p className="text-sm leading-relaxed text-gray-500">您的評分已送出，我們會依據回饋<br />持續提升教學品質。</p>
-          <p className="pt-4 text-xs text-gray-300">WaysLeader AI 才藝課程平台</p>
+        <BrandHeader />
+        <div className="space-y-4 py-12 text-center">
+          <div className="mx-auto flex h-20 w-20 animate-[pop_0.4s_ease-out] items-center justify-center rounded-full bg-green-500 text-4xl text-white shadow-lg shadow-green-200">✓</div>
+          <style>{`@keyframes pop{0%{transform:scale(0.3);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}`}</style>
+          <h1 className="text-xl font-bold text-gray-800">評分已完成，感謝您的回饋！</h1>
+          {lesson && (
+            <p className="text-sm leading-relaxed text-gray-600">
+              {lesson.teacherName} 老師｜{dateLabel(lesson.date)} {lesson.courseName}課程已完成評分
+            </p>
+          )}
+          <p className="text-xs leading-relaxed text-gray-400">我們會依據您的回饋，持續提升教學品質。</p>
+          <button
+            type="button"
+            onClick={() => { window.close(); }}
+            className="mt-2 rounded-2xl border border-gray-200 bg-white px-8 py-3 text-sm font-semibold text-gray-600"
+          >
+            關閉頁面
+          </button>
         </div>
+        <Footer />
       </Shell>
     );
   }
@@ -105,24 +160,28 @@ export default function RatingPage() {
   if (status === "submitted") {
     return (
       <Shell>
-        <LessonCard lesson={lesson} />
+        <BrandHeader />
+        <div className="mt-4"><LessonCard lesson={lesson} /></div>
         <p className="py-10 text-center text-gray-600">這堂課已完成評分，感謝您的回饋！<br /><span className="text-sm text-gray-400">若需修改，請聯繫我們重新開放。</span></p>
+        <Footer />
       </Shell>
     );
   }
 
   if (status === "closed") {
-    return <Shell><p className="py-16 text-center text-gray-600">這個評分連結已關閉，若有需要請聯繫我們。</p></Shell>;
+    return <Shell><BrandHeader /><p className="py-16 text-center text-gray-600">這個評分連結已關閉，若有需要請聯繫我們。</p><Footer /></Shell>;
   }
 
   return (
     <Shell>
-      <div className="mb-4">
-        <div className="text-xs font-semibold tracking-wide text-indigo-500">WaysLeader AI</div>
-        <h1 className="text-xl font-bold text-gray-800">課程滿意度評分</h1>
-        <p className="mt-0.5 text-xs text-gray-400">約 1 分鐘完成，您的回饋能幫助我們把課上得更好</p>
+      <BrandHeader />
+      <h1 className="mt-4 text-xl font-bold text-gray-800">
+        {lesson ? `請為本次${lesson.courseName}課程評分` : "課程滿意度評分"}
+      </h1>
+      <p className="mt-0.5 text-xs text-gray-400">約 1 分鐘完成，您的回饋能幫助我們把課上得更好</p>
+      <div className="mt-3">
+        <LessonCard lesson={lesson} />
       </div>
-      <LessonCard lesson={lesson} />
 
       {/* 進度條 */}
       <div className="sticky top-0 z-10 -mx-4 mt-4 bg-gray-50/95 px-4 py-2 backdrop-blur">
@@ -131,20 +190,24 @@ export default function RatingPage() {
           <span>{doneSteps}/{totalSteps}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
-          <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${(doneSteps / totalSteps) * 100}%` }} />
+          <div className="h-full rounded-full bg-indigo-500 transition-all duration-300" style={{ width: `${(doneSteps / totalSteps) * 100}%` }} />
         </div>
       </div>
 
       <div className="mt-4 space-y-4">
         {SCORE_FIELDS.map(({ key, label, hint }) => (
-          <div key={key} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div
+            key={key}
+            ref={(el) => { itemRefs.current[key] = el; }}
+            className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${scores[key] ? "border-green-200" : "border-gray-100"}`}
+          >
             <div className="flex items-baseline justify-between">
               <div>
                 <span className="text-[15px] font-semibold text-gray-800">{label}</span>
                 <p className="mt-0.5 text-xs text-gray-400">{hint}</p>
               </div>
-              <span className={`text-xs font-medium ${scores[key] ? "text-amber-600" : "text-gray-300"}`}>
-                {scores[key] ? SCORE_WORDS[scores[key]] : "請選擇"}
+              <span className={`text-xs font-medium ${scores[key] ? "text-green-600" : "text-gray-300"}`}>
+                {scores[key] ? `✓ ${SCORE_WORDS[scores[key]]}` : "請選擇"}
               </span>
             </div>
             <div className="mt-2 flex gap-1.5">
@@ -152,7 +215,7 @@ export default function RatingPage() {
                 <button
                   key={n}
                   type="button"
-                  onClick={() => setScores((prev) => ({ ...prev, [key]: n }))}
+                  onClick={() => pickScore(key, n)}
                   className={`flex-1 rounded-xl border py-2.5 text-2xl leading-none transition-colors ${scores[key] >= n ? "border-amber-300 bg-amber-50 text-amber-400" : "border-gray-200 bg-white text-gray-200"}`}
                   aria-label={`${label} ${n} 分`}
                 >
@@ -160,26 +223,37 @@ export default function RatingPage() {
                 </button>
               ))}
             </div>
+            <div className="mt-1.5 flex justify-between text-[11px] text-gray-300">
+              <span>1分 需加強</span>
+              <span>5分 非常滿意</span>
+            </div>
           </div>
         ))}
 
-        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-          <span className="text-[15px] font-semibold text-gray-800">是否願意繼續安排此老師</span>
+        <div
+          ref={(el) => { itemRefs.current.wish = el; }}
+          className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${wish ? "border-green-200" : "border-gray-100"}`}
+        >
+          <div className="flex items-baseline justify-between">
+            <span className="text-[15px] font-semibold text-gray-800">是否繼續安排此老師</span>
+            {wish && <span className="text-xs font-medium text-green-600">✓ 已選擇</span>}
+          </div>
           <div className="mt-2 flex gap-2">
             {WISH_OPTIONS.map((option) => (
               <button
                 key={option}
                 type="button"
-                onClick={() => setWish(option)}
-                className={`flex-1 rounded-xl border py-2.5 text-sm font-medium transition-colors ${wish === option ? "border-indigo-600 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}
+                onClick={() => pickWish(option)}
+                className={`flex-1 rounded-xl border py-2.5 text-[13px] font-medium transition-colors ${wish === option ? "border-indigo-600 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}
               >
                 {option}
               </button>
             ))}
           </div>
+          <p className="mt-2 text-[11px] leading-4 text-gray-400">此項僅作為後續排課與教學改善參考，不會直接顯示給老師。</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div ref={(el) => { itemRefs.current.feedback = el; }} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <span className="text-[15px] font-semibold text-gray-800">意見回饋<span className="ml-1 text-xs font-normal text-gray-400">選填</span></span>
           <textarea
             value={feedback}
@@ -202,6 +276,7 @@ export default function RatingPage() {
         </button>
         <p className="pb-2 text-center text-xs text-gray-300">評分結果僅供內部教學品質管理使用</p>
       </div>
+      <Footer />
     </Shell>
   );
 }
@@ -214,14 +289,37 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function BrandHeader() {
+  return (
+    <div className="flex items-center gap-3">
+      {/* 運動班長 Logo：載入失敗時自動隱藏，僅留文字品牌 */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/sports-monitor-logo.png"
+        alt="運動班長"
+        className="h-12 w-12 rounded-xl bg-white object-contain shadow-sm ring-1 ring-slate-200"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      />
+      <div>
+        <div className="text-base font-black text-[#1e2a63]">運動班長｜課程回饋</div>
+        <div className="text-[11px] font-semibold text-gray-400">Kids Sports 兒童運動課程</div>
+      </div>
+    </div>
+  );
+}
+
+function Footer() {
+  return <p className="pt-6 pb-2 text-center text-[10px] text-gray-300">系統技術支援：WaysLeader AI</p>;
+}
+
 function LessonCard({ lesson }: { lesson: Lesson | null }) {
   if (!lesson) return null;
   return (
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm">
       <div className="text-[15px] font-bold text-gray-800">{lesson.school}</div>
       <div className="mt-1 space-y-0.5 text-gray-600">
-        <div>{lesson.courseName}（{lesson.courseCode}）</div>
-        <div>上課日期：{lesson.date}｜老師：{lesson.teacherName}</div>
+        <div>{dateLabel(lesson.date)}｜{lesson.courseName}課程</div>
+        <div>授課老師：{lesson.teacherName} 老師</div>
       </div>
     </div>
   );
