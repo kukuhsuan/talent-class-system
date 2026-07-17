@@ -615,6 +615,36 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const action = params.get("action");
   const attendanceId = Number(params.get("id"));
 
+  // 課前會議出席回覆（會參加／無法參加），同步回後台
+  if (action === "meeting_reply") {
+    const attendeeId = Number(params.get("attId"));
+    const reply = params.get("reply") === "yes" ? "會參加" : "無法參加";
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
+    if (!teacher || !Number.isFinite(attendeeId)) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請聯絡行政確認。" }], token);
+      return;
+    }
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: number; teacherId: number }>>(
+      "SELECT id, teacherId FROM PreClassMeetingAttendee WHERE id = ? LIMIT 1",
+      attendeeId,
+    ).catch(() => []);
+    if (!rows[0] || Number(rows[0].teacherId) !== teacher.id) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到這場會議的通知紀錄，請聯絡行政確認。" }], token);
+      return;
+    }
+    await prisma.$executeRawUnsafe(
+      "UPDATE PreClassMeetingAttendee SET reply = ?, repliedAt = CURRENT_TIMESTAMP WHERE id = ?",
+      reply, attendeeId,
+    );
+    await replyMessage(replyToken, [{
+      type: "text",
+      text: reply === "會參加"
+        ? `✅ 已收到您的回覆：會參加課前會議，謝謝！`
+        : `已收到您的回覆：無法參加課前會議。若情況有變動，可再點選通知訊息中的按鈕更新回覆。`,
+    }], token);
+    return;
+  }
+
   if (action === "leave_select") {
     const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
     if (!teacher) {

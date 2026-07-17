@@ -23,6 +23,14 @@
     {
       "path": "/api/cron/check-teacher-arrival-reminders?slot=pm",
       "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/cron/pre-class-meeting?task=generate",
+      "schedule": "0 5 * * 4"
+    },
+    {
+      "path": "/api/cron/pre-class-meeting?task=remind",
+      "schedule": "30 0 * * *"
     }
   ]
 }
