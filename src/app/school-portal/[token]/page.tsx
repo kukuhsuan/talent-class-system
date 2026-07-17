@@ -327,19 +327,22 @@ export default function SchoolPortalPage() {
 
               {tab === "home" && (
                 <>
-                  <section className="mt-5">
-                    <CourseConfirmationForm
-                      value={confirmation}
-                      onChange={setConfirmation}
-                      onSave={saveConfirmation}
-                      onCopyPrevious={copyPreviousConfirmation}
-                      saving={savingConfirmation}
-                      message={confirmationMessage}
-                      termLabel={data.confirmationTerm?.label ?? ""}
-                      westernLabel={data.confirmationTerm?.westernLabel ?? ""}
-                      locked={confirmation.canSchoolEdit === false}
-                    />
-                  </section>
+                  {/* 開課前確認為幼兒園流程，安親班不顯示 */}
+                  {!data.school.type.includes("安親") && (
+                    <section className="mt-5">
+                      <CourseConfirmationForm
+                        value={confirmation}
+                        onChange={setConfirmation}
+                        onSave={saveConfirmation}
+                        onCopyPrevious={copyPreviousConfirmation}
+                        saving={savingConfirmation}
+                        message={confirmationMessage}
+                        termLabel={data.confirmationTerm?.label ?? ""}
+                        westernLabel={data.confirmationTerm?.westernLabel ?? ""}
+                        locked={confirmation.canSchoolEdit === false}
+                      />
+                    </section>
+                  )}
 
                   <section className="mt-5">
                     <PanelTitle title="本學期進度" subtitle="目前學到哪、已完成多少堂，一眼就能看懂。" />
