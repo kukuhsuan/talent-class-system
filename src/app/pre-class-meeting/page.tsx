@@ -148,7 +148,7 @@ export default function PreClassMeetingPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">課前會議</h1>
         <p className="mt-1 text-sm text-slate-500">
-          固定每週五 12:30～13:00 線上會議，通知下週有課教練；週四自動產生名單，請確認後再一鍵發送。
+          固定每週五 12:30～13:00 線上會議，通知下週有「安親班」課程的教練（幼兒園課不列入）；週四自動產生名單，請確認後再一鍵發送。
         </p>
       </div>
 

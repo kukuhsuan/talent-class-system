@@ -144,7 +144,9 @@ export type WeekTeacher = {
   courses: Array<{ date: string; school: string; courseType: string; time: string }>;
 };
 
-// 目標週（targetStart~targetEnd）內有課的教練與其課程（含主教與助教；已排出勤＋每週固定課）
+// 目標週（targetStart~targetEnd）內有「安親班」課的教練與其課程（含主教與助教；已排出勤＋每週固定課）
+// 只通知安親班：幼兒園課程不列入；教練若同時有安親班課仍會列入
+const AFTER_SCHOOL_ONLY = { department: { contains: "安親" } } as const;
 export async function weekTeacherMap(targetStart: string, targetEnd: string) {
   const byTeacher = new Map<number, WeekTeacher>();
   const push = (teacher: { id: number; name: string; lineUserId: string | null; lineRegion: string } | null | undefined, course: { date: string; school: string; courseType: string; time: string }) => {
@@ -163,14 +165,18 @@ export async function weekTeacherMap(targetStart: string, targetEnd: string) {
     if (iso > targetEnd || days.length >= 14) break;
     days.push(iso);
   }
+  // 「已有排定出勤」的課程整週只查一次（原本每天各掃一次 Attendance，是逾時主因之一）
+  const datedCourseIds = await courseIdsWithAnyAttendance(
+    { isActive: true, ...AFTER_SCHOOL_ONLY },
+    new Date(`${targetStart}T00:00:00.000Z`),
+  );
   const results = await Promise.all(days.map(async (iso) => {
     const { start, end } = dayBounds(iso);
     const dayName = dayNameOfIso(iso);
     const window = courseDateWindowWhere(iso);
-    const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...window }, new Date(`${iso}T00:00:00.000Z`));
     const [attendances, weekly] = await Promise.all([
       prisma.attendance.findMany({
-        where: { cancelled: false, date: { gte: start, lt: end }, course: { isActive: true, ...window } },
+        where: { cancelled: false, date: { gte: start, lt: end }, course: { isActive: true, ...AFTER_SCHOOL_ONLY, ...window } },
         include: {
           course: { select: { school: true, courseType: true, time: true } },
           actualTeacher: { select: { id: true, name: true, lineUserId: true, lineRegion: true } },
@@ -178,7 +184,7 @@ export async function weekTeacherMap(targetStart: string, targetEnd: string) {
         },
       }),
       prisma.course.findMany({
-        where: { isActive: true, ...window, dayOfWeek: dayName, ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}) },
+        where: { isActive: true, ...AFTER_SCHOOL_ONLY, ...window, dayOfWeek: dayName, ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}) },
         include: {
           teacher: { select: { id: true, name: true, lineUserId: true, lineRegion: true } },
           assistantTeacher: { select: { id: true, name: true, lineUserId: true, lineRegion: true } },
