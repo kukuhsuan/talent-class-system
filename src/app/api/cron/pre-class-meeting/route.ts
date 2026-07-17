@@ -14,6 +14,7 @@ import {
 } from "@/lib/preClassMeeting";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function appUrl() {
   return (process.env.NEXT_PUBLIC_APP_URL ?? "https://talent-class-system.vercel.app").replace(/\/$/, "");

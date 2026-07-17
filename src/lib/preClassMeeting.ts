@@ -156,9 +156,14 @@ export async function weekTeacherMap(targetStart: string, targetEnd: string) {
     byTeacher.set(teacher.id, item);
   };
 
+  // 效能：各天平行查詢，避免遠端資料庫序列來回造成頁面載入過慢
+  const days: string[] = [];
   for (let offset = 0; ; offset += 1) {
     const iso = addIsoDays(targetStart, offset);
-    if (iso > targetEnd) break;
+    if (iso > targetEnd || days.length >= 14) break;
+    days.push(iso);
+  }
+  const results = await Promise.all(days.map(async (iso) => {
     const { start, end } = dayBounds(iso);
     const dayName = dayNameOfIso(iso);
     const window = courseDateWindowWhere(iso);
@@ -180,6 +185,9 @@ export async function weekTeacherMap(targetStart: string, targetEnd: string) {
         },
       }),
     ]);
+    return { iso, attendances, weekly };
+  }));
+  for (const { iso, attendances, weekly } of results) {
     for (const att of attendances) {
       const course = { date: iso, school: att.course.school, courseType: att.course.courseType, time: att.scheduledTime || att.course.time || "" };
       push(att.actualTeacher, course);
@@ -198,12 +206,12 @@ export async function weekTeacherMap(targetStart: string, targetEnd: string) {
 export async function syncMeetingAttendees(meetingId: number, targetStart: string, targetEnd: string, source: "auto" | "late") {
   await ensurePreClassMeetingTables();
   const teacherMap = await weekTeacherMap(targetStart, targetEnd);
-  for (const { teacher } of teacherMap.values()) {
-    await prisma.$executeRawUnsafe(
+  await Promise.all([...teacherMap.values()].map(({ teacher }) =>
+    prisma.$executeRawUnsafe(
       "INSERT OR IGNORE INTO PreClassMeetingAttendee (meetingId, teacherId, source) VALUES (?, ?, ?)",
       meetingId, teacher.id, source,
-    );
-  }
+    ),
+  ));
   return teacherMap;
 }
 

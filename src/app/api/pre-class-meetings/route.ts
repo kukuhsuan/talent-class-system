@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { taipeiDateIso } from "@/lib/courseDates";
 import {
   ensurePreClassMeetingTables,
   ensureUpcomingMeetings,
@@ -8,6 +9,8 @@ import {
   syncMeetingAttendees,
   type MeetingRow,
 } from "@/lib/preClassMeeting";
+
+export const maxDuration = 60;
 
 // 課前會議清單（含參加者、下週課程明細、新增教練標示）
 export async function GET(req: NextRequest) {
@@ -19,17 +22,20 @@ export async function GET(req: NextRequest) {
     limit,
   )).map(normalizeMeetingRow);
 
-  const result = [];
-  for (const meeting of meetings) {
-    // 同步：目標週臨時新增課程的教練會補進名單（未通知＝「新增教練尚未通知」）
-    const teacherMap = await syncMeetingAttendees(meeting.id, meeting.targetStart, meeting.targetEnd, "late");
+  const today = taipeiDateIso();
+  const result = await Promise.all(meetings.map(async (meeting) => {
+    // 效能：只有「今天以後」的會議才做臨時教練同步；過往會議直接讀名單
+    const isUpcoming = meeting.meetingDate >= today;
+    const teacherMap = isUpcoming
+      ? await syncMeetingAttendees(meeting.id, meeting.targetStart, meeting.targetEnd, "late")
+      : new Map<number, { courses: Array<{ date: string; school: string; courseType: string; time: string }> }>();
     const attendees = await meetingAttendees(meeting.id);
     const teacherIds = attendees.map((row) => row.teacherId);
     const teachers = teacherIds.length
       ? await prisma.teacher.findMany({ where: { id: { in: teacherIds } }, select: { id: true, name: true, lineUserId: true } })
       : [];
     const teacherById = new Map(teachers.map((teacher) => [teacher.id, teacher]));
-    result.push({
+    return {
       ...meeting,
       attendees: attendees.map((row) => ({
         id: row.id,
@@ -45,8 +51,8 @@ export async function GET(req: NextRequest) {
         repliedAt: row.repliedAt,
         courses: teacherMap.get(row.teacherId)?.courses ?? [],
       })),
-    });
-  }
+    };
+  }));
   return NextResponse.json(result);
 }
 
