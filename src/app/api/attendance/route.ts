@@ -87,6 +87,29 @@ export async function GET(req: NextRequest) {
 
   const query = {
     where: where as Prisma.AttendanceWhereInput,
+    // 列表用不到的大欄位不回傳（回報詳情、AI 摘要、事件紀錄等），減少 Turso 傳輸與 JSON 體積
+    omit: {
+      skillFocus: true,
+      classStatus: true,
+      incident: true,
+      incidentChild: true,
+      incidentProcess: true,
+      incidentAction: true,
+      incidentNotified: true,
+      reportPhotos: true,
+      aiSummary: true,
+      aiSkillFocus: true,
+      aiTeachingNote: true,
+      schoolNotifyStatus: true,
+      schoolNotifyError: true,
+      schoolNotifiedAt: true,
+      scheduledSchoolId: true,
+      scheduledSchoolName: true,
+      scheduledAddress: true,
+      scheduledLocation: true,
+      payrollLockedAt: true,
+      createdAt: true,
+    },
     include: {
       course: {
         select: {
