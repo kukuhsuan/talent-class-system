@@ -14,7 +14,14 @@ type PortalData = {
   confirmationTerm?: { academicYear: number; semester: string; label: string; westernLabel: string };
   year: number;
   month: number;
-  summary: { reports: number; lessons: number; totalPeople: number; assessments: number };
+  summary: { reports: number; lessons: number; totalPeople: number; assessments: number; cancelledLessons?: number; reportedLessons?: number; reportRate?: number };
+  ratings?: Array<{
+    date: string; courseName: string; teacherName: string;
+    scorePunctuality: number; scoreTeaching: number; scoreOrder: number; scoreInteraction: number; scoreOverall: number;
+    continueWish: string; feedback: string;
+  }>;
+  invoice?: { invoiceMonth: string; status: string; totalAmount: number; taxType: string } | null;
+  generatedAt?: string;
   reports: Array<{
     id: number; date: string; school: string; courseType?: string; courseName: string; department: string; category: string; time: string; teacherName: string;
     studentCount: number; reportContent: string; skillFocus: string; classStatus: string; incident: boolean;
@@ -357,6 +364,54 @@ export default function SchoolPortalPage() {
                     <SummaryCard label="成果回報" value={data.summary.reports} helper="本月紀錄" icon="★" />
                     <SummaryCard label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
                   </section>
+
+                  {/* 園所看板：回報率／停課／請款（有資料才顯示） */}
+                  <section className="mt-3 grid grid-cols-3 gap-2 sm:mt-4 sm:gap-4">
+                    <SummaryCard label="回報完成率" value={`${data.summary.reportRate ?? 0}%`} helper="本月課後回報" icon="✓" />
+                    <SummaryCard label="本月停課" value={data.summary.cancelledLessons ?? 0} helper="停課堂數" icon="✕" />
+                    <SummaryCard
+                      label="本月請款"
+                      value={data.invoice ? `$${data.invoice.totalAmount.toLocaleString("zh-TW")}` : "—"}
+                      helper={data.invoice ? `${data.invoice.status}｜${data.invoice.taxType}` : "尚未產生請款單"}
+                      icon="＄"
+                    />
+                  </section>
+
+                  {/* 安親班：課程評分紀錄 */}
+                  {data.school.type.includes("安親") && (data.ratings?.length ?? 0) > 0 && (
+                    <section className="mt-5">
+                      <PanelTitle title="課程評分紀錄" subtitle="您填寫的課程滿意度回饋（近期）。" />
+                      <div className="mt-3 space-y-2">
+                        {(data.ratings ?? []).slice(0, 8).map((r, idx) => (
+                          <div key={idx} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-sm font-black text-[#142452]">{r.date}｜{r.courseName}</div>
+                              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                r.continueWish === "願意" ? "bg-green-100 text-green-700"
+                                : r.continueWish === "不建議" ? "bg-rose-100 text-rose-700"
+                                : "bg-amber-100 text-amber-700"
+                              }`}>{r.continueWish}</span>
+                            </div>
+                            <div className="mt-1 text-xs font-semibold text-slate-500">老師：{r.teacherName}</div>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                              <span>準時 {r.scorePunctuality}</span>
+                              <span>教學 {r.scoreTeaching}</span>
+                              <span>秩序 {r.scoreOrder}</span>
+                              <span>互動 {r.scoreInteraction}</span>
+                              <span className="font-bold text-blue-600">整體 {r.scoreOverall}</span>
+                            </div>
+                            {r.feedback && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-500">{r.feedback}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {data.generatedAt && (
+                    <p className="mt-5 text-center text-xs font-medium text-slate-400">
+                      資料更新時間：{new Date(data.generatedAt).toLocaleString("zh-TW", { hour12: false })}
+                    </p>
+                  )}
                 </>
               )}
             </>
@@ -1619,12 +1674,12 @@ function CertificateCards({ rows }: { rows: PortalData["assessments"] }) {
   );
 }
 
-function SummaryCard({ label, value, helper, icon }: { label: string; value: number; helper: string; icon: string }) {
+function SummaryCard({ label, value, helper, icon }: { label: string; value: number | string; helper: string; icon: string }) {
   return (
     <div className="relative overflow-hidden rounded-[16px] bg-white p-2.5 text-center shadow-[0_10px_24px_rgba(30,64,175,0.05)] ring-1 ring-slate-200/80 sm:rounded-[22px] sm:p-5 sm:text-left">
       <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-sm font-black text-blue-600 sm:mx-0 sm:h-14 sm:w-14 sm:rounded-2xl sm:text-xl">{icon}</div>
       <div className="mt-2 line-clamp-1 text-[11px] font-black text-[#142452] sm:mt-4 sm:text-sm">{label}</div>
-      <div className="mt-0.5 text-xl font-black text-blue-600 sm:mt-1 sm:text-4xl">{value.toLocaleString("zh-TW")}</div>
+      <div className="mt-0.5 text-xl font-black text-blue-600 sm:mt-1 sm:text-4xl">{typeof value === "number" ? value.toLocaleString("zh-TW") : value}</div>
       <div className="hidden mt-1 text-xs font-semibold text-slate-400 sm:block">{helper}</div>
     </div>
   );

@@ -18,6 +18,8 @@ import { getTeacherResume } from "@/lib/teacherResume";
 import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 import { attendanceHasCompletionData, courseChangeDisplay, courseChangeInclude, createCourseChangeRequest, parseChangeTypes, timeRange } from "@/lib/courseChangeRequests";
 import { pushAdminAlert } from "@/lib/systemAlerts";
+import { ensureCourseRatingTables, normalizeRatingRow, type CourseRatingRow } from "@/lib/courseRating";
+import { ensureSchoolInvoiceTables, invoiceMonthKey } from "@/lib/schoolInvoices";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
   if (row.studentCountA != null || row.studentCountB != null) return (row.studentCountA ?? 0) + (row.studentCountB ?? 0);
@@ -313,6 +315,52 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       };
     }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
 
+    // 園所看板：統計、安親班歷史評分、當月請款狀態
+    const isAfterSchoolPortal = String(school.type ?? "").includes("安親");
+    const cancelledLessons = records.filter((r) => r.cancelled).length;
+    const reportedLessons = records.filter((r) => !r.cancelled && r.reportContent.trim()).length;
+
+    let ratings: Array<{ date: string; courseName: string; teacherName: string; scorePunctuality: number; scoreTeaching: number; scoreOrder: number; scoreInteraction: number; scoreOverall: number; continueWish: string; feedback: string }> = [];
+    if (isAfterSchoolPortal && records.length) {
+      await ensureCourseRatingTables();
+      const ids = records.map((r) => r.id);
+      const rows = await prisma.$queryRawUnsafe<CourseRatingRow[]>(
+        `SELECT * FROM CourseRating WHERE status = 'submitted' AND attendanceId IN (${ids.map(() => "?").join(",")})`,
+        ...ids,
+      );
+      const byId = new Map(records.map((r) => [r.id, r]));
+      ratings = rows.map(normalizeRatingRow).map((row) => {
+        const record = byId.get(row.attendanceId)!;
+        return {
+          date: dateText(record.date),
+          courseName: courseLabel(record.course.courseType),
+          teacherName: record.actualTeacher.name,
+          scorePunctuality: row.scorePunctuality,
+          scoreTeaching: row.scoreTeaching,
+          scoreOrder: row.scoreOrder,
+          scoreInteraction: row.scoreInteraction,
+          scoreOverall: row.scoreOverall,
+          continueWish: row.continueWish,
+          feedback: row.feedback,
+        };
+      }).sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    let invoice: { invoiceMonth: string; status: string; totalAmount: number; taxType: string } | null = null;
+    try {
+      await ensureSchoolInvoiceTables();
+      const invoiceRows = await prisma.$queryRawUnsafe<Array<{ invoiceMonth: string; status: string; totalAmount: number | bigint; taxType: string }>>(
+        `SELECT "invoiceMonth", "status", "totalAmount", "taxType" FROM "SchoolInvoice" WHERE "schoolId" = ? AND "invoiceMonth" = ? AND "status" != '已作廢' ORDER BY id DESC LIMIT 1`,
+        schoolId,
+        invoiceMonthKey(selectedMonth.year, selectedMonth.month),
+      );
+      if (invoiceRows.length) {
+        invoice = { ...invoiceRows[0], totalAmount: Number(invoiceRows[0].totalAmount) };
+      }
+    } catch {
+      // 請款表尚未建立時不影響看板其他資料
+    }
+
     return NextResponse.json({
       school: {
         id: school.id,
@@ -337,7 +385,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         lessons: monthlyRows.length,
         totalPeople,
         assessments: assessments.length,
+        cancelledLessons,
+        reportedLessons,
+        reportRate: monthlyRows.length ? Math.round((reportedLessons / monthlyRows.length) * 100) : 0,
       },
+      ratings,
+      invoice,
+      generatedAt: new Date().toISOString(),
       reports,
       teachers,
       monthlyRows,
