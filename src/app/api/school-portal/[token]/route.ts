@@ -321,15 +321,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const reportedLessons = records.filter((r) => !r.cancelled && r.reportContent.trim()).length;
 
     let ratings: Array<{ date: string; courseName: string; teacherName: string; scorePunctuality: number; scoreTeaching: number; scoreOrder: number; scoreInteraction: number; scoreOverall: number; continueWish: string; feedback: string }> = [];
+    // 每堂課評分入口：待填寫（open）與已完成（submitted）狀態＋評分連結
+    let ratingTasks: Array<{ attendanceId: number; date: string; courseName: string; teacherName: string; status: string; ratingUrl: string }> = [];
     if (isAfterSchoolPortal && records.length) {
       await ensureCourseRatingTables();
       const ids = records.map((r) => r.id);
       const rows = await prisma.$queryRawUnsafe<CourseRatingRow[]>(
-        `SELECT * FROM CourseRating WHERE status = 'submitted' AND attendanceId IN (${ids.map(() => "?").join(",")})`,
+        `SELECT * FROM CourseRating WHERE attendanceId IN (${ids.map(() => "?").join(",")})`,
         ...ids,
       );
       const byId = new Map(records.map((r) => [r.id, r]));
-      ratings = rows.map(normalizeRatingRow).map((row) => {
+      const normalized = rows.map(normalizeRatingRow);
+      ratings = normalized.filter((row) => row.status === "submitted").map((row) => {
         const record = byId.get(row.attendanceId)!;
         return {
           date: dateText(record.date),
@@ -342,6 +345,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
           scoreOverall: row.scoreOverall,
           continueWish: row.continueWish,
           feedback: row.feedback,
+        };
+      }).sort((a, b) => b.date.localeCompare(a.date));
+      ratingTasks = normalized.filter((row) => row.status !== "closed").map((row) => {
+        const record = byId.get(row.attendanceId)!;
+        return {
+          attendanceId: row.attendanceId,
+          date: dateText(record.date),
+          courseName: courseLabel(record.course.courseType),
+          teacherName: record.actualTeacher.name,
+          status: row.status, // open=待填寫、submitted=已完成
+          ratingUrl: `/rating/${encodeURIComponent(row.token)}`,
         };
       }).sort((a, b) => b.date.localeCompare(a.date));
     }
@@ -390,6 +404,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         reportRate: monthlyRows.length ? Math.round((reportedLessons / monthlyRows.length) * 100) : 0,
       },
       ratings,
+      ratingTasks,
       invoice,
       generatedAt: new Date().toISOString(),
       reports,

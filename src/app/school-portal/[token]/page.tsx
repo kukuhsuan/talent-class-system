@@ -20,6 +20,7 @@ type PortalData = {
     scorePunctuality: number; scoreTeaching: number; scoreOrder: number; scoreInteraction: number; scoreOverall: number;
     continueWish: string; feedback: string;
   }>;
+  ratingTasks?: Array<{ attendanceId: number; date: string; courseName: string; teacherName: string; status: string; ratingUrl: string }>;
   invoice?: { invoiceMonth: string; status: string; totalAmount: number; taxType: string } | null;
   generatedAt?: string;
   reports: Array<{
@@ -64,7 +65,7 @@ type PortalChangeRequest = {
   course: { courseType: string }; teacher: { name: string }; targets: Array<{ attendanceId: number; originalDate: string }>;
 };
 
-type Tab = "home" | "teachers" | "changes" | "outcomes" | "progress" | "certificates";
+type Tab = "home" | "teachers" | "changes" | "outcomes" | "progress" | "certificates" | "ratings";
 type CourseConfirmation = {
   smallClassCount?: string;
   middleClassCount?: string;
@@ -125,6 +126,20 @@ export default function SchoolPortalPage() {
   const [teacherCourseFilter, setTeacherCourseFilter] = useState("");
   const [installEvent, setInstallEvent] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [showInstallHint, setShowInstallHint] = useState(false);
+
+  // 依園所類型顯示不同分頁：安親班以「評分」取代「證書」
+  const isAfterSchoolPortal = (data?.school.type ?? "").includes("安親");
+  const nav = useMemo<Array<{ id: Tab; label: string; icon: string }>>(
+    () => (isAfterSchoolPortal ? NAV.map((item) => (item.id === "certificates" ? { id: "ratings" as Tab, label: "評分", icon: "✎" } : item)) : NAV),
+    [isAfterSchoolPortal],
+  );
+  const pendingRatings = useMemo(() => (data?.ratingTasks ?? []).filter((t) => t.status === "open"), [data]);
+
+  // 分頁切換：立即回到頁面最上方，讓使用者確定有切換
+  const selectTab = (next: Tab) => {
+    setTab(next);
+    window.scrollTo({ top: 0 });
+  };
 
   // PWA：改用園所專屬 manifest，加入主畫面後直接開啟本園所看板
   useEffect(() => {
@@ -262,8 +277,8 @@ export default function SchoolPortalPage() {
         <aside className="hidden w-[218px] shrink-0 rounded-[26px] bg-white p-4 shadow-[0_16px_42px_rgba(30,64,175,0.08)] ring-1 ring-slate-200/80 lg:sticky lg:top-5 lg:block lg:h-[calc(100vh-40px)]">
           <BrandBlock />
           <nav className="mt-6 space-y-2">
-            {NAV.map((item) => (
-              <NavButton key={item.id} active={tab === item.id} icon={item.icon} label={item.label === "首頁" ? "首頁總覽" : item.label} onClick={() => setTab(item.id)} />
+            {nav.map((item) => (
+              <NavButton key={item.id} active={tab === item.id} icon={item.icon} label={item.label === "首頁" ? "首頁總覽" : item.label} onClick={() => selectTab(item.id)} />
             ))}
           </nav>
           <div className="mt-6 rounded-[24px] bg-[#f5f7fb] p-4 text-center ring-1 ring-slate-200/70">
@@ -278,8 +293,8 @@ export default function SchoolPortalPage() {
             <div className="h-full w-[82vw] max-w-sm rounded-r-[28px] bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <BrandBlock />
               <div className="mt-6 grid gap-2">
-                {NAV.map((item) => (
-                  <NavButton key={item.id} active={tab === item.id} icon={item.icon} label={item.label === "首頁" ? "首頁總覽" : item.label} onClick={() => { setTab(item.id); setMenuOpen(false); }} />
+                {nav.map((item) => (
+                  <NavButton key={item.id} active={tab === item.id} icon={item.icon} label={item.label === "首頁" ? "首頁總覽" : item.label} onClick={() => { selectTab(item.id); setMenuOpen(false); }} />
                 ))}
               </div>
             </div>
@@ -294,19 +309,35 @@ export default function SchoolPortalPage() {
               <div className="text-xs text-slate-500">幼兒園學習成果平台</div>
             </div>
             <div className="h-12 w-12 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <Image src="/upbear-logo.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" />
+              <Image src="/upbear-logo-sm.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "/icon-192.png"; }} />
             </div>
           </div>
 
           {loading || !data ? (
-            <div className="rounded-[30px] bg-white/90 p-12 text-center text-slate-400 shadow-sm">載入園所成果中...</div>
+            <div className="space-y-4">
+              {/* 骨架載入畫面：避免長時間空白 */}
+              <div className="animate-pulse rounded-[30px] bg-white/90 p-6 shadow-sm ring-1 ring-slate-200/60">
+                <div className="h-6 w-2/5 rounded-full bg-slate-200" />
+                <div className="mt-3 h-4 w-3/5 rounded-full bg-slate-100" />
+                <div className="mt-5 grid grid-cols-4 gap-2 sm:gap-4">
+                  {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-slate-100 sm:h-36" />)}
+                </div>
+              </div>
+              <div className="animate-pulse rounded-[30px] bg-white/90 p-6 shadow-sm ring-1 ring-slate-200/60">
+                <div className="h-5 w-1/3 rounded-full bg-slate-200" />
+                <div className="mt-4 space-y-3">
+                  {[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-2xl bg-slate-100" />)}
+                </div>
+              </div>
+              <p className="text-center text-xs font-semibold text-slate-400">正在載入園所資料…</p>
+            </div>
           ) : (
             <>
               <Hero data={data} year={year} month={month} setYear={setYear} setMonth={setMonth} />
 
               <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-slate-200/80 bg-[#f8fafc]/90 py-4 backdrop-blur lg:flex">
-                {NAV.map((item) => (
-                  <TabPill key={item.id} active={tab === item.id} onClick={() => setTab(item.id)} icon={item.icon}>{item.label}</TabPill>
+                {nav.map((item) => (
+                  <TabPill key={item.id} active={tab === item.id} onClick={() => selectTab(item.id)} icon={item.icon}>{item.label}</TabPill>
                 ))}
               </div>
 
@@ -374,10 +405,67 @@ export default function SchoolPortalPage() {
                   </div>
                 )}
 
-                {tab === "certificates" && (
+                {tab === "certificates" && !isAfterSchoolPortal && (
                   <div className="space-y-5">
                     <PanelTitle title="孩子學習成果 / 證書" subtitle="AI 發展報告、成長徽章與成果證書集中查看。" />
                     <CertificateCards rows={data.assessments} />
+                  </div>
+                )}
+
+                {tab === "ratings" && (
+                  <div className="space-y-4 sm:space-y-5">
+                    <PanelTitle title="課程評分" subtitle="每堂課結束後為老師評分（約 1 分鐘），幫助我們持續提升教學品質。" />
+
+                    {(data.ratingTasks?.length ?? 0) === 0 ? (
+                      <div className="rounded-[24px] bg-white p-10 text-center text-sm text-slate-400 ring-1 ring-slate-200/80">
+                        本月尚無可評分的課程，課程回報完成後就會出現在這裡。
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {(data.ratingTasks ?? []).map((t) => (
+                          <div key={t.attendanceId} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-black text-[#142452]">{t.date}｜{t.courseName}</div>
+                              <div className="mt-0.5 text-xs font-semibold text-slate-500">老師：{t.teacherName}</div>
+                            </div>
+                            {t.status === "open" ? (
+                              <a href={t.ratingUrl} className="shrink-0 rounded-full bg-blue-600 px-4 py-2 text-xs font-black text-white shadow-sm">開始評分</a>
+                            ) : (
+                              <span className="shrink-0 rounded-full bg-green-100 px-3 py-1.5 text-xs font-bold text-green-700">✓ 已完成</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {(data.ratings?.length ?? 0) > 0 && (
+                      <>
+                        <PanelTitle title="評分紀錄" subtitle="您先前填寫的課程滿意度回饋。" />
+                        <div className="space-y-2">
+                          {(data.ratings ?? []).map((r, idx) => (
+                            <div key={idx} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="text-sm font-black text-[#142452]">{r.date}｜{r.courseName}</div>
+                                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                  r.continueWish === "願意" ? "bg-green-100 text-green-700"
+                                  : r.continueWish === "不建議" ? "bg-rose-100 text-rose-700"
+                                  : "bg-amber-100 text-amber-700"
+                                }`}>{r.continueWish}</span>
+                              </div>
+                              <div className="mt-1 text-xs font-semibold text-slate-500">老師：{r.teacherName}</div>
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                                <span>準時 {r.scorePunctuality}</span>
+                                <span>教學 {r.scoreTeaching}</span>
+                                <span>秩序 {r.scoreOrder}</span>
+                                <span>互動 {r.scoreInteraction}</span>
+                                <span className="font-bold text-blue-600">整體 {r.scoreOverall}</span>
+                              </div>
+                              {r.feedback && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-500">{r.feedback}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -413,7 +501,9 @@ export default function SchoolPortalPage() {
                     <SummaryCard label="本月堂數" value={data.summary.lessons} helper="已完成課程" icon="▣" />
                     <SummaryCard label="本月總人數" value={data.summary.totalPeople} helper="累積參與" icon="◎" />
                     <SummaryCard label="成果回報" value={data.summary.reports} helper="本月紀錄" icon="★" />
-                    <SummaryCard label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />
+                    {isAfterSchoolPortal
+                      ? <SummaryCard label="待評分" value={pendingRatings.length} helper="待填寫評分" icon="✎" />
+                      : <SummaryCard label="學期成果" value={data.summary.assessments} helper="證書紀錄" icon="◇" />}
                   </section>
 
                   {/* 園所看板：回報率／停課／請款（有資料才顯示） */}
@@ -428,33 +518,20 @@ export default function SchoolPortalPage() {
                     />
                   </section>
 
-                  {/* 安親班：課程評分紀錄 */}
-                  {data.school.type.includes("安親") && (data.ratings?.length ?? 0) > 0 && (
-                    <section className="mt-5">
-                      <PanelTitle title="課程評分紀錄" subtitle="您填寫的課程滿意度回饋（近期）。" />
-                      <div className="mt-3 space-y-2">
-                        {(data.ratings ?? []).slice(0, 8).map((r, idx) => (
-                          <div key={idx} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="text-sm font-black text-[#142452]">{r.date}｜{r.courseName}</div>
-                              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                                r.continueWish === "願意" ? "bg-green-100 text-green-700"
-                                : r.continueWish === "不建議" ? "bg-rose-100 text-rose-700"
-                                : "bg-amber-100 text-amber-700"
-                              }`}>{r.continueWish}</span>
-                            </div>
-                            <div className="mt-1 text-xs font-semibold text-slate-500">老師：{r.teacherName}</div>
-                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-                              <span>準時 {r.scorePunctuality}</span>
-                              <span>教學 {r.scoreTeaching}</span>
-                              <span>秩序 {r.scoreOrder}</span>
-                              <span>互動 {r.scoreInteraction}</span>
-                              <span className="font-bold text-blue-600">整體 {r.scoreOverall}</span>
-                            </div>
-                            {r.feedback && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-500">{r.feedback}</p>}
-                          </div>
-                        ))}
-                      </div>
+                  {/* 安親班：待評分課程提醒 */}
+                  {isAfterSchoolPortal && pendingRatings.length > 0 && (
+                    <section className="mt-4">
+                      <button
+                        onClick={() => selectTab("ratings")}
+                        className="flex w-full items-center gap-3 rounded-2xl bg-amber-50 px-4 py-3.5 text-left ring-1 ring-amber-200"
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-lg">✎</span>
+                        <span className="flex-1">
+                          <span className="block text-sm font-black text-amber-800">您有 {pendingRatings.length} 堂課待評分</span>
+                          <span className="mt-0.5 block text-xs font-semibold text-amber-600">最近：{pendingRatings[0].date} {pendingRatings[0].courseName}（{pendingRatings[0].teacherName}）</span>
+                        </span>
+                        <span className="shrink-0 rounded-full bg-amber-500 px-4 py-2 text-xs font-black text-white">前往評分</span>
+                      </button>
                     </section>
                   )}
 
@@ -471,8 +548,11 @@ export default function SchoolPortalPage() {
       </div>
 
       <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-6 gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden">
-        {NAV.map((item) => (
-          <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-2xl px-1.5 py-2 text-center text-[10px] font-black ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
+        {nav.map((item) => (
+          <button key={item.id} onClick={() => selectTab(item.id)} className={`relative rounded-2xl px-1.5 py-2 text-center text-[10px] font-black transition-colors ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
+            {item.id === "ratings" && pendingRatings.length > 0 && (
+              <span className="absolute right-1 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{pendingRatings.length}</span>
+            )}
             <div className="text-base">{item.icon}</div>
             {item.label}
           </button>
@@ -1757,7 +1837,7 @@ function BrandBlock() {
   return (
     <div className="flex flex-col items-center border-b border-slate-200 pb-5 pt-3">
       <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-200">
-        <Image src="/upbear-logo.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" />
+        <Image src="/upbear-logo-sm.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "/icon-192.png"; }} />
       </div>
       <div className="mt-3 text-center text-lg font-black text-slate-900">WaysLeader AI</div>
       <div className="mt-1 text-xs font-bold text-slate-500">幼兒園學習成果平台</div>
