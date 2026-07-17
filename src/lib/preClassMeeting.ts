@@ -218,6 +218,15 @@ export async function syncMeetingAttendees(meetingId: number, targetStart: strin
       meetingId, teacher.id, source,
     ),
   ));
+  // 清理：自動加入但目標週已無安親班課的教練（例如只有幼兒園課、或課被取消），
+  // 尚未通知者直接移出名單；手動加入與已通知者不動
+  const keepIds = [...teacherMap.keys()];
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM PreClassMeetingAttendee
+     WHERE meetingId = ? AND source != 'manual' AND notifyStatus = '未通知' AND reply = '尚未回覆'
+       ${keepIds.length ? `AND teacherId NOT IN (${keepIds.map(() => "?").join(",")})` : ""}`,
+    meetingId, ...keepIds,
+  );
   return teacherMap;
 }
 

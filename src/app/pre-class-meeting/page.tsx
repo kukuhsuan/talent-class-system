@@ -134,6 +134,13 @@ export default function PreClassMeetingPage() {
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "操作失敗");
       showToast("success", method === "POST" ? "已加入名單" : "已移除", 2400);
+      if (method === "DELETE") {
+        // 立即從畫面移除，不等重新載入
+        setMeetings((prev) => prev.map((meeting) => meeting.id !== meetingId ? meeting : {
+          ...meeting,
+          attendees: meeting.attendees.map((row) => row.teacherId === teacherId ? { ...row, removed: true } : row),
+        }));
+      }
       await load();
     } catch (error) {
       showToast("error", (error as Error).message, 4000);
