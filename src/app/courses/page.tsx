@@ -26,6 +26,7 @@ type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
   school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string; payrollHours: number | null;
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
+  academicTermOverride?: string;
   courseConfirmationSummary?: string;
   recurrenceType?: string; startDate?: string | null; endDate?: string | null; weekday?: string;
   scheduledDates?: string[];
@@ -49,7 +50,7 @@ const DATE_MODES = [
 
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, assistantTeacherId: null as number | null, school: "", schoolId: null as number | null,
-  courseType: "", address: "", dayOfWeek: "星期一", time: "", payrollHours: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "",
+  courseType: "", address: "", dayOfWeek: "星期一", time: "", payrollHours: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "", academicTermOverride: "",
   dateMode: "multiple",
   scheduledDateText: "",
   scheduledDateYear: new Date().getFullYear(),
@@ -98,6 +99,30 @@ function courseDateSummary(dates?: string[]) {
   const unique = uniqueSortedDates(dates ?? []);
   if (unique.length === 0) return "—";
   return `${unique.slice(0, 6).map(formatMonthDay).join("、")}${unique.length > 6 ? ` 等 ${unique.length} 天` : ""}`;
+}
+
+function academicTermOfDate(iso?: string) {
+  if (!iso) return "未設定學期";
+  const [year, month] = iso.slice(0, 10).split("-").map(Number);
+  if (!year || !month) return "未設定學期";
+  return month >= 9 ? `${year - 1911}-1` : `${year - 1912}-2`;
+}
+
+function courseTerm(c: Course) {
+  if (c.academicTermOverride) return c.academicTermOverride;
+  const dates = uniqueSortedDates(c.scheduledDates ?? []);
+  const firstDate = dates[0] || c.startDate?.slice(0, 10) || undefined;
+  if (normalizeDepartment(c.department).includes("安親")) {
+    const year = Number(firstDate?.slice(0, 4));
+    return year ? `${year - 1911} 暑假` : "暑假課程";
+  }
+  return academicTermOfDate(firstDate);
+}
+
+function courseEnded(c: Course) {
+  const dates = uniqueSortedDates(c.scheduledDates ?? []);
+  const end = dates.at(-1) || c.endDate?.slice(0, 10) || "";
+  return Boolean(end && end < new Date().toISOString().slice(0, 10));
 }
 
 function inferWeeklyDates(dates: string[]) {
@@ -179,7 +204,7 @@ export default function CoursesPage() {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
-        includeDates: filterMonth ? "1" : "0",
+        includeDates: "1",
         includeConfirmation: "0",
       });
       const effectiveDept = filterDepartment || dept;
@@ -408,7 +433,7 @@ export default function CoursesPage() {
     const recurrenceDays = sanitizeCourseWeekdays(fullCourse.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [fullCourse.dayOfWeek || "星期一"]);
     setForm({ code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
       courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), category: normalizeCategory(fullCourse.category),
-      department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes,
+      department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes.replace(/\s*\[\[TERM:[^\]]+\]\]\s*/g, " ").trim(), academicTermOverride: fullCourse.academicTermOverride ?? "",
       dateMode, scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: dateMode === "weekly" ? [] : existingDates,
       rangeStart: dateMode === "range" ? recurrenceStart : "", rangeEnd: dateMode === "range" ? recurrenceEnd : "",
       recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays.length > 0 ? recurrenceDays : ["星期一"] });
@@ -627,6 +652,16 @@ export default function CoursesPage() {
               </select>
             </div>
             <div>
+              <label>課程期別</label>
+              <select value={form.academicTermOverride} onChange={(e) => setForm({ ...form, academicTermOverride: e.target.value })}>
+                <option value="">自動依上課日期判斷</option>
+                <option value="114-2">114-2</option>
+                <option value="115-1">115-1</option>
+                <option value="115 暑假">115 暑假</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-500">手動選擇會優先於系統判斷。</p>
+            </div>
+            <div>
               <label>報名人數</label>
               <input value={form.enrollCount} onChange={(e) => setForm({ ...form, enrollCount: e.target.value })} placeholder="10人" />
             </div>
@@ -819,7 +854,6 @@ export default function CoursesPage() {
                   {c.assistantTeacher && <div className="mt-1 text-xs text-blue-600">助教 {c.assistantTeacher.name}</div>}
                   <div className="mt-1 text-xs font-medium text-amber-700">日期：{courseDateSummary(c.scheduledDates)}</div>
                   <div className="mt-1 text-xs text-slate-500">{c.dayOfWeek}{c.time ? ` · ${c.time}` : ""}{c.payrollHours ? ` · 計薪 ${c.payrollHours}h` : ""}</div>
-                  {c.courseConfirmationSummary && <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-600 whitespace-pre-line">{c.courseConfirmationSummary}</div>}
                   {(c.scheduledDates?.length ?? 0) > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {c.scheduledDates!.slice(0, 4).map((d) => (
@@ -834,20 +868,15 @@ export default function CoursesPage() {
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {normalizeRegion(c.region) && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-600">{normalizeRegion(c.region)}</span>}
                 <span className={`rounded-full px-2 py-1 font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
-                {c.enrollCount && <span className="rounded-full bg-slate-50 px-2 py-1 text-slate-500">{c.enrollCount}</span>}
               </div>
               {c.address && <div className="mt-3 text-xs leading-5 text-slate-500">{c.address}</div>}
-              <div className="mt-4 flex gap-4">
-                <button onClick={() => edit(c)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
-                <Link href={`/course-change-requests?courseId=${c.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
-                <button onClick={() => del(c.id, c.code)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
-              </div>
+              <div className="mt-4"><CourseActions course={c} onEdit={edit} onDelete={del} /></div>
             </div>
           ))}
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1520px] text-sm">
+          <table className="w-full min-w-[1200px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="w-24 px-4 py-3 text-left font-semibold">編號</th>
@@ -860,9 +889,7 @@ export default function CoursesPage() {
                 <th className="w-32 px-4 py-3 text-left font-semibold">時間</th>
                 <th className="w-24 px-4 py-3 text-left font-semibold">計薪</th>
                 <th className="min-w-64 px-4 py-3 text-left font-semibold">地址</th>
-                <th className="w-64 px-4 py-3 text-left font-semibold">開課確認</th>
                 <th className="w-24 px-4 py-3 text-left font-semibold">類別</th>
-                <th className="w-28 px-4 py-3 text-left font-semibold">報名人數</th>
                 <th className="w-20 px-4 py-3 text-left font-semibold">狀態</th>
                 <th className="w-28 px-4 py-3 text-left font-semibold">操作</th>
               </tr>
@@ -870,9 +897,9 @@ export default function CoursesPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50/70">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{c.code}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap"><div>{c.code}</div><span className="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 font-sans text-[10px] font-bold text-indigo-700">{courseTerm(c)}</span></td>
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{normalizeRegion(c.region)}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{c.school}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{c.school}</td>
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
                     <div>主教：{displayTeacherName(c.teacher.name)}</div>
                     {c.assistantTeacher && <div className="mt-1 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600">助教：{c.assistantTeacher.name}</div>}
@@ -890,26 +917,42 @@ export default function CoursesPage() {
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.time || "—"}</td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.payrollHours ? `${c.payrollHours}h` : "自動估算"}</td>
                   <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-normal break-words">{c.address || "—"}</td>
-                  <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-pre-line">{c.courseConfirmationSummary || "—"}</td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span></td>
-                  <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{c.enrollCount || "—"}</td>
-                  <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span></td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive && !courseEnded(c) ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{!c.isActive ? "停課" : courseEnded(c) ? "學期結束" : "開課"}</span></td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-3 whitespace-nowrap">
-                      <button onClick={() => edit(c)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">編輯</button>
-                      <Link href={`/course-change-requests?courseId=${c.id}`} className="text-cyan-700 hover:text-cyan-900 text-sm font-medium">申請異動</Link>
-                      <button onClick={() => del(c.id, c.code)} className="text-red-500 hover:text-red-700 text-sm font-medium">刪除</button>
-                    </div>
+                    <CourseActions course={c} onEdit={edit} onDelete={del} />
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={15} className="text-center text-slate-400 py-8">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</td></tr>
+                <tr><td colSpan={13} className="text-center text-slate-400 py-8">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
     </div>
+  );
+}
+
+function CourseActions({ course, onEdit, onDelete }: { course: Course; onEdit: (course: Course) => void; onDelete: (id: number, code: string) => void }) {
+  const closeAndRun = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
+    const menu = event.currentTarget.closest("details");
+    if (menu) menu.open = false;
+    action();
+  };
+  const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50";
+  return (
+    <details className="relative inline-block text-left">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+        操作 <span className="text-slate-400" aria-hidden="true">▾</span>
+      </summary>
+      <div className="absolute right-0 z-30 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+        <button onClick={(event) => closeAndRun(event, () => onEdit(course))} className={itemClass}>編輯課程</button>
+        <Link href={`/course-change-requests?courseId=${course.id}`} className={itemClass}>申請課程異動</Link>
+        <div className="my-1 border-t border-slate-100" />
+        <button onClick={(event) => closeAndRun(event, () => onDelete(course.id, course.code))} className={`${itemClass} text-red-600 hover:bg-red-50`}>刪除課程</button>
+      </div>
+    </details>
   );
 }

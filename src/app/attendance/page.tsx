@@ -703,13 +703,7 @@ export default function AttendancePage() {
                           )}
                           {substitute && <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                           {(r.cancelReason || r.notes) && <div className="mt-2 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
-                          <div className="mt-4 flex gap-4">
-                            <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
-                            <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
-                            <a href={`/attendance/sign-in-sheet?id=${r.id}`} target="_blank" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">簽到表</a>
-                            {(r.course.department ?? "").includes("安親") && <button onClick={() => copyRatingLink(r)} className="text-sm font-medium text-amber-600 hover:text-amber-800">評分連結</button>}
-                            <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
-                          </div>
+                          <div className="mt-4 flex justify-end"><AttendanceActions row={r} onEdit={edit} onCopyRating={copyRatingLink} onDelete={del} /></div>
                         </div>
                       );
                     })}
@@ -776,13 +770,7 @@ export default function AttendancePage() {
                               </td>
                               <td className="max-w-[220px] truncate px-4 py-4 text-xs text-slate-500" title={r.hoursNeedsReview ? `上課時間需人工確認：${r.hoursReviewReason || ""}` : r.cancelReason || r.notes || ""}>{r.hoursNeedsReview ? "上課時間需人工確認" : r.cancelReason || r.notes || "-"}</td>
                               <td className="px-4 py-4">
-                                <div className="flex gap-4 whitespace-nowrap">
-                                  <button onClick={() => edit(r)} className="text-sm font-medium text-blue-600 hover:text-blue-800">編輯</button>
-                                  <Link href={`/course-change-requests?attendanceId=${r.id}`} className="text-sm font-medium text-cyan-700 hover:text-cyan-900">申請異動</Link>
-                                  <a href={`/attendance/sign-in-sheet?id=${r.id}`} target="_blank" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">簽到表</a>
-                                  {(r.course.department ?? "").includes("安親") && <button onClick={() => copyRatingLink(r)} className="text-sm font-medium text-amber-600 hover:text-amber-800">評分連結</button>}
-                                  <button onClick={() => del(r.id)} className="text-sm font-medium text-red-500 hover:text-red-700">刪除</button>
-                                </div>
+                                <AttendanceActions row={r} onEdit={edit} onCopyRating={copyRatingLink} onDelete={del} />
                               </td>
                             </tr>
                           );
@@ -803,4 +791,24 @@ export default function AttendancePage() {
       </div>
     </div>
   );
+}
+
+function AttendanceActions({ row, onEdit, onCopyRating, onDelete }: { row: Attendance; onEdit: (row: Attendance) => void; onCopyRating: (row: Attendance) => void; onDelete: (id: number) => void }) {
+  const run = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
+    const menu = event.currentTarget.closest("details");
+    if (menu) menu.open = false;
+    action();
+  };
+  const item = "block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50";
+  return <details className="relative inline-block text-left">
+    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">操作 <span aria-hidden="true" className="text-slate-400">▾</span></summary>
+    <div className="absolute right-0 z-30 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+      <button onClick={(event) => run(event, () => onEdit(row))} className={item}>編輯出勤紀錄</button>
+      <Link href={`/course-change-requests?attendanceId=${row.id}`} className={item}>申請課程異動</Link>
+      <a href={`/attendance/sign-in-sheet?id=${row.id}`} target="_blank" rel="noreferrer" className={item}>開啟簽到表</a>
+      {(row.course.department ?? "").includes("安親") && <button onClick={(event) => run(event, () => onCopyRating(row))} className={item}>複製評分連結</button>}
+      <div className="my-1 border-t border-slate-100" />
+      <button onClick={(event) => run(event, () => onDelete(row.id))} className={`${item} text-red-600 hover:bg-red-50`}>刪除紀錄</button>
+    </div>
+  </details>;
 }

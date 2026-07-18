@@ -58,7 +58,8 @@ let storageReady = false;
 export function currentConfirmationTerm(date = new Date()): ConfirmationTerm {
   const month = date.getMonth() + 1;
   const year = date.getFullYear();
-  if (month >= 7) return { academicYear: year - 1911, semester: "1" };
+  // 公司學期制：1–8 月為上一學年度第 2 學期，9 月起才進入新學年度第 1 學期。
+  if (month >= 9) return { academicYear: year - 1911, semester: "1" };
   return { academicYear: year - 1912, semester: "2" };
 }
 
@@ -99,10 +100,10 @@ export function previousConfirmationTerm(term: ConfirmationTerm): ConfirmationTe
 export function confirmationTermRange(term: ConfirmationTerm) {
   const startYear = term.academicYear + 1911;
   if (term.semester === "1") {
-    return { start: new Date(startYear, 7, 1), end: new Date(startYear + 1, 1, 1) };
+    return { start: new Date(startYear, 8, 1), end: new Date(startYear + 1, 0, 1) };
   }
   if (term.semester === "2") {
-    return { start: new Date(startYear + 1, 1, 1), end: new Date(startYear + 1, 6, 1) };
+    return { start: new Date(startYear + 1, 0, 1), end: new Date(startYear + 1, 8, 1) };
   }
   return { start: new Date(startYear + 1, 6, 1), end: new Date(startYear + 1, 7, 1) };
 }

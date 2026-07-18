@@ -105,8 +105,14 @@ export default function SchoolsPage() {
 
   async function del(id: number) {
     if (!confirm("確定刪除此園所？")) return;
-    await fetch(`/api/schools/${id}`, { method: "DELETE" });
-    fetchSchools();
+    try {
+      const res = await fetch(`/api/schools/${id}`, { method: "DELETE" });
+      await ensureOk(res, "園所刪除失敗");
+      await fetchSchools();
+      showToast("success", "園所已刪除");
+    } catch (e) {
+      showToast("error", (e as Error).message || "園所刪除失敗", 3000);
+    }
   }
 
   async function copyPortalLink(id: number) {
@@ -118,6 +124,18 @@ export default function SchoolsPage() {
       showToast("success", "園所端連結已複製");
     } catch (e) {
       showToast("error", (e as Error).message || "園所端連結產生失敗", 3000);
+    }
+  }
+
+  async function copyConfirmationLink(id: number) {
+    try {
+      const res = await fetch(`/api/schools/${id}/portal-link`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "開課確認連結產生失敗");
+      await navigator.clipboard.writeText(`${data.url}?confirmation=1`);
+      showToast("success", "園所開課確認連結已複製");
+    } catch (e) {
+      showToast("error", (e as Error).message || "開課確認連結產生失敗", 3000);
     }
   }
 
@@ -301,17 +319,11 @@ export default function SchoolsPage() {
                 <div className="min-w-0">
                   <div className="font-semibold text-slate-900">{s.name}</div>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">{s.type ? normalizeDepartment(s.type) : "未分類"}</span>
-                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{normalizeRegion(s.region) || "—"}</span>
+                    <span className="whitespace-nowrap rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">{s.type ? normalizeDepartment(s.type) : "未分類"}</span>
+                    <span className="whitespace-nowrap rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{normalizeRegion(s.region) || "—"}</span>
                   </div>
                 </div>
-                <div className="flex shrink-0 gap-3">
-                  <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-sm font-medium text-amber-600">評分</a>
-                  <button onClick={() => copyPortalLink(s.id)} className="text-sm font-medium text-emerald-600">連結</button>
-                  <button onClick={() => rotatePortalLink(s.id)} className="text-sm font-medium text-amber-600">重生</button>
-                  <button onClick={() => edit(s)} className="text-sm font-medium text-blue-600">編輯</button>
-                  <button onClick={() => del(s.id)} className="text-sm font-medium text-red-500">刪除</button>
-                </div>
+                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
               </div>
               <div className="mt-3 space-y-1 text-sm text-slate-500">
                 {s.address && <div>{s.address}</div>}
@@ -336,31 +348,26 @@ export default function SchoolsPage() {
               <th className="text-left px-4 py-3 font-medium">聯絡人</th>
               <th className="text-left px-4 py-3 font-medium">開課確認</th>
               <th className="text-left px-4 py-3 font-medium">LINE</th>
-              <th className="px-4 py-3"></th>
+              <th className="px-4 py-3 text-right font-medium">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {filtered.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{s.name}</td>
-                <td className="px-4 py-3"><span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs">{s.type ? normalizeDepartment(s.type) : "未分類"}</span></td>
-                <td className="px-4 py-3"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{normalizeRegion(s.region) || "—"}</span></td>
+                <td className="px-4 py-3"><span className="whitespace-nowrap bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs">{s.type ? normalizeDepartment(s.type) : "未分類"}</span></td>
+                <td className="px-4 py-3"><span className="whitespace-nowrap bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{normalizeRegion(s.region) || "—"}</span></td>
                 <td className="px-4 py-3 text-gray-500">{s.address || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.phone || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{s.contact || "—"}</td>
                 <td className="px-4 py-3 text-xs leading-5 text-slate-500">{s.courseConfirmationSummary || "—"}</td>
                 <td className="px-4 py-3">
                   {s.lineUserId
-                    ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已綁定</span>
-                    : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
+                    ? <span className="whitespace-nowrap rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已綁定</span>
+                    : <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
                 </td>
-                <td className="px-4 py-3 text-right space-x-2">
-                  <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-amber-600 hover:underline text-xs">歷史評分</a>
-                  <button onClick={() => setAuthSchool({ id: s.id, name: s.name })} className="text-indigo-600 hover:underline text-xs">驗證碼</button>
-                  <button onClick={() => copyPortalLink(s.id)} className="text-emerald-600 hover:underline text-xs">複製園所端連結</button>
-                  <button onClick={() => rotatePortalLink(s.id)} className="text-amber-600 hover:underline text-xs">重生連結</button>
-                  <button onClick={() => edit(s)} className="text-blue-600 hover:underline text-xs">編輯</button>
-                  <button onClick={() => del(s.id)} className="text-red-500 hover:underline text-xs">刪除</button>
+                <td className="px-4 py-3 text-right">
+                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
                 </td>
               </tr>
             ))}
@@ -374,6 +381,45 @@ export default function SchoolsPage() {
       <p className="text-xs text-gray-400 mt-3">本頁 {filtered.length} 間園所</p>
       {authSchool && <PortalAuthModal school={authSchool} onClose={() => setAuthSchool(null)} />}
     </div>
+  );
+}
+
+type SchoolActionsProps = {
+  school: School;
+  onEdit: (school: School) => void;
+  onAuth: (school: { id: number; name: string }) => void;
+  onCopyLink: (id: number) => void;
+  onCopyConfirmationLink: (id: number) => void;
+  onRotateLink: (id: number) => void;
+  onDelete: (id: number) => void;
+};
+
+function SchoolActions({ school, onEdit, onAuth, onCopyLink, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
+  const run = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
+    const menu = event.currentTarget.closest("details");
+    if (menu) menu.open = false;
+    action();
+  };
+  const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50";
+
+  return (
+    <details className="relative inline-block text-left">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200">
+        操作 <span aria-hidden="true" className="text-slate-400">▾</span>
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+        <button onClick={(event) => run(event, () => onEdit(school))} className={itemClass}>編輯園所資料</button>
+        <a href={`/ratings?school=${encodeURIComponent(school.name)}`} className={itemClass}>查看歷史評分</a>
+        <button onClick={(event) => run(event, () => onAuth({ id: school.id, name: school.name }))} className={itemClass}>管理園所驗證碼</button>
+        <button onClick={(event) => run(event, () => onCopyLink(school.id))} className={itemClass}>複製園所端連結</button>
+        {!normalizeDepartment(school.type).includes("安親") && (
+          <button onClick={(event) => run(event, () => onCopyConfirmationLink(school.id))} className={`${itemClass} font-semibold text-blue-700`}>複製開課確認連結</button>
+        )}
+        <div className="my-1 border-t border-slate-100" />
+        <button onClick={(event) => run(event, () => onRotateLink(school.id))} className={`${itemClass} text-amber-700`}>重新產生連結</button>
+        <button onClick={(event) => run(event, () => onDelete(school.id))} className={`${itemClass} text-red-600 hover:bg-red-50`}>刪除園所</button>
+      </div>
+    </details>
   );
 }
 
@@ -392,7 +438,7 @@ function PortalAuthModal({ school, onClose }: { school: { id: number; name: stri
       setStatus(data);
     } catch (e) { setError((e as Error).message); }
   }, [school.id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   async function act(action: "generate" | "disable" | "logoutAll") {
     if (action === "generate" && status?.enabled && !confirm("產生新驗證碼後，舊驗證碼會立即失效。確定要繼續？")) return;

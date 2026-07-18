@@ -396,6 +396,7 @@ async function compressReportPhoto(file: File) {
 }
 
 export default function TeacherReportPage() {
+  const [renderedAt] = useState(() => Date.now());
   const params = useParams<{ id: string }>();
   const [info, setInfo] = useState<ReportInfo | null>(null);
   const [form, setForm] = useState(EMPTY);
@@ -632,7 +633,7 @@ export default function TeacherReportPage() {
   ].filter(Boolean);
 
   // 48 小時補填期限倒數
-  const remainMs = info.reportExpiresAt && !locked && !done ? new Date(info.reportExpiresAt).getTime() - Date.now() : null;
+  const remainMs = info.reportExpiresAt && !locked && !done ? new Date(info.reportExpiresAt).getTime() - renderedAt : null;
   const remainLabel = remainMs != null && remainMs > 0
     ? remainMs >= 3600000
       ? `${Math.floor(remainMs / 3600000)} 小時 ${Math.floor((remainMs % 3600000) / 60000)} 分`

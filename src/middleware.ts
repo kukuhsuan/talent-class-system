@@ -6,7 +6,27 @@ const secret = new TextEncoder().encode(
   requiredAuthSecret()
 );
 
-const PUBLIC_EXACT = ["/login", "/api/setup", "/api/line/north", "/api/line/south", "/api/line/school", "/api/line/school2"];
+const PUBLIC_EXACT = [
+  "/login",
+  "/api/setup",
+  "/api/line/north",
+  "/api/line/south",
+  "/api/line/school",
+  "/api/line/school2",
+  // 園所分享頁與 PWA 在未登入狀態也必須能取得這些公開靜態資源。
+  "/sw.js",
+  "/offline.html",
+  "/manifest.webmanifest",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
+  "/upbear-logo.png",
+  "/upbear-logo-sm.png",
+  "/sports-leader-logo.png",
+  "/sports-leader-icon-192.png",
+  "/sports-leader-icon-512.png",
+  "/sports-monitor-logo.png",
+];
 const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/rating/", "/api/rating/"];
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
@@ -33,7 +53,11 @@ function isOwnerOnlyPath(path: string) {
 }
 
 function isSalaryPath(path: string) {
-  return path === "/salary"
+  return path === "/accounting"
+    || path.startsWith("/accounting/")
+    || path === "/api/accounting-month-end"
+    || path.startsWith("/api/accounting-month-end/")
+    || path === "/salary"
     || path.startsWith("/salary/")
     || path === "/api/salary"
     || path.startsWith("/api/salary/")

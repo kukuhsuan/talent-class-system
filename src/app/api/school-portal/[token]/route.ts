@@ -11,6 +11,10 @@ import {
   semesterWesternLabel,
   termLabel,
   upsertSchoolStartConfirmation,
+  confirmationTermRange,
+  listCourseStartConfirmationsBySchool,
+  createCourseStartConfirmation,
+  updateCourseStartConfirmation,
 } from "@/lib/courseConfirmation";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { writeAuditLog } from "@/lib/auditLog";
@@ -20,6 +24,7 @@ import { attendanceHasCompletionData, courseChangeDisplay, courseChangeInclude, 
 import { pushAdminAlert } from "@/lib/systemAlerts";
 import { ensureCourseRatingTables, normalizeRatingRow, openEligibleRatings, type CourseRatingRow } from "@/lib/courseRating";
 import { ensureSchoolInvoiceTables, invoiceMonthKey } from "@/lib/schoolInvoices";
+import { courseTermOverride } from "@/lib/courseTerm";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
   if (row.studentCountA != null || row.studentCountB != null) return (row.studentCountA ?? 0) + (row.studentCountB ?? 0);
@@ -112,6 +117,41 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
     const courseConfirmation = await getSchoolStartConfirmation(schoolId, term);
     const history = courseConfirmation.id ? await confirmationHistory(courseConfirmation.id) : [];
+
+    if (searchParams.get("confirmationOnly") === "1") {
+      const termRange = confirmationTermRange(term);
+      const [courses, confirmations] = await Promise.all([
+        prisma.course.findMany({
+          where: {
+            isActive: true,
+            OR: [{ schoolId }, { school: school.name }],
+          },
+          select: {
+            id: true, code: true, courseType: true, notes: true,
+            teacher: { select: { name: true } },
+            attendances: { where: { date: { gte: termRange.start, lt: termRange.end } }, select: { id: true }, take: 1 },
+          },
+          orderBy: [{ courseType: "asc" }, { code: "asc" }],
+        }),
+        listCourseStartConfirmationsBySchool(schoolId, term),
+      ]);
+      const byCourse = new Map(confirmations.map((item) => [item.courseId, item]));
+      const currentTermLabel = `${term.academicYear}-${term.semester}`;
+      const currentCourses = courses.filter((course) => {
+        const override = courseTermOverride(course.notes);
+        return override ? override === currentTermLabel : course.attendances.length > 0;
+      });
+      return NextResponse.json({
+        school: { name: school.name, type: school.type },
+        confirmationTerm: { ...term, label: termLabel(term), westernLabel: semesterWesternLabel(term) },
+        confirmationCourses: currentCourses.map((course) => ({
+          id: course.id,
+          label: `${courseTermOverride(course.notes) || currentTermLabel}｜${courseLabel(course.courseType) || course.courseType}（${course.code}）`,
+          teacherName: course.teacher.name,
+          confirmation: byCourse.get(course.id) ?? null,
+        })),
+      }, { headers: { "Cache-Control": "private, max-age=30" } });
+    }
 
     const records = await prisma.attendance.findMany({
       where: {
@@ -502,6 +542,34 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     const { schoolId } = await resolveSchoolPortalParam(token);
     const body = await req.json().catch(() => ({}));
     const term = parseConfirmationTerm(body.confirmationTerm ?? body);
+    const courseId = Number(body.courseId);
+    if (Number.isFinite(courseId) && courseId > 0) {
+      const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } });
+      if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
+      const course = await prisma.course.findFirst({
+        where: { id: courseId, OR: [{ schoolId }, { school: school.name }] },
+        select: { id: true, courseType: true, teacherId: true, teacher: { select: { name: true } } },
+      });
+      if (!course) return NextResponse.json({ error: "找不到這堂課程" }, { status: 404 });
+      const range = confirmationTermRange(term);
+      const attendance = await prisma.attendance.findFirst({
+        where: { courseId, date: { gte: range.start, lt: range.end } },
+        orderBy: { date: "asc" },
+      });
+      if (!attendance) return NextResponse.json({ error: "這堂課本學期尚無上課日期，請先完成排課" }, { status: 400 });
+      const existing = (await listCourseStartConfirmationsBySchool(schoolId, term)).find((item) => item.courseId === courseId);
+      const form = body.courseConfirmation ?? body;
+      const location = form.location === "其他" ? form.otherLocation : form.location;
+      const classNotes = [form.classNotes, form.rainyLocation ? `雨天：${form.rainyLocation}` : "", form.otherReminders].filter(Boolean).join("；");
+      const saved = existing
+        ? await updateCourseStartConfirmation(existing.id, { ...form, location, classNotes })
+        : await createCourseStartConfirmation({
+            attendanceId: attendance.id, schoolId, courseId, courseName: courseLabel(course.courseType), schoolName: school.name,
+            date: attendance.date.toISOString().slice(0, 10), teacherId: course.teacherId, teacherName: course.teacher.name,
+            ...form, location, classNotes,
+          });
+      return NextResponse.json({ ok: true, courseConfirmation: saved });
+    }
     const [school, current] = await Promise.all([
       prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } }),
       getSchoolStartConfirmation(schoolId, term),

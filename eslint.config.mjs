@@ -9,10 +9,19 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".next 2/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "**/* 2.ts",
+    "**/* 2.tsx",
   ]),
+  {
+    rules: {
+      // 資料頁在 effect 內啟動非同步載入是刻意的同步點；此規則會把正常 loader 全部誤判。
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

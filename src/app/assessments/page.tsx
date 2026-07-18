@@ -88,7 +88,7 @@ export default function AssessmentsPage() {
           <p className="text-sm text-slate-500">查看幼兒運動評量、AI 成長評語與電子證書</p>
         </div>
         {batchUrl && (
-          <Link href={batchUrl} className="rounded-lg bg-[#0756B7] px-4 py-2 text-sm font-semibold text-white">
+          <Link href={batchUrl} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
             批次產生證書 / PDF
           </Link>
         )}
@@ -147,10 +147,10 @@ export default function AssessmentsPage() {
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-[#3F6B55]">平均 {avg.toFixed(1)} 分</span>
                   <div className="flex flex-wrap gap-2">
-                    <Link href={`/assessments/${row.id}/certificate`} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">查看</Link>
-                    <Link href={`/assessments/${row.id}/certificate`} className="rounded-lg bg-[#B68A4C] px-3 py-2 text-sm font-semibold text-white">下載 PDF</Link>
-                    <button onClick={() => regenerateAssessment(row.id)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600">重新產生</button>
-                    <button onClick={() => deleteAssessment(row.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600">刪除</button>
+                    <Link href={`/assessments/${row.id}/certificate`} className="whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">查看</Link>
+                    <Link href={`/assessments/${row.id}/certificate`} className="whitespace-nowrap rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">下載 PDF</Link>
+                    <button onClick={() => regenerateAssessment(row.id)} className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">重新產生</button>
+                    <button onClick={() => deleteAssessment(row.id)} className="whitespace-nowrap rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">刪除</button>
                   </div>
                 </div>
               </div>

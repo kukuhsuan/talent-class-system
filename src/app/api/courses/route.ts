@@ -11,6 +11,7 @@ import { WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 import { recurrenceFields } from "@/lib/courseRecurrence";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
 import { writeAuditLog } from "@/lib/auditLog";
+import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -115,6 +116,7 @@ export async function GET(req: NextRequest) {
     : null;
   const items = courses.map((course) => ({
     ...course,
+    academicTermOverride: courseTermOverride(course.notes),
     payrollHours: course.payrollHours ?? null,
     courseConfirmationSummary: includeConfirmation && course.schoolId ? courseConfirmationSummary(confirmationMap?.get(course.schoolId), { multiline: true, includeTerm: true }) : "",
     scheduledDates: "attendances" in course ? [...new Set(course.attendances.map((a) => a.date.toISOString().slice(0, 10)))] : [],
@@ -177,7 +179,7 @@ export async function POST(req: NextRequest) {
         department: normalizeDepartment(data.department),
         enrollCount: data.enrollCount ?? "",
         isActive: data.isActive ?? true,
-        notes: data.notes ?? "",
+        notes: notesWithCourseTerm(data.notes, data.academicTermOverride),
       },
       include: { teacher: true, assistantTeacher: true },
     });

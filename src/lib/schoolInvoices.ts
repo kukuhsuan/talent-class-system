@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
-import { courseLabel } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 import { WEEKDAYS } from "@/lib/courseDates";
 import {
   defaultInvoiceBrand,
@@ -328,7 +328,7 @@ export async function buildSchoolInvoicePreview(input: {
   if (!school) throw new Error("找不到園所");
 
   const { start, end } = monthBounds(input.year, input.month);
-  const rows = await prisma.attendance.findMany({
+  const rawRows = await prisma.attendance.findMany({
     where: {
       date: { gte: start, lt: end },
       cancelled: false,
@@ -344,6 +344,8 @@ export async function buildSchoolInvoicePreview(input: {
     },
     orderBy: [{ date: "asc" }, { id: "asc" }],
   }) as unknown as AttendanceForInvoice[];
+  // Demo 是公司推廣成本，只支付老師 Demo 費，不得向園所請款。
+  const rows = rawRows.filter((row) => normalizeCategory(row.category || row.course.category) !== "Demo");
 
   const scheduledTimeMap = await attendanceScheduledTimeMap(rows.map((row) => row.id));
   const unitPrices = normalizeUnitPrices(input.unitPrices);
@@ -472,6 +474,9 @@ export async function createSchoolInvoice(input: {
   }
 
   const preview = await buildSchoolInvoicePreview(input);
+  if (preview.items.length === 0) {
+    throw new Error("本月沒有可請款課程；Demo 只計入老師薪資，不可向園所請款");
+  }
   const status = input.status === "草稿" ? "草稿" : "已產生";
   const invoiceDate = new Date().toISOString();
 
