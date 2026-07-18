@@ -13,6 +13,7 @@ type PortalData = {
   courseConfirmation?: CourseConfirmation;
   courseConfirmationHistory?: Array<{ id: number; teacherName: string; note: string; createdAt: string }>;
   confirmationTerm?: { academicYear: number; semester: string; label: string; westernLabel: string };
+  confirmationCourses?: Array<{ id: number; label: string; teacherName: string; confirmation: Record<string, unknown> | null }>;
   year: number;
   month: number;
   summary: { reports: number; lessons: number; totalPeople: number; assessments: number; cancelledLessons?: number; reportedLessons?: number; reportRate?: number };
@@ -118,6 +119,11 @@ export default function SchoolPortalPage() {
   const params = useParams<{ token: string }>();
   const [summary, setSummary] = useState<PortalSummary | null>(null);
   const [gateError, setGateError] = useState("");
+  const [standaloneConfirmation, setStandaloneConfirmation] = useState(false);
+
+  useEffect(() => {
+    setStandaloneConfirmation(new URLSearchParams(window.location.search).get("confirmation") === "1");
+  }, []);
 
   const loadSummary = () => {
     setGateError("");
@@ -160,10 +166,10 @@ export default function SchoolPortalPage() {
     );
   }
   if (summary.isAfterSchool) return <AfterSchoolPortal token={params.token} summary={summary} />;
-  return <KindergartenPortal />;
+  return <KindergartenPortal standaloneConfirmation={standaloneConfirmation} />;
 }
 
-function KindergartenPortal() {
+function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConfirmation?: boolean }) {
   const params = useParams<{ token: string }>();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -175,6 +181,7 @@ function KindergartenPortal() {
   const [confirmation, setConfirmation] = useState<CourseConfirmation>(EMPTY_CONFIRMATION);
   const [savingConfirmation, setSavingConfirmation] = useState(false);
   const [confirmationMessage, setConfirmationMessage] = useState("");
+  const [selectedConfirmationCourseId, setSelectedConfirmationCourseId] = useState<number | null>(null);
   const [teacherSearch, setTeacherSearch] = useState("");
   const [teacherCourseFilter, setTeacherCourseFilter] = useState("");
   const [installEvent, setInstallEvent] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
@@ -245,7 +252,7 @@ function KindergartenPortal() {
     void Promise.resolve().then(() => {
       setLoading(true);
       setError("");
-      fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}`)
+      fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}${standaloneConfirmation ? "&confirmationOnly=1" : ""}`)
         .then(async (res) => {
           const body = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(body.error || "讀取園所資料失敗");
@@ -254,7 +261,9 @@ function KindergartenPortal() {
         .then((body) => {
           if (!cancelled) {
             setData(body);
-            setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? {}) });
+            const firstCourse = body.confirmationCourses?.[0];
+            setSelectedConfirmationCourseId(firstCourse?.id ?? null);
+            setConfirmation({ ...EMPTY_CONFIRMATION, ...(firstCourse?.confirmation ?? body.courseConfirmation ?? {}) });
           }
         })
         .catch((e) => { if (!cancelled) setError((e as Error).message || "讀取園所資料失敗"); })
@@ -263,7 +272,7 @@ function KindergartenPortal() {
     return () => {
       cancelled = true;
     };
-  }, [params.token, year, month]);
+  }, [params.token, year, month, standaloneConfirmation]);
 
   const recentReports = useMemo(() => (data?.reports ?? []).slice(0, 3), [data]);
   const learningMaps = useMemo(() => buildLearningMaps(data?.reports ?? [], data?.curriculum ?? []), [data]);
@@ -292,7 +301,7 @@ function KindergartenPortal() {
 
   async function saveConfirmation() {
     if (confirmation.canSchoolEdit === false) return;
-    const confirmed = window.confirm("送出後園所端將無法自行修改，若資料有異動，請聯繫行政協助調整。\n確定要送出嗎？");
+    const confirmed = window.confirm(standaloneConfirmation ? "確定送出這堂課的開課資料嗎？" : "送出後園所端將無法自行修改，若資料有異動，請聯繫行政協助調整。\n確定要送出嗎？");
     if (!confirmed) return;
     setSavingConfirmation(true);
     setConfirmationMessage("");
@@ -300,12 +309,16 @@ function KindergartenPortal() {
       const res = await fetch(`/api/school-portal/${encodeURIComponent(params.token)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseConfirmation: confirmation, confirmationTerm: data?.confirmationTerm }),
+        body: JSON.stringify({ courseId: standaloneConfirmation ? selectedConfirmationCourseId : undefined, courseConfirmation: confirmation, confirmationTerm: data?.confirmationTerm }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "送出失敗");
       setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? confirmation) });
-      setData((current) => current ? { ...current, ...body } : current);
+      setData((current) => current ? {
+        ...current,
+        ...body,
+        confirmationCourses: current.confirmationCourses?.map((course) => course.id === selectedConfirmationCourseId ? { ...course, confirmation: body.courseConfirmation } : course),
+      } : current);
       setConfirmationMessage("已送出確認");
     } catch (e) {
       setConfirmationMessage((e as Error).message || "送出失敗");
@@ -336,25 +349,70 @@ function KindergartenPortal() {
   }
 
   if (error) {
-    return <div className="min-h-screen bg-[#F2F8FF] px-5 py-16 text-center text-rose-500">{error}</div>;
+    return <div className="min-h-screen bg-[#FAF6EF] px-5 py-16 text-center text-rose-500">{error}</div>;
+  }
+
+  if (standaloneConfirmation) {
+    return (
+      <div className="min-h-screen bg-[#FAF6EF] px-3 py-5 text-[#3E332B] sm:px-5">
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-4 rounded-[24px] border border-[#EBE1D3] bg-white p-5 text-center shadow-sm">
+            <div className="text-xs font-black tracking-wider text-[#A9552F]">WAYSLEADER AI</div>
+            <h1 className="mt-2 text-xl font-black">{data?.school.name ?? "園所開課資料確認"}</h1>
+            <p className="mt-1 text-sm text-[#8B7B6A]">請填寫本學期開課資料，送出後會直接提供給行政與授課老師。</p>
+          </div>
+          {loading || !data ? (
+            <div className="rounded-[24px] bg-white p-8 text-center text-sm text-[#8B7B6A]">資料載入中…</div>
+          ) : (
+            <div className="space-y-4">
+              {(data.confirmationCourses?.length ?? 0) > 0 ? (
+                <div className="rounded-[24px] border border-[#EBE1D3] bg-white p-4 shadow-sm">
+                  <label className="mb-2 block text-sm font-black text-[#57493C]">請選擇要填寫的課程</label>
+                  <select value={selectedConfirmationCourseId ?? ""} onChange={(event) => {
+                    const id = Number(event.target.value);
+                    setSelectedConfirmationCourseId(id);
+                    const selected = data.confirmationCourses?.find((course) => course.id === id);
+                    setConfirmation({ ...EMPTY_CONFIRMATION, ...(selected?.confirmation ?? {}) });
+                    setConfirmationMessage("");
+                  }} className="w-full rounded-xl border border-[#EBE1D3] bg-white px-4 py-3 text-base font-bold">
+                    {data.confirmationCourses?.map((course) => <option key={course.id} value={course.id}>{course.label}｜{course.teacherName}</option>)}
+                  </select>
+                  {data.confirmationCourses!.length > 1 && <p className="mt-2 text-xs text-[#8B7B6A]">每一堂課請分別選擇並送出資料。</p>}
+                </div>
+              ) : <div className="rounded-[24px] bg-amber-50 p-5 text-center text-sm font-bold text-amber-700">目前找不到本學期課程，請聯繫行政先完成排課。</div>}
+              {selectedConfirmationCourseId && <CourseConfirmationForm
+                value={confirmation}
+                onChange={setConfirmation}
+                onSave={saveConfirmation}
+                saving={savingConfirmation}
+                message={confirmationMessage}
+                termLabel={data.confirmationTerm?.label ?? ""}
+                westernLabel={data.confirmationTerm?.westernLabel ?? ""}
+                locked={false}
+              />}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-[#142452]">
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_6%,rgba(96,165,250,0.16),transparent_24%),linear-gradient(180deg,#f8fafc_0%,#eef4ff_42%,#f8fafc_100%)]" />
+    <div className="min-h-screen bg-[#FAF6EF] text-[#3E332B]">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_6%,rgba(217,151,88,0.14),transparent_24%),linear-gradient(180deg,#FAF6EF_0%,#F6EBDD_42%,#FAF6EF_100%)]" />
 
       <div className="relative mx-auto flex min-h-screen max-w-[1440px] gap-7 px-3 pb-24 pt-3 sm:px-5 lg:px-7 lg:pb-8">
-        <aside className="hidden w-[218px] shrink-0 rounded-[26px] bg-white p-4 shadow-[0_16px_42px_rgba(30,64,175,0.08)] ring-1 ring-slate-200/80 lg:sticky lg:top-5 lg:block lg:h-[calc(100vh-40px)]">
+        <aside className="hidden w-[218px] shrink-0 rounded-[26px] bg-white p-4 shadow-[0_16px_42px_rgba(154,94,50,0.08)] ring-1 ring-[#EBE1D3]/80 lg:sticky lg:top-5 lg:block lg:h-[calc(100vh-40px)]">
           <BrandBlock />
           <nav className="mt-6 space-y-2">
             {nav.map((item) => (
               <NavButton key={item.id} active={tab === item.id} icon={item.icon} label={item.label === "首頁" ? "首頁總覽" : item.label} onClick={() => selectTab(item.id)} />
             ))}
           </nav>
-          <div className="mt-6 rounded-[24px] bg-[#f5f7fb] p-4 text-center ring-1 ring-slate-200/70">
-            <div className="mx-auto h-10 w-10 rounded-2xl bg-blue-100" />
-            <p className="mt-3 text-sm font-black text-slate-800">AI 學習成果平台</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">快速查看孩子成長、課程進度與學期證書</p>
+          <div className="mt-6 rounded-[24px] bg-[#F7F1E8] p-4 text-center ring-1 ring-[#EBE1D3]/70">
+            <div className="mx-auto h-10 w-10 rounded-2xl bg-[#F5E3D0]" />
+            <p className="mt-3 text-sm font-black text-[#4A3E33]">AI 學習成果平台</p>
+            <p className="mt-1 text-xs leading-5 text-[#8B7B6A]">快速查看孩子成長、課程進度與學期證書</p>
           </div>
         </aside>
 
@@ -372,13 +430,13 @@ function KindergartenPortal() {
         )}
 
         <main className="min-w-0 flex-1">
-          <div className="mb-4 flex items-center justify-between rounded-[22px] bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/80 lg:hidden">
-            <button onClick={() => setMenuOpen(true)} className="rounded-2xl bg-blue-50 px-4 py-3 text-lg font-black text-blue-700">☰</button>
+          <div className="mb-4 flex items-center justify-between rounded-[22px] bg-white px-4 py-3 shadow-sm ring-1 ring-[#EBE1D3]/80 lg:hidden">
+            <button onClick={() => setMenuOpen(true)} className="rounded-2xl bg-[#FBF0E4] px-4 py-3 text-lg font-black text-[#A9552F]">☰</button>
             <div className="text-center">
-              <div className="text-sm font-black text-slate-900">WaysLeader AI</div>
-              <div className="text-xs text-slate-500">幼兒園學習成果平台</div>
+              <div className="text-sm font-black text-[#3E332B]">WaysLeader AI</div>
+              <div className="text-xs text-[#8B7B6A]">幼兒園學習成果平台</div>
             </div>
-            <div className="h-12 w-12 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+            <div className="h-12 w-12 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-[#EBE1D3]">
               <Image src="/upbear-logo-sm.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "/icon-192.png"; }} />
             </div>
           </div>
@@ -386,33 +444,33 @@ function KindergartenPortal() {
           {loading || !data ? (
             <div className="space-y-4">
               {/* 骨架載入畫面：避免長時間空白 */}
-              <div className="animate-pulse rounded-[30px] bg-white/90 p-6 shadow-sm ring-1 ring-slate-200/60">
-                <div className="h-6 w-2/5 rounded-full bg-slate-200" />
-                <div className="mt-3 h-4 w-3/5 rounded-full bg-slate-100" />
+              <div className="animate-pulse rounded-[30px] bg-white/90 p-6 shadow-sm ring-1 ring-[#EBE1D3]/60">
+                <div className="h-6 w-2/5 rounded-full bg-[#EBE1D3]" />
+                <div className="mt-3 h-4 w-3/5 rounded-full bg-[#F3ECE1]" />
                 <div className="mt-5 grid grid-cols-4 gap-2 sm:gap-4">
-                  {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-slate-100 sm:h-36" />)}
+                  {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-[#F3ECE1] sm:h-36" />)}
                 </div>
               </div>
-              <div className="animate-pulse rounded-[30px] bg-white/90 p-6 shadow-sm ring-1 ring-slate-200/60">
-                <div className="h-5 w-1/3 rounded-full bg-slate-200" />
+              <div className="animate-pulse rounded-[30px] bg-white/90 p-6 shadow-sm ring-1 ring-[#EBE1D3]/60">
+                <div className="h-5 w-1/3 rounded-full bg-[#EBE1D3]" />
                 <div className="mt-4 space-y-3">
-                  {[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-2xl bg-slate-100" />)}
+                  {[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-2xl bg-[#F3ECE1]" />)}
                 </div>
               </div>
-              <p className="text-center text-xs font-semibold text-slate-400">正在載入園所資料…</p>
+              <p className="text-center text-xs font-semibold text-[#A8998A]">正在載入園所資料…</p>
             </div>
           ) : (
             <>
               <Hero data={data} year={year} month={month} setYear={setYear} setMonth={setMonth} />
 
-              <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-slate-200/80 bg-[#f8fafc]/90 py-4 backdrop-blur lg:flex">
+              <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-[#EBE1D3]/80 bg-[#FAF6EF]/90 py-4 backdrop-blur lg:flex">
                 {nav.map((item) => (
                   <TabPill key={item.id} active={tab === item.id} onClick={() => selectTab(item.id)} icon={item.icon}>{item.label}</TabPill>
                 ))}
               </div>
 
               {showInstallHint && (
-                <div className="mt-3 flex items-center gap-3 rounded-2xl bg-blue-600 px-4 py-3 text-white shadow-md">
+                <div className="mt-3 flex items-center gap-3 rounded-2xl bg-[#C06B3E] px-4 py-3 text-white shadow-md">
                   <span className="text-xl">📲</span>
                   <div className="flex-1 text-xs font-semibold leading-5">
                     {installEvent
@@ -422,7 +480,7 @@ function KindergartenPortal() {
                   {installEvent && (
                     <button
                       onClick={() => { void installEvent.prompt(); dismissInstallHint(); }}
-                      className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-blue-700"
+                      className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-[#A9552F]"
                     >
                       安裝
                     </button>
@@ -502,25 +560,25 @@ function KindergartenPortal() {
                     <PanelTitle title="課程評分" subtitle="每堂課結束後為老師評分（約 1 分鐘），幫助我們持續提升教學品質。" />
 
                     {(data.ratingTasks?.length ?? 0) === 0 ? (
-                      <div className="rounded-[24px] bg-white p-10 text-center text-sm text-slate-400 ring-1 ring-slate-200/80">
+                      <div className="rounded-[24px] bg-white p-10 text-center text-sm text-[#A8998A] ring-1 ring-[#EBE1D3]/80">
                         本月尚無可評分的課程，課程回報完成後就會出現在這裡。
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {(data.ratingTasks ?? []).map((t) => (
-                          <div key={t.attendanceId} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+                          <div key={t.attendanceId} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-[#EBE1D3]/80">
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm font-black text-[#142452]">{t.date}｜{t.courseName}</div>
-                              <div className="mt-0.5 text-xs font-semibold text-slate-500">老師：{t.teacherName}</div>
+                              <div className="text-sm font-black text-[#3E332B]">{t.date}｜{t.courseName}</div>
+                              <div className="mt-0.5 text-xs font-semibold text-[#8B7B6A]">老師：{t.teacherName}</div>
                             </div>
                             {t.status === "open" ? (
-                              <a href={t.ratingUrl} className="shrink-0 rounded-full bg-blue-600 px-4 py-2 text-xs font-black text-white shadow-sm">評分本堂課</a>
+                              <a href={t.ratingUrl} className="shrink-0 rounded-full bg-[#C06B3E] px-4 py-2 text-xs font-black text-white shadow-sm">評分本堂課</a>
                             ) : t.status === "submitted" ? (
                               <span className="shrink-0 rounded-full bg-green-100 px-3 py-1.5 text-xs font-bold text-green-700">✓ 已完成</span>
                             ) : t.status === "closed" ? (
                               <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1.5 text-right text-xs font-bold text-amber-700">已關閉<span className="block text-[10px] font-semibold">請聯繫我們重新開放</span></span>
                             ) : (
-                              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-400">尚未開放</span>
+                              <span className="shrink-0 rounded-full bg-[#F3ECE1] px-3 py-1.5 text-xs font-bold text-[#A8998A]">尚未開放</span>
                             )}
                           </div>
                         ))}
@@ -532,24 +590,24 @@ function KindergartenPortal() {
                         <PanelTitle title="評分紀錄" subtitle="您先前填寫的課程滿意度回饋。" />
                         <div className="space-y-2">
                           {(data.ratings ?? []).map((r, idx) => (
-                            <div key={idx} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+                            <div key={idx} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-[#EBE1D3]/80">
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="text-sm font-black text-[#142452]">{r.date}｜{r.courseName}</div>
+                                <div className="text-sm font-black text-[#3E332B]">{r.date}｜{r.courseName}</div>
                                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                                   r.continueWish.includes("願意") ? "bg-green-100 text-green-700"
                                   : (r.continueWish.includes("不建議") || r.continueWish.includes("暫不")) ? "bg-rose-100 text-rose-700"
                                   : "bg-amber-100 text-amber-700"
                                 }`}>{r.continueWish}</span>
                               </div>
-                              <div className="mt-1 text-xs font-semibold text-slate-500">老師：{r.teacherName}</div>
-                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                              <div className="mt-1 text-xs font-semibold text-[#8B7B6A]">老師：{r.teacherName}</div>
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6B5C4D]">
                                 <span>準時 {r.scorePunctuality}</span>
                                 <span>教學 {r.scoreTeaching}</span>
                                 <span>秩序 {r.scoreOrder}</span>
                                 <span>互動 {r.scoreInteraction}</span>
-                                <span className="font-bold text-blue-600">整體 {r.scoreOverall}</span>
+                                <span className="font-bold text-[#C06B3E]">整體 {r.scoreOverall}</span>
                               </div>
-                              {r.feedback && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-500">{r.feedback}</p>}
+                              {r.feedback && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#8B7B6A]">{r.feedback}</p>}
                             </div>
                           ))}
                         </div>
@@ -611,7 +669,7 @@ function KindergartenPortal() {
                   )}
 
                   {data.generatedAt && (
-                    <p className="mt-5 text-center text-xs font-medium text-slate-400">
+                    <p className="mt-5 text-center text-xs font-medium text-[#A8998A]">
                       資料更新時間：{new Date(data.generatedAt).toLocaleString("zh-TW", { hour12: false })}
                     </p>
                   )}
@@ -622,9 +680,9 @@ function KindergartenPortal() {
         </main>
       </div>
 
-      <nav className={`fixed inset-x-3 bottom-3 z-30 grid ${{ 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5" }[nav.length] ?? "grid-cols-6"} gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden`}>
+      <nav className={`fixed inset-x-3 bottom-3 z-30 grid ${{ 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5" }[nav.length] ?? "grid-cols-6"} gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(154,94,50,0.16)] ring-1 ring-[#EBE1D3]/80 lg:hidden`}>
         {nav.map((item) => (
-          <button key={item.id} onClick={() => selectTab(item.id)} className={`relative rounded-2xl px-1.5 py-2 text-center text-[10px] font-black transition-colors ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
+          <button key={item.id} onClick={() => selectTab(item.id)} className={`relative rounded-2xl px-1.5 py-2 text-center text-[10px] font-black transition-colors ${tab === item.id ? "bg-[#C06B3E] text-white" : "text-[#8B7B6A]"}`}>
             {item.id === "ratings" && pendingRatings.length > 0 && (
               <span className="absolute right-1 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{pendingRatings.length}</span>
             )}
@@ -720,25 +778,25 @@ function CourseChangePanel({ token, options, requests, schools, onCreated }: {
 
   return <div className="space-y-5">
     <PanelTitle title="課程異動申請" subtitle="選擇本園所的課程提出日期、時間、地點、人數調整或停課申請，送出後由行政與老師確認。" />
-    <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+    <div className="rounded-[22px] border border-[#EBE1D3] bg-white p-4 shadow-sm sm:p-6">
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="md:col-span-2"><span className="mb-1 block text-sm font-black text-slate-700">選擇課程</span><SearchableSelect options={courseOptions} value={attendanceId} onChange={chooseCourse} allowEmpty={false} placeholder="搜尋日期、課程或老師" emptyText="查無符合的課程，請確認關鍵字" /></label>
-        {selected && <div className="md:col-span-2 rounded-xl bg-blue-50 p-3 text-sm leading-6 text-slate-700">原日期：{selected.date}｜原時間：{selected.time}<br />園所：{selected.school}｜老師：{selected.teacherName}<br />地址：{selected.address || "未填寫"}｜地點：{selected.location || "未填寫"}</div>}
-        <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-black text-slate-700">要調整的內容</legend><div className="flex flex-wrap gap-2">{[["DATE", "日期異動"], ["TIME", "時間異動"], ["LOCATION", "地點異動"], ["STUDENT_COUNT", "人數變更"], ["CANCEL", "停課／取消"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"><input type="checkbox" checked={types.includes(value)} onChange={() => toggleType(value)} />{label}</label>)}</div></fieldset>
-        <label><span className="mb-1 block text-sm font-black text-slate-700">異動範圍</span><select value={scope} onChange={(event) => { setScope(event.target.value); setTargetIds(attendanceId ? [attendanceId] : []); }}><option value="SINGLE">只修改本次課程</option><option value="SELECTED">修改指定日期</option></select></label>
-        {scope === "SELECTED" && selected && <div className="md:col-span-2 rounded-xl border border-slate-200 p-3"><div className="mb-2 text-sm font-black text-slate-700">指定日期</div><div className="flex flex-wrap gap-2">{sameCourse.map((item) => <label key={item.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"><input type="checkbox" checked={targetIds.includes(item.id)} onChange={() => setTargetIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} />{item.date}</label>)}</div>{types.includes("DATE") && <p className="mt-2 text-xs font-bold text-amber-700">日期異動目前只能選擇一堂。</p>}</div>}
-        {types.includes("STUDENT_COUNT") && <label><span className="mb-1 block text-sm font-black text-slate-700">調整後人數</span><input type="number" min={0} value={newStudentCount} onChange={(event) => setNewStudentCount(event.target.value)} placeholder="例如 18" /></label>}
+        <label className="md:col-span-2"><span className="mb-1 block text-sm font-black text-[#57493C]">選擇課程</span><SearchableSelect options={courseOptions} value={attendanceId} onChange={chooseCourse} allowEmpty={false} placeholder="搜尋日期、課程或老師" emptyText="查無符合的課程，請確認關鍵字" /></label>
+        {selected && <div className="md:col-span-2 rounded-xl bg-[#FBF0E4] p-3 text-sm leading-6 text-[#57493C]">原日期：{selected.date}｜原時間：{selected.time}<br />園所：{selected.school}｜老師：{selected.teacherName}<br />地址：{selected.address || "未填寫"}｜地點：{selected.location || "未填寫"}</div>}
+        <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-black text-[#57493C]">要調整的內容</legend><div className="flex flex-wrap gap-2">{[["DATE", "日期異動"], ["TIME", "時間異動"], ["LOCATION", "地點異動"], ["STUDENT_COUNT", "人數變更"], ["CANCEL", "停課／取消"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 rounded-xl border border-[#EBE1D3] px-3 py-2 text-sm font-bold"><input type="checkbox" checked={types.includes(value)} onChange={() => toggleType(value)} />{label}</label>)}</div></fieldset>
+        <label><span className="mb-1 block text-sm font-black text-[#57493C]">異動範圍</span><select value={scope} onChange={(event) => { setScope(event.target.value); setTargetIds(attendanceId ? [attendanceId] : []); }}><option value="SINGLE">只修改本次課程</option><option value="SELECTED">修改指定日期</option></select></label>
+        {scope === "SELECTED" && selected && <div className="md:col-span-2 rounded-xl border border-[#EBE1D3] p-3"><div className="mb-2 text-sm font-black text-[#57493C]">指定日期</div><div className="flex flex-wrap gap-2">{sameCourse.map((item) => <label key={item.id} className="flex items-center gap-2 rounded-lg bg-[#F8F3EB] px-3 py-2 text-sm"><input type="checkbox" checked={targetIds.includes(item.id)} onChange={() => setTargetIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} />{item.date}</label>)}</div>{types.includes("DATE") && <p className="mt-2 text-xs font-bold text-amber-700">日期異動目前只能選擇一堂。</p>}</div>}
+        {types.includes("STUDENT_COUNT") && <label><span className="mb-1 block text-sm font-black text-[#57493C]">調整後人數</span><input type="number" min={0} value={newStudentCount} onChange={(event) => setNewStudentCount(event.target.value)} placeholder="例如 18" /></label>}
         {types.includes("CANCEL") && <div className="md:col-span-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">停課申請請單獨送出，不可與其他異動類型同時選取。</div>}
-        {types.includes("DATE") && <label><span className="mb-1 block text-sm font-black text-slate-700">新日期</span><input type="date" value={newDate} onChange={(event) => setNewDate(event.target.value)} /></label>}
-        {types.includes("TIME") && <><label><span className="mb-1 block text-sm font-black text-slate-700">新開始時間</span><input type="time" value={newStart} onChange={(event) => setNewStart(event.target.value)} /></label><label><span className="mb-1 block text-sm font-black text-slate-700">新結束時間</span><input type="time" value={newEnd} onChange={(event) => setNewEnd(event.target.value)} /></label></>}
-        {types.includes("LOCATION") && <><label><span className="mb-1 block text-sm font-black text-slate-700">更換園所／校區</span><SearchableSelect options={schoolOptions} value={newSchoolId} onChange={chooseSchool} placeholder="搜尋園所、區域或地址" emptyLabel="同園所或其他地點" emptyText="查無符合的園所，請確認關鍵字" /></label><label><span className="mb-1 block text-sm font-black text-slate-700">新上課地點</span><input value={newLocation} onChange={(event) => setNewLocation(event.target.value)} placeholder="例如三樓禮堂" /></label><label className="md:col-span-2"><span className="mb-1 block text-sm font-black text-slate-700">新地址／其他地點</span><input value={newAddress} onChange={(event) => setNewAddress(event.target.value)} /></label></>}
-        <label><span className="mb-1 block text-sm font-black text-slate-700">異動原因</span><select value={reasonType} onChange={(event) => setReasonType(event.target.value)}>{["園所活動", "教室調整", "時間調整", "臨時狀況", "其他"].map((reason) => <option key={reason}>{reason}</option>)}</select></label>
-        <label><span className="mb-1 block text-sm font-black text-slate-700">補充說明</span><input value={reasonNote} onChange={(event) => setReasonNote(event.target.value)} /></label>
+        {types.includes("DATE") && <label><span className="mb-1 block text-sm font-black text-[#57493C]">新日期</span><input type="date" value={newDate} onChange={(event) => setNewDate(event.target.value)} /></label>}
+        {types.includes("TIME") && <><label><span className="mb-1 block text-sm font-black text-[#57493C]">新開始時間</span><input type="time" value={newStart} onChange={(event) => setNewStart(event.target.value)} /></label><label><span className="mb-1 block text-sm font-black text-[#57493C]">新結束時間</span><input type="time" value={newEnd} onChange={(event) => setNewEnd(event.target.value)} /></label></>}
+        {types.includes("LOCATION") && <><label><span className="mb-1 block text-sm font-black text-[#57493C]">更換園所／校區</span><SearchableSelect options={schoolOptions} value={newSchoolId} onChange={chooseSchool} placeholder="搜尋園所、區域或地址" emptyLabel="同園所或其他地點" emptyText="查無符合的園所，請確認關鍵字" /></label><label><span className="mb-1 block text-sm font-black text-[#57493C]">新上課地點</span><input value={newLocation} onChange={(event) => setNewLocation(event.target.value)} placeholder="例如三樓禮堂" /></label><label className="md:col-span-2"><span className="mb-1 block text-sm font-black text-[#57493C]">新地址／其他地點</span><input value={newAddress} onChange={(event) => setNewAddress(event.target.value)} /></label></>}
+        <label><span className="mb-1 block text-sm font-black text-[#57493C]">異動原因</span><select value={reasonType} onChange={(event) => setReasonType(event.target.value)}>{["園所活動", "教室調整", "時間調整", "臨時狀況", "其他"].map((reason) => <option key={reason}>{reason}</option>)}</select></label>
+        <label><span className="mb-1 block text-sm font-black text-[#57493C]">補充說明</span><input value={reasonNote} onChange={(event) => setReasonNote(event.target.value)} /></label>
       </div>
-      <button disabled={saving || !attendanceId || types.length === 0} onClick={submit} className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50">{saving ? "送出中…" : "送出異動申請"}</button>
-      {message && <div className="mt-3 rounded-xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{message}</div>}
+      <button disabled={saving || !attendanceId || types.length === 0} onClick={submit} className="mt-5 w-full rounded-xl bg-[#C06B3E] px-4 py-3 text-sm font-black text-white disabled:opacity-50">{saving ? "送出中…" : "送出異動申請"}</button>
+      {message && <div className="mt-3 rounded-xl bg-[#FBF0E4] px-4 py-3 text-sm font-bold text-[#8A4526]">{message}</div>}
     </div>
-    <div className="space-y-3"><h3 className="text-lg font-black text-slate-900">申請進度</h3>{requests.map((request) => <div key={request.id} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div className="font-black text-slate-900">{request.originalDate.slice(0, 10)}｜{courseLabel(request.course.courseType)}</div><span className={`rounded-full px-3 py-1 text-xs font-black ${request.status === "已完成" ? "bg-emerald-50 text-emerald-700" : request.status === "老師無法配合" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{portalStatus(request.status)}</span></div><div className="mt-2 text-sm text-slate-600">老師：{request.teacher.name}｜原因：{request.reasonType}{request.reasonNote ? `・${request.reasonNote}` : ""}</div>{request.reviewNote && <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">行政回覆：{request.reviewNote}</div>}</div>)}{requests.length === 0 && <div className="rounded-[18px] border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">目前尚無課程異動申請</div>}</div>
+    <div className="space-y-3"><h3 className="text-lg font-black text-[#3E332B]">申請進度</h3>{requests.map((request) => <div key={request.id} className="rounded-[18px] border border-[#EBE1D3] bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div className="font-black text-[#3E332B]">{request.originalDate.slice(0, 10)}｜{courseLabel(request.course.courseType)}</div><span className={`rounded-full px-3 py-1 text-xs font-black ${request.status === "已完成" ? "bg-emerald-50 text-emerald-700" : request.status === "老師無法配合" ? "bg-rose-50 text-rose-700" : "bg-[#FBF0E4] text-[#A9552F]"}`}>{portalStatus(request.status)}</span></div><div className="mt-2 text-sm text-[#6B5C4D]">老師：{request.teacher.name}｜原因：{request.reasonType}{request.reasonNote ? `・${request.reasonNote}` : ""}</div>{request.reviewNote && <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">行政回覆：{request.reviewNote}</div>}</div>)}{requests.length === 0 && <div className="rounded-[18px] border border-dashed border-[#EBE1D3] bg-white p-8 text-center text-sm text-[#A8998A]">目前尚無課程異動申請</div>}</div>
   </div>;
 }
 
@@ -746,23 +804,23 @@ function Hero({ data, year, month, setYear, setMonth }: { data: PortalData; year
   const currentYear = new Date().getFullYear();
   const years = Array.from(new Set([currentYear - 1, currentYear, currentYear + 1, 2025, 2026, 2027])).sort((a, b) => a - b);
   return (
-    <section className="relative overflow-hidden rounded-[22px] border border-slate-200/80 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:rounded-[28px] sm:px-7 sm:py-7 lg:px-8">
-      <div className="absolute right-8 top-8 hidden h-16 w-16 rounded-full bg-blue-50 md:block" />
+    <section className="relative overflow-hidden rounded-[22px] border border-[#EBE1D3]/80 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(154,94,50,0.06)] sm:rounded-[28px] sm:px-7 sm:py-7 lg:px-8">
+      <div className="absolute right-8 top-8 hidden h-16 w-16 rounded-full bg-[#FBF0E4] md:block" />
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-black tracking-tight text-[#142452] sm:text-4xl">您好！</h1>
-          <p className="mt-1 text-sm font-medium leading-6 text-slate-600 sm:mt-3 sm:text-base sm:leading-7">本月學習成果總覽，快速看見孩子的課程成果。</p>
+          <h1 className="text-xl font-black tracking-tight text-[#3E332B] sm:text-4xl">您好！</h1>
+          <p className="mt-1 text-sm font-medium leading-6 text-[#6B5C4D] sm:mt-3 sm:text-base sm:leading-7">本月學習成果總覽，快速看見孩子的課程成果。</p>
           <div className="mt-2 flex flex-wrap gap-1.5 sm:mt-4 sm:gap-2">
-            <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 sm:px-4 sm:py-2 sm:text-sm">{data.school.name}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600 sm:px-4 sm:py-2 sm:text-sm">{data.school.type}</span>
-            {data.school.region && <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600 sm:px-4 sm:py-2 sm:text-sm">{data.school.region}</span>}
+            <span className="rounded-full bg-[#FBF0E4] px-3 py-1.5 text-xs font-black text-[#A9552F] sm:px-4 sm:py-2 sm:text-sm">{data.school.name}</span>
+            <span className="rounded-full bg-[#F3ECE1] px-3 py-1.5 text-xs font-black text-[#6B5C4D] sm:px-4 sm:py-2 sm:text-sm">{data.school.type}</span>
+            {data.school.region && <span className="rounded-full bg-[#F3ECE1] px-3 py-1.5 text-xs font-black text-[#6B5C4D] sm:px-4 sm:py-2 sm:text-sm">{data.school.region}</span>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 shadow-sm outline-none sm:min-h-12 sm:px-4 sm:py-3 sm:text-base">
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="min-h-10 rounded-2xl border border-[#EBE1D3] bg-white px-3 py-2 text-sm font-black text-[#57493C] shadow-sm outline-none sm:min-h-12 sm:px-4 sm:py-3 sm:text-base">
             {years.map((y) => <option key={y} value={y}>{y}年</option>)}
           </select>
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 shadow-sm outline-none sm:min-h-12 sm:px-4 sm:py-3 sm:text-base">
+          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="min-h-10 rounded-2xl border border-[#EBE1D3] bg-white px-3 py-2 text-sm font-black text-[#57493C] shadow-sm outline-none sm:min-h-12 sm:px-4 sm:py-3 sm:text-base">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
         </div>
@@ -796,18 +854,18 @@ function TeachersPanel({
         title={isAfterSchool ? "本期授課老師" : "本學期授課老師"}
         subtitle={isAfterSchool ? "以下為本期營隊安排至貴班授課的專業老師，提供參考。" : "以下為本學期安排至貴園授課的專業老師，提供園所參考。"}
       />
-      <div className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:p-5">
+      <div className="rounded-[24px] border border-[#EBE1D3]/80 bg-white p-4 shadow-[0_12px_28px_rgba(154,94,50,0.06)] sm:p-5">
         <div className="grid gap-3 lg:grid-cols-[1fr_260px_auto]">
           <input
             value={search}
             onChange={(event) => onSearch(event.target.value)}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            className="rounded-2xl border border-[#EBE1D3] bg-white px-4 py-3 text-sm font-bold text-[#57493C] outline-none focus:border-[#D08A5C] focus:ring-2 focus:ring-[#F0E2D0]"
             placeholder="搜尋老師姓名、授課項目、學歷、教學風格"
           />
           <select
             value={courseFilter}
             onChange={(event) => onCourseFilter(event.target.value)}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-400"
+            className="rounded-2xl border border-[#EBE1D3] bg-white px-4 py-3 text-sm font-bold text-[#57493C] outline-none focus:border-[#D08A5C]"
           >
             <option value="">全部課程類型</option>
             {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
@@ -816,13 +874,13 @@ function TeachersPanel({
             <button
               type="button"
               onClick={() => { onSearch(""); onCourseFilter(""); }}
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-600"
+              className="rounded-2xl border border-[#EBE1D3] bg-[#F8F3EB] px-4 py-3 text-sm font-black text-[#6B5C4D]"
             >
               清除篩選
             </button>
           )}
         </div>
-        <div className="mt-3 text-sm font-bold text-slate-400">顯示 {teachers.length} / {allCount} 位授課老師</div>
+        <div className="mt-3 text-sm font-bold text-[#A8998A]">顯示 {teachers.length} / {allCount} 位授課老師</div>
       </div>
 
       {allCount === 0 ? (
@@ -845,22 +903,22 @@ function PortalTeacherCard({ teacher }: { teacher: PortalData["teachers"][number
     ? teacher.specialtyTags
     : [...teacher.courseNames, ...teacher.primaryCourseTypes].filter(Boolean).slice(0, 5);
   return (
-    <article className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_12px_28px_rgba(30,64,175,0.06)]">
-      <div className="bg-blue-600 px-5 py-4 text-white">
-        <div className="text-xs font-bold text-blue-100">WaysLeader AI 師資介紹</div>
+    <article className="overflow-hidden rounded-[28px] border border-[#EBE1D3]/80 bg-white shadow-[0_12px_28px_rgba(154,94,50,0.06)]">
+      <div className="bg-[#C06B3E] px-5 py-4 text-white">
+        <div className="text-xs font-bold text-[#F5E3D0]">WaysLeader AI 師資介紹</div>
         <h3 className="mt-1 text-2xl font-black">{teacher.name} 老師</h3>
       </div>
       <div className="grid gap-4 p-5 sm:grid-cols-[132px_1fr]">
         <div>
-          <div className="h-32 w-32 overflow-hidden rounded-[26px] bg-blue-50 ring-4 ring-white shadow-sm">
+          <div className="h-32 w-32 overflow-hidden rounded-[26px] bg-[#FBF0E4] ring-4 ring-white shadow-sm">
             {teacher.photoUrl
               ? <img src={teacher.photoUrl} alt={teacher.name} loading="lazy" className="h-full w-full object-cover" />
-              : <div className="flex h-full w-full items-center justify-center text-5xl font-black text-blue-200">{teacher.name.slice(0, 1)}</div>}
+              : <div className="flex h-full w-full items-center justify-center text-5xl font-black text-[#EBD3BC]">{teacher.name.slice(0, 1)}</div>}
           </div>
           <button
             type="button"
             onClick={() => window.open(teacher.cardUrl, "_blank")}
-            className="mt-3 w-32 rounded-2xl bg-blue-600 px-3 py-2 text-sm font-black text-white"
+            className="mt-3 w-32 rounded-2xl bg-[#C06B3E] px-3 py-2 text-sm font-black text-white"
           >
             查看完整簡歷
           </button>
@@ -868,7 +926,7 @@ function PortalTeacherCard({ teacher }: { teacher: PortalData["teachers"][number
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
             {teacher.courseNames.map((course) => (
-              <span key={course} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{course}</span>
+              <span key={course} className="rounded-full bg-[#FBF0E4] px-3 py-1 text-xs font-black text-[#A9552F]">{course}</span>
             ))}
           </div>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -880,12 +938,12 @@ function PortalTeacherCard({ teacher }: { teacher: PortalData["teachers"][number
           </div>
           {tags.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {tags.map((tag) => <span key={tag} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{tag}</span>)}
+              {tags.map((tag) => <span key={tag} className="rounded-full bg-[#F3ECE1] px-3 py-1 text-xs font-black text-[#6B5C4D]">{tag}</span>)}
             </div>
           )}
-          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-            <div className="text-sm font-black text-[#142452]">教學特色</div>
-            <p className="mt-2 line-clamp-4 whitespace-pre-line text-sm leading-7 text-slate-600">
+          <div className="mt-4 rounded-2xl bg-[#F8F3EB] p-4">
+            <div className="text-sm font-black text-[#3E332B]">教學特色</div>
+            <p className="mt-2 line-clamp-4 whitespace-pre-line text-sm leading-7 text-[#6B5C4D]">
               {teacher.teachingStyle || teacher.intro || "重視安全陪伴與互動引導，依孩子狀態調整課程節奏，讓孩子在穩定、愉快的活動中累積自信。"}
             </p>
           </div>
@@ -897,9 +955,9 @@ function PortalTeacherCard({ teacher }: { teacher: PortalData["teachers"][number
 
 function InfoLine({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
-    <div className={`rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-100 ${wide ? "sm:col-span-2" : ""}`}>
-      <div className="text-xs font-black text-slate-400">{label}</div>
-      <div className="mt-1 truncate font-bold text-slate-700" title={value}>{value}</div>
+    <div className={`rounded-2xl bg-white px-3 py-2 ring-1 ring-[#F3ECE1] ${wide ? "sm:col-span-2" : ""}`}>
+      <div className="text-xs font-black text-[#A8998A]">{label}</div>
+      <div className="mt-1 truncate font-bold text-[#57493C]" title={value}>{value}</div>
     </div>
   );
 }
@@ -908,7 +966,7 @@ function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, savin
   value: CourseConfirmation;
   onChange: (value: CourseConfirmation) => void;
   onSave: () => void;
-  onCopyPrevious: () => void;
+  onCopyPrevious?: () => void;
   saving: boolean;
   message: string;
   termLabel: string;
@@ -925,23 +983,23 @@ function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, savin
     });
   };
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <div className="rounded-[24px] border border-[#EBE1D3] bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-4">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-black text-slate-900">開課前確認</h2>
+          <h2 className="text-lg font-black text-[#3E332B]">開課前確認</h2>
           {locked && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">已送出確認</span>}
         </div>
-        {termLabel && <p className="mt-1 text-sm font-black text-blue-700">{termLabel}</p>}
-        {westernLabel && <p className="mt-0.5 text-xs text-slate-500">{westernLabel}</p>}
-        <p className="mt-2 text-sm text-slate-500">{locked ? "如需修改，請聯繫行政協助調整。" : "簡單填寫即可，讓老師上課前快速掌握重點。"}</p>
+        {termLabel && <p className="mt-1 text-sm font-black text-[#A9552F]">{termLabel}</p>}
+        {westernLabel && <p className="mt-0.5 text-xs text-[#8B7B6A]">{westernLabel}</p>}
+        <p className="mt-2 text-sm text-[#8B7B6A]">{locked ? "如需修改，請聯繫行政協助調整。" : "簡單填寫即可，讓老師上課前快速掌握重點。"}</p>
       </div>
 
       {locked ? (
         <CourseConfirmationReadOnly value={value} />
       ) : (
       <div className="space-y-4">
-        <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
-          <div className="mb-3 text-sm font-bold text-slate-700">班級人數</div>
+        <div className="rounded-2xl bg-[#F8F3EB] p-3 sm:p-4">
+          <div className="mb-3 text-sm font-bold text-[#57493C]">班級人數</div>
           <div className="grid gap-3 sm:grid-cols-4">
             <NumberField label="幼幼班" value={value.toddlerClassCount ?? ""} onChange={(v) => update({ toddlerClassCount: v })} />
             <NumberField label="小班" value={value.smallClassCount ?? ""} onChange={(v) => update({ smallClassCount: v })} />
@@ -950,35 +1008,35 @@ function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, savin
           </div>
         </div>
 
-        <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
-          <div className="mb-3 text-sm font-bold text-slate-700">上課地點</div>
+        <div className="rounded-2xl bg-[#F8F3EB] p-3 sm:p-4">
+          <div className="mb-3 text-sm font-bold text-[#57493C]">上課地點</div>
           <div className="grid gap-2 sm:grid-cols-4">
             {LOCATION_OPTIONS.map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => update({ location: item })}
-                className={`rounded-xl border px-3 py-2 text-sm font-bold ${value.location === item ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}
+                className={`rounded-xl border px-3 py-2 text-sm font-bold ${value.location === item ? "border-[#C06B3E] bg-[#FBF0E4] text-[#A9552F]" : "border-[#EBE1D3] bg-white text-[#6B5C4D]"}`}
               >
                 {item}
               </button>
             ))}
           </div>
           {value.location === "其他" && (
-            <input value={value.otherLocation ?? ""} onChange={(e) => update({ otherLocation: e.target.value })} placeholder="其他地點" className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400" />
+            <input value={value.otherLocation ?? ""} onChange={(e) => update({ otherLocation: e.target.value })} placeholder="其他地點" className="mt-3 w-full rounded-xl border border-[#EBE1D3] bg-white px-3 py-2 text-sm outline-none focus:border-[#D08A5C]" />
           )}
-          <input value={value.rainyLocation ?? ""} onChange={(e) => update({ rainyLocation: e.target.value })} placeholder="雨天備用地點" className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400" />
+          <input value={value.rainyLocation ?? ""} onChange={(e) => update({ rainyLocation: e.target.value })} placeholder="雨天備用地點" className="mt-3 w-full rounded-xl border border-[#EBE1D3] bg-white px-3 py-2 text-sm outline-none focus:border-[#D08A5C]" />
         </div>
 
-        <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
-          <div className="mb-3 text-sm font-bold text-slate-700">希望老師教學方式</div>
+        <div className="rounded-2xl bg-[#F8F3EB] p-3 sm:p-4">
+          <div className="mb-3 text-sm font-bold text-[#57493C]">希望老師教學方式</div>
           <div className="flex flex-wrap gap-2">
             {TEACHING_STYLE_OPTIONS.map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => toggleStyle(item)}
-                className={`rounded-full border px-3 py-2 text-sm font-bold ${value.teachingStyles?.includes(item) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"}`}
+                className={`rounded-full border px-3 py-2 text-sm font-bold ${value.teachingStyles?.includes(item) ? "border-[#C06B3E] bg-[#FBF0E4] text-[#A9552F]" : "border-[#EBE1D3] bg-white text-[#6B5C4D]"}`}
               >
                 {item}
               </button>
@@ -998,12 +1056,10 @@ function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, savin
           </button>
         ) : (
           <>
-            <button disabled={saving} onClick={onSave} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white disabled:opacity-50">
+            <button disabled={saving} onClick={onSave} className="rounded-xl bg-[#C06B3E] px-5 py-3 text-sm font-black text-white disabled:opacity-50">
               {saving ? "送出中..." : "送出確認"}
             </button>
-            <button disabled={saving} onClick={onCopyPrevious} className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 disabled:opacity-50">
-              複製上一學期資料
-            </button>
+            {onCopyPrevious && <button disabled={saving} onClick={onCopyPrevious} className="rounded-xl border border-[#EBE1D3] bg-white px-5 py-3 text-sm font-black text-[#6B5C4D] disabled:opacity-50">複製上一學期資料</button>}
           </>
         )}
         {message && <div className={`text-sm font-bold ${message.includes("失敗") || message.includes("無效") || message.includes("已送出，如需修改") ? "text-rose-500" : "text-emerald-600"}`}>{message}</div>}
@@ -1029,28 +1085,28 @@ function CourseConfirmationReadOnly({ value }: { value: CourseConfirmation }) {
     { label: "其他提醒", value: value.otherReminders || "未填寫" },
   ];
   return (
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="text-sm font-black text-slate-800">已送出開課前確認</div>
+    <div className="rounded-2xl bg-[#F8F3EB] p-4">
+      <div className="text-sm font-black text-[#4A3E33]">已送出開課前確認</div>
       <div className="mt-3 grid gap-2">
         {rows.map((row) => (
-          <div key={row.label} className="rounded-xl bg-white px-3 py-2 text-sm leading-6 ring-1 ring-slate-100">
-            <span className="font-black text-slate-700">{row.label}：</span>
-            <span className="text-slate-600">{row.value}</span>
+          <div key={row.label} className="rounded-xl bg-white px-3 py-2 text-sm leading-6 ring-1 ring-[#F3ECE1]">
+            <span className="font-black text-[#57493C]">{row.label}：</span>
+            <span className="text-[#6B5C4D]">{row.value}</span>
           </div>
         ))}
       </div>
-      <p className="mt-3 text-sm font-bold text-slate-500">如需修改，請聯繫行政協助調整。</p>
+      <p className="mt-3 text-sm font-bold text-[#8B7B6A]">如需修改，請聯繫行政協助調整。</p>
     </div>
   );
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <label className="text-sm font-bold text-slate-600">
+    <label className="text-sm font-bold text-[#6B5C4D]">
       {label}
-      <div className="mt-1 flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2">
-        <input inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))} className="min-w-0 flex-1 bg-transparent text-base font-black text-slate-800 outline-none" />
-        <span className="text-sm text-slate-400">人</span>
+      <div className="mt-1 flex items-center rounded-xl border border-[#EBE1D3] bg-white px-3 py-2">
+        <input inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))} className="min-w-0 flex-1 bg-transparent text-base font-black text-[#4A3E33] outline-none" />
+        <span className="text-sm text-[#A8998A]">人</span>
       </div>
     </label>
   );
@@ -1058,9 +1114,9 @@ function NumberField({ label, value, onChange }: { label: string; value: string;
 
 function SimpleTextarea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
   return (
-    <label className="block rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-700 sm:p-4">
+    <label className="block rounded-2xl bg-[#F8F3EB] p-3 text-sm font-bold text-[#57493C] sm:p-4">
       {label}
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} placeholder={placeholder} className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-blue-400" />
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} placeholder={placeholder} className="mt-3 w-full rounded-xl border border-[#EBE1D3] bg-white px-3 py-2 text-sm font-medium text-[#57493C] outline-none focus:border-[#D08A5C]" />
     </label>
   );
 }
@@ -1169,42 +1225,42 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   }
 
   return (
-    <article className="relative overflow-hidden rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:rounded-[24px] sm:p-6">
-      <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-blue-50" />
+    <article className="relative overflow-hidden rounded-[22px] border border-[#EBE1D3]/80 bg-white p-4 shadow-[0_12px_28px_rgba(154,94,50,0.06)] sm:rounded-[24px] sm:p-6">
+      <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[#FBF0E4]" />
       <div className="relative flex items-start gap-3 sm:gap-4">
-        <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-600 sm:flex">▤</div>
+        <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#FBF0E4] text-2xl text-[#C06B3E] sm:flex">▤</div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-lg font-black text-[#142452] sm:text-2xl">{row.courseName}</h3>
-              <p className="mt-1 text-xs font-bold leading-5 text-[#7683A0] sm:text-sm">{row.date}｜{row.teacherName}{row.studentCount ? `｜👦 本堂參與：${row.studentCount} 位孩子` : ""}</p>
+              <h3 className="text-lg font-black text-[#3E332B] sm:text-2xl">{row.courseName}</h3>
+              <p className="mt-1 text-xs font-bold leading-5 text-[#96887A] sm:text-sm">{row.date}｜{row.teacherName}{row.studentCount ? `｜👦 本堂參與：${row.studentCount} 位孩子` : ""}</p>
             </div>
-            <span className="hidden w-fit rounded-2xl bg-slate-50 px-4 py-2 text-sm font-black text-slate-500 ring-1 ring-slate-100 sm:inline-flex">{lesson ? `進度第 ${lesson} 堂` : "成果紀錄"}</span>
+            <span className="hidden w-fit rounded-2xl bg-[#F8F3EB] px-4 py-2 text-sm font-black text-[#8B7B6A] ring-1 ring-[#F3ECE1] sm:inline-flex">{lesson ? `進度第 ${lesson} 堂` : "成果紀錄"}</span>
           </div>
 
-          <div className="mt-3 grid overflow-hidden rounded-[18px] border border-blue-100 bg-[#f5f8fd] sm:mt-5 sm:grid-cols-[minmax(0,1fr)_220px] sm:rounded-[20px]">
-            <div className="p-4 text-sm leading-7 text-[#142452] sm:p-6 sm:text-[15px] sm:leading-8">
+          <div className="mt-3 grid overflow-hidden rounded-[18px] border border-[#F0E2D0] bg-[#FBF7F1] sm:mt-5 sm:grid-cols-[minmax(0,1fr)_220px] sm:rounded-[20px]">
+            <div className="p-4 text-sm leading-7 text-[#3E332B] sm:p-6 sm:text-[15px] sm:leading-8">
               <div className="mb-3 text-base font-black text-[#315E9F] sm:text-lg">今日課堂紀錄</div>
               <p className={`whitespace-pre-line ${expanded ? "" : "line-clamp-6"}`}>{mainText}</p>
               {canExpand && (
-                <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-3 text-sm font-black text-blue-600">
+                <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-3 text-sm font-black text-[#C06B3E]">
                   {expanded ? "收合內容" : "查看更多"}
                 </button>
               )}
             </div>
             {courseBear && (
-              <div className="flex min-h-[190px] items-center justify-center border-t border-blue-100 bg-white/70 p-3 sm:min-h-[240px] sm:border-l sm:border-t-0">
+              <div className="flex min-h-[190px] items-center justify-center border-t border-[#F0E2D0] bg-white/70 p-3 sm:min-h-[240px] sm:border-l sm:border-t-0">
                 <Image data-course-bear-id={String(row.id)} src={courseBear} alt={`${row.courseName}優比熊`} width={420} height={420} sizes="(max-width: 640px) 55vw, 220px" loading="lazy" quality={70} className="h-44 w-44 object-contain sm:h-52 sm:w-52" />
               </div>
             )}
           </div>
 
           {learningPoints.length > 0 && (
-            <div className="mt-3 rounded-[18px] border border-blue-100 bg-white p-3 sm:mt-5 sm:rounded-[20px] sm:p-4">
-              <div className="text-sm font-black text-[#142452]">今天孩子學習：</div>
+            <div className="mt-3 rounded-[18px] border border-[#F0E2D0] bg-white p-3 sm:mt-5 sm:rounded-[20px] sm:p-4">
+              <div className="text-sm font-black text-[#3E332B]">今天孩子學習：</div>
               <div className="mt-2 grid gap-2">
                 {learningPoints.map((point) => (
-                  <div key={point} className="flex items-center gap-2 rounded-2xl bg-blue-50/70 px-3 py-2 text-sm font-black leading-6 text-[#142452]">
+                  <div key={point} className="flex items-center gap-2 rounded-2xl bg-[#FBF0E4]/70 px-3 py-2 text-sm font-black leading-6 text-[#3E332B]">
                     <span>{point}</span>
                   </div>
                 ))}
@@ -1219,11 +1275,11 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
           </div>
 
           {classPhotos.length > 0 && (
-            <div className="mt-3 rounded-[18px] border border-blue-100 bg-white p-3 sm:mt-5 sm:rounded-[20px] sm:p-4">
-              <div className="text-sm font-black text-[#142452]">課堂活動照片（{classPhotos.length}）</div>
+            <div className="mt-3 rounded-[18px] border border-[#F0E2D0] bg-white p-3 sm:mt-5 sm:rounded-[20px] sm:p-4">
+              <div className="text-sm font-black text-[#3E332B]">課堂活動照片（{classPhotos.length}）</div>
               <div className={`mt-2 grid gap-2 ${classPhotos.length === 1 ? "grid-cols-1 sm:max-w-[360px]" : "grid-cols-2"}`}>
                 {classPhotos.map((url) => (
-                  <a key={url} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl border border-slate-100 bg-slate-50">
+                  <a key={url} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl border border-[#F3ECE1] bg-[#F8F3EB]">
                     <img src={url} alt="課堂活動照片" loading="lazy" className="h-40 w-full object-cover sm:h-48" />
                   </a>
                 ))}
@@ -1231,22 +1287,22 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
             </div>
           )}
 
-          <div className="mt-3 rounded-[20px] border border-blue-100 bg-blue-50/40 p-3 sm:mt-5 sm:rounded-[22px] sm:p-4">
+          <div className="mt-3 rounded-[20px] border border-[#F0E2D0] bg-[#FBF0E4]/40 p-3 sm:mt-5 sm:rounded-[22px] sm:p-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <div className="text-sm font-black text-[#142452] sm:text-base">分享學習卡</div>
-                <div className="mt-0.5 text-xs font-semibold text-slate-500 sm:mt-1 sm:text-sm">快速整理成可轉發內容。</div>
+                <div className="text-sm font-black text-[#3E332B] sm:text-base">分享學習卡</div>
+                <div className="mt-0.5 text-xs font-semibold text-[#8B7B6A] sm:mt-1 sm:text-sm">快速整理成可轉發內容。</div>
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex sm:flex-wrap sm:gap-3">
-              <button type="button" onClick={copyShareText} className="rounded-2xl bg-blue-600 px-3 py-3 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 sm:px-5 sm:text-sm">
+              <button type="button" onClick={copyShareText} className="rounded-2xl bg-[#C06B3E] px-3 py-3 text-xs font-black text-white shadow-sm transition hover:bg-[#A9552F] sm:px-5 sm:text-sm">
                 {copied ? "已複製分享文字" : "複製給家長文字"}
               </button>
-              <button type="button" onClick={generateShareImage} disabled={imageGenerating} className="rounded-2xl border border-blue-100 bg-white px-3 py-3 text-xs font-black text-blue-600 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:text-sm">
+              <button type="button" onClick={generateShareImage} disabled={imageGenerating} className="rounded-2xl border border-[#F0E2D0] bg-white px-3 py-3 text-xs font-black text-[#C06B3E] shadow-sm disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:text-sm">
                 {imageGenerating ? "學習卡產生中..." : "產生學習卡圖片"}
               </button>
               {shareImageUrl && (
-                <a href={shareImageUrl} download={`WaysLeader-${row.school}-${row.courseName}-${row.date}.png`} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-center text-xs font-black text-slate-700 shadow-sm sm:px-5 sm:text-sm">
+                <a href={shareImageUrl} download={`WaysLeader-${row.school}-${row.courseName}-${row.date}.png`} className="rounded-2xl border border-[#EBE1D3] bg-white px-3 py-3 text-center text-xs font-black text-[#57493C] shadow-sm sm:px-5 sm:text-sm">
                   下載分享圖
                 </a>
               )}
@@ -1517,7 +1573,7 @@ async function renderShareCanvas({ row, skills, mainText, skillMap }: { row: Por
   roundRect(ctx, 20, 175, 1040, 1155, 32);
   ctx.fill();
 
-  ctx.fillStyle = "#142452";
+  ctx.fillStyle = "#3E332B";
   ctx.font = "900 50px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
   ctx.fillText(row.courseName, 70, 260);
   ctx.fillStyle = "#64748B";
@@ -1536,7 +1592,7 @@ async function renderShareCanvas({ row, skills, mainText, skillMap }: { row: Por
     ctx.fillStyle = ["#DCEBFF", "#E3F4EA", "#FFF0D6"][index] || "#DCEBFF";
     circle(ctx, 102, pointY, 42);
     ctx.fill();
-    ctx.fillStyle = "#142452";
+    ctx.fillStyle = "#3E332B";
     ctx.font = "800 23px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
     ctx.fillText(stripLeadingIcon(point), 160, pointY + 30);
     ctx.font = "900 22px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
@@ -1579,7 +1635,7 @@ async function renderShareCanvas({ row, skills, mainText, skillMap }: { row: Por
   ctx.fillStyle = "#64748B";
   ctx.font = "700 20px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
   ctx.fillText("老師回報", 108, 682);
-  ctx.fillStyle = "#142452";
+  ctx.fillStyle = "#3E332B";
   ctx.font = "700 28px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
   drawWrappedText(ctx, mainText, 108, 735, 525, 43, 9);
 
@@ -1604,7 +1660,7 @@ async function renderShareCanvas({ row, skills, mainText, skillMap }: { row: Por
     ctx.fillStyle = "#8A6845";
     ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
     ctx.fillText("課堂狀況", 108, 1203);
-    ctx.fillStyle = "#142452";
+    ctx.fillStyle = "#3E332B";
     ctx.font = "900 27px -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif";
     ctx.fillText(`${status.icon} ${status.title}`, 280, 1204);
     ctx.fillStyle = "#64748B";
@@ -1767,18 +1823,18 @@ function drawWrappedText(ctx: CanvasRenderingContext2D, text: string, x: number,
 function SkillCards({ skills, skillMap }: { skills: string[]; skillMap: Record<string, SkillMeta> }) {
   if (skills.length === 0) return null;
   return (
-    <section className="mt-3 rounded-[20px] border border-slate-200/80 bg-white p-3 shadow-[0_10px_26px_rgba(30,64,175,0.04)] sm:mt-5 sm:rounded-[24px] sm:p-5">
+    <section className="mt-3 rounded-[20px] border border-[#EBE1D3]/80 bg-white p-3 shadow-[0_10px_26px_rgba(154,94,50,0.04)] sm:mt-5 sm:rounded-[24px] sm:p-5">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-black tracking-wide text-[#142452] sm:text-base">孩子在課程中可以學習到</div>
-        <div className="hidden rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-600 sm:block">能力培養</div>
+        <div className="text-sm font-black tracking-wide text-[#3E332B] sm:text-base">孩子在課程中可以學習到</div>
+        <div className="hidden rounded-full bg-[#FBF0E4] px-3 py-1 text-xs font-black text-[#C06B3E] sm:block">能力培養</div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         {skills.map((skill) => {
           const meta = skillMap[skill];
           return (
-            <div key={skill} className="flex aspect-square w-full flex-col items-center justify-center rounded-[20px] bg-[#f8fafc] p-3 text-center shadow-[0_8px_20px_rgba(30,64,175,0.04)] ring-1 ring-slate-200/80 sm:rounded-[24px] sm:p-5">
+            <div key={skill} className="flex aspect-square w-full flex-col items-center justify-center rounded-[20px] bg-[#FAF6EF] p-3 text-center shadow-[0_8px_20px_rgba(154,94,50,0.04)] ring-1 ring-[#EBE1D3]/80 sm:rounded-[24px] sm:p-5">
               {meta?.image && <Image src={meta.image} alt={skill} width={96} height={96} sizes="(max-width: 640px) 64px, 86px" loading="lazy" quality={70} className="h-16 w-16 rounded-full object-cover shadow-sm sm:h-20 sm:w-20 lg:h-[86px] lg:w-[86px]" />}
-              <div className="mt-2 text-sm font-black leading-tight text-[#142452] sm:mt-3 sm:text-lg">{skill}</div>
+              <div className="mt-2 text-sm font-black leading-tight text-[#3E332B] sm:mt-3 sm:text-lg">{skill}</div>
             </div>
           );
         })}
@@ -1792,10 +1848,10 @@ function LearningMaps({ maps, compact = false }: { maps: LearningMap[]; compact?
   return (
     <div className="space-y-5">
       {maps.map((map) => (
-        <article key={map.courseName} className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white p-3 shadow-[0_12px_28px_rgba(30,64,175,0.06)] sm:rounded-[26px] sm:p-6">
+        <article key={map.courseName} className="overflow-hidden rounded-[22px] border border-[#EBE1D3]/80 bg-white p-3 shadow-[0_12px_28px_rgba(154,94,50,0.06)] sm:rounded-[26px] sm:p-6">
           <CourseOverview map={map} />
           <div className={`relative mt-6 space-y-3 pl-1 sm:pl-3 ${compact ? "hidden" : ""}`}>
-            <div className="absolute bottom-4 left-7 top-4 w-0.5 bg-slate-200 sm:left-9" />
+            <div className="absolute bottom-4 left-7 top-4 w-0.5 bg-[#EBE1D3] sm:left-9" />
             {map.items.map((item) => <LessonNode key={`${map.courseName}-${item.lesson}`} item={item} />)}
           </div>
         </article>
@@ -1806,29 +1862,29 @@ function LearningMaps({ maps, compact = false }: { maps: LearningMap[]; compact?
 
 function CourseOverview({ map }: { map: LearningMap }) {
   return (
-    <div className="rounded-[20px] border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-3 sm:rounded-[24px] sm:p-5">
+    <div className="rounded-[20px] border border-[#F0E2D0] bg-gradient-to-br from-[#FBF0E4] to-white p-3 sm:rounded-[24px] sm:p-5">
       <div className="flex items-center gap-3 sm:items-start sm:gap-4">
-        <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-blue-100 sm:h-24 sm:w-24">
+        <div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-[#F0E2D0] sm:h-24 sm:w-24">
           <div
             className="absolute inset-0 rounded-full"
             style={{ background: `conic-gradient(#2563eb ${map.completion * 3.6}deg, #e2e8f0 0deg)` }}
           />
           <div className="absolute inset-2 rounded-full bg-white" />
           <div className="relative text-center">
-            <div className="text-lg font-black text-blue-600 sm:text-2xl">{map.completion}%</div>
-            <div className="text-[9px] font-black text-slate-400 sm:text-[10px]">完成度</div>
+            <div className="text-lg font-black text-[#C06B3E] sm:text-2xl">{map.completion}%</div>
+            <div className="text-[9px] font-black text-[#A8998A] sm:text-[10px]">完成度</div>
           </div>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-black tracking-wide text-blue-600 sm:text-sm">{map.courseName}學習路線</div>
-          <h3 className="mt-0.5 text-lg font-black leading-snug text-[#142452] sm:mt-1 sm:text-2xl">
+          <div className="text-xs font-black tracking-wide text-[#C06B3E] sm:text-sm">{map.courseName}學習路線</div>
+          <h3 className="mt-0.5 text-lg font-black leading-snug text-[#3E332B] sm:mt-1 sm:text-2xl">
             第 {map.currentLesson} / {map.total} 堂
           </h3>
-          <p className="mt-0.5 line-clamp-1 text-xs font-bold leading-5 text-slate-600 sm:mt-1 sm:text-sm sm:leading-6">目前進度：{map.currentTitle}</p>
-          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white ring-1 ring-blue-100 sm:mt-4 sm:h-3">
-            <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${map.completion}%` }} />
+          <p className="mt-0.5 line-clamp-1 text-xs font-bold leading-5 text-[#6B5C4D] sm:mt-1 sm:text-sm sm:leading-6">目前進度：{map.currentTitle}</p>
+          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white ring-1 ring-[#F0E2D0] sm:mt-4 sm:h-3">
+            <div className="h-full rounded-full bg-[#C06B3E] transition-all" style={{ width: `${map.completion}%` }} />
           </div>
-          <p className="mt-1 line-clamp-1 text-[11px] font-bold text-slate-500 sm:mt-2 sm:text-xs">下一階段：{map.nextTitle}</p>
+          <p className="mt-1 line-clamp-1 text-[11px] font-bold text-[#8B7B6A] sm:mt-2 sm:text-xs">下一階段：{map.nextTitle}</p>
         </div>
       </div>
     </div>
@@ -1839,13 +1895,13 @@ function LessonNode({ item }: { item: LearningMap["items"][number] }) {
   const style = item.status === "done"
     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
     : item.status === "current"
-      ? "border-blue-300 bg-blue-600 text-white shadow-[0_12px_30px_rgba(37,99,235,0.22)]"
-      : "border-slate-200 bg-slate-50 text-slate-400 opacity-75";
+      ? "border-[#D08A5C] bg-[#C06B3E] text-white shadow-[0_12px_30px_rgba(192,107,62,0.25)]"
+      : "border-[#EBE1D3] bg-[#F8F3EB] text-[#A8998A] opacity-75";
   const icon = item.status === "done" ? "✓" : item.status === "current" ? "●" : "○";
   const statusText = item.status === "done" ? "已完成" : item.status === "current" ? "進行中" : "未開始";
   return (
     <div className="relative flex gap-4">
-      <div className={`z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-black ring-4 ring-white sm:h-14 sm:w-14 ${item.status === "current" ? "bg-blue-600 text-white" : item.status === "done" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>{icon}</div>
+      <div className={`z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-black ring-4 ring-white sm:h-14 sm:w-14 ${item.status === "current" ? "bg-[#C06B3E] text-white" : item.status === "done" ? "bg-emerald-100 text-emerald-700" : "bg-[#F3ECE1] text-[#A8998A]"}`}>{icon}</div>
       <div className={`min-w-0 flex-1 rounded-[20px] border px-4 py-3 transition ${style}`}>
         <div className="flex flex-wrap items-center gap-2 text-xs font-black opacity-85">
           <span>第 {item.lesson} 堂</span>
@@ -1869,16 +1925,16 @@ function CertificateCards({ rows }: { rows: PortalData["assessments"] }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {rows.map((row) => (
-        <article key={row.id} className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(30,64,175,0.07)]">
+        <article key={row.id} className="rounded-[24px] border border-[#EBE1D3]/80 bg-white p-5 shadow-[0_14px_34px_rgba(154,94,50,0.07)]">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xl font-black text-[#142452]">{row.childName}</div>
-              <div className="mt-1 text-sm font-semibold text-[#7683A0]">{row.date}｜{row.courseName}｜{row.teacherName}</div>
+              <div className="text-xl font-black text-[#3E332B]">{row.childName}</div>
+              <div className="mt-1 text-sm font-semibold text-[#96887A]">{row.date}｜{row.courseName}｜{row.teacherName}</div>
             </div>
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{row.title || "成長證書"}</span>
+            <span className="rounded-full bg-[#FBF0E4] px-3 py-1 text-xs font-black text-[#A9552F]">{row.title || "成長證書"}</span>
           </div>
-          <p className="mt-4 line-clamp-3 text-sm leading-7 text-slate-600">{row.comment}</p>
-          <a href={row.certificateUrl} className="mt-5 inline-flex rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm">
+          <p className="mt-4 line-clamp-3 text-sm leading-7 text-[#6B5C4D]">{row.comment}</p>
+          <a href={row.certificateUrl} className="mt-5 inline-flex rounded-2xl bg-[#C06B3E] px-5 py-3 text-sm font-black text-white shadow-sm">
             查看證書
           </a>
         </article>
@@ -1889,11 +1945,11 @@ function CertificateCards({ rows }: { rows: PortalData["assessments"] }) {
 
 function SummaryCard({ label, value, helper, icon }: { label: string; value: number | string; helper: string; icon: string }) {
   return (
-    <div className="relative overflow-hidden rounded-[16px] bg-white p-2.5 text-center shadow-[0_10px_24px_rgba(30,64,175,0.05)] ring-1 ring-slate-200/80 sm:rounded-[22px] sm:p-5 sm:text-left">
-      <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-sm font-black text-blue-600 sm:mx-0 sm:h-14 sm:w-14 sm:rounded-2xl sm:text-xl">{icon}</div>
-      <div className="mt-2 line-clamp-1 text-[11px] font-black text-[#142452] sm:mt-4 sm:text-sm">{label}</div>
-      <div className="mt-0.5 text-xl font-black text-blue-600 sm:mt-1 sm:text-4xl">{typeof value === "number" ? value.toLocaleString("zh-TW") : value}</div>
-      <div className="hidden mt-1 text-xs font-semibold text-slate-400 sm:block">{helper}</div>
+    <div className="relative overflow-hidden rounded-[16px] bg-white p-2.5 text-center shadow-[0_10px_24px_rgba(154,94,50,0.05)] ring-1 ring-[#EBE1D3]/80 sm:rounded-[22px] sm:p-5 sm:text-left">
+      <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-[#FBF0E4] text-sm font-black text-[#C06B3E] sm:mx-0 sm:h-14 sm:w-14 sm:rounded-2xl sm:text-xl">{icon}</div>
+      <div className="mt-2 line-clamp-1 text-[11px] font-black text-[#3E332B] sm:mt-4 sm:text-sm">{label}</div>
+      <div className="mt-0.5 text-xl font-black text-[#C06B3E] sm:mt-1 sm:text-4xl">{typeof value === "number" ? value.toLocaleString("zh-TW") : value}</div>
+      <div className="hidden mt-1 text-xs font-semibold text-[#A8998A] sm:block">{helper}</div>
     </div>
   );
 }
@@ -1901,15 +1957,15 @@ function SummaryCard({ label, value, helper, icon }: { label: string; value: num
 function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h2 className="text-xl font-black text-[#142452] sm:text-2xl">{title}</h2>
-      <p className="mt-0.5 text-xs font-medium text-[#7683A0] sm:mt-1 sm:text-sm">{subtitle}</p>
+      <h2 className="text-xl font-black text-[#3E332B] sm:text-2xl">{title}</h2>
+      <p className="mt-0.5 text-xs font-medium text-[#96887A] sm:mt-1 sm:text-sm">{subtitle}</p>
     </div>
   );
 }
 
 function TabPill({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: string; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={`shrink-0 rounded-full px-6 py-3 text-sm font-black shadow-sm transition ${active ? "bg-blue-600 text-white" : "bg-white text-[#142452] border border-slate-200"}`}>
+    <button onClick={onClick} className={`shrink-0 rounded-full px-6 py-3 text-sm font-black shadow-sm transition ${active ? "bg-[#C06B3E] text-white" : "bg-white text-[#3E332B] border border-[#EBE1D3]"}`}>
       <span className="mr-2">{icon}</span>{children}
     </button>
   );
@@ -1917,20 +1973,20 @@ function TabPill({ active, onClick, icon, children }: { active: boolean; onClick
 
 function BrandBlock() {
   return (
-    <div className="flex flex-col items-center border-b border-slate-200 pb-5 pt-3">
-      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-200">
+    <div className="flex flex-col items-center border-b border-[#EBE1D3] pb-5 pt-3">
+      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-[#EBE1D3]">
         <Image src="/upbear-logo-sm.png" alt="優比熊" width={96} height={96} sizes="48px" className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = "/icon-192.png"; }} />
       </div>
-      <div className="mt-3 text-center text-lg font-black text-slate-900">WaysLeader AI</div>
-      <div className="mt-1 text-xs font-bold text-slate-500">幼兒園學習成果平台</div>
+      <div className="mt-3 text-center text-lg font-black text-[#3E332B]">WaysLeader AI</div>
+      <div className="mt-1 text-xs font-bold text-[#8B7B6A]">幼兒園學習成果平台</div>
     </div>
   );
 }
 
 function NavButton({ active, label, icon, onClick }: { active: boolean; label: string; icon: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black transition ${active ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"}`}>
-      <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${active ? "bg-white/20" : "bg-slate-100 text-slate-500"}`}>{icon}</span>
+    <button onClick={onClick} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black transition ${active ? "bg-[#C06B3E] text-white shadow-sm" : "text-[#6B5C4D] hover:bg-[#FBF0E4] hover:text-[#A9552F]"}`}>
+      <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${active ? "bg-white/20" : "bg-[#F3ECE1] text-[#8B7B6A]"}`}>{icon}</span>
       {label}
     </button>
   );
@@ -1938,7 +1994,7 @@ function NavButton({ active, label, icon, onClick }: { active: boolean; label: s
 
 function StatusBlock({ title, text, warning }: { title: string; text: string; warning?: boolean }) {
   return (
-    <div className={`rounded-2xl p-4 text-sm ${warning ? "bg-[#fff7ed] text-slate-700" : "bg-blue-50 text-blue-800"}`}>
+    <div className={`rounded-2xl p-4 text-sm ${warning ? "bg-[#fff7ed] text-[#57493C]" : "bg-[#FBF0E4] text-[#8A4526]"}`}>
       <div className="font-black">{title}</div>
       <div className="mt-1 leading-6">{text}</div>
     </div>
@@ -1946,5 +2002,5 @@ function StatusBlock({ title, text, warning }: { title: string; text: string; wa
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="rounded-[24px] border border-dashed border-slate-200 bg-white p-10 text-center text-slate-400">{text}</div>;
+  return <div className="rounded-[24px] border border-dashed border-[#EBE1D3] bg-white p-10 text-center text-[#A8998A]">{text}</div>;
 }
