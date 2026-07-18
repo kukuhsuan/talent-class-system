@@ -18,7 +18,7 @@ import { getTeacherResume } from "@/lib/teacherResume";
 import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 import { attendanceHasCompletionData, courseChangeDisplay, courseChangeInclude, createCourseChangeRequest, parseChangeTypes, timeRange } from "@/lib/courseChangeRequests";
 import { pushAdminAlert } from "@/lib/systemAlerts";
-import { ensureCourseRatingTables, normalizeRatingRow, type CourseRatingRow } from "@/lib/courseRating";
+import { ensureCourseRatingTables, normalizeRatingRow, openEligibleRatings, type CourseRatingRow } from "@/lib/courseRating";
 import { ensureSchoolInvoiceTables, invoiceMonthKey } from "@/lib/schoolInvoices";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
@@ -315,16 +315,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       };
     }).sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
 
-    // 園所看板：統計、安親班歷史評分、當月請款狀態
-    const isAfterSchoolPortal = String(school.type ?? "").includes("安親");
+    // 園所看板：統計、歷史評分（幼兒園＋安親班）、當月請款狀態
     const cancelledLessons = records.filter((r) => r.cancelled).length;
     const reportedLessons = records.filter((r) => !r.cancelled && r.reportContent.trim()).length;
 
     let ratings: Array<{ date: string; courseName: string; teacherName: string; scorePunctuality: number; scoreTeaching: number; scoreOrder: number; scoreInteraction: number; scoreOverall: number; continueWish: string; feedback: string }> = [];
     // 每堂課評分入口：待填寫（open）與已完成（submitted）狀態＋評分連結
     let ratingTasks: Array<{ attendanceId: number; date: string; courseName: string; teacherName: string; status: string; ratingUrl: string }> = [];
-    if (isAfterSchoolPortal && records.length) {
+    if (records.length) {
       await ensureCourseRatingTables();
+      // 幼兒園＋安親班共用：課已結束＋已回報＋未取消 → 自動補建 open 評分任務
+      await openEligibleRatings(records.map((r) => ({
+        id: r.id,
+        date: r.date,
+        cancelled: r.cancelled,
+        reportContent: r.reportContent,
+        studentCount: r.studentCount,
+        studentCountA: r.studentCountA,
+        studentCountB: r.studentCountB,
+        scheduledTime: r.scheduledTime,
+        courseTime: r.course.time,
+      }))).catch(() => undefined);
       const ids = records.map((r) => r.id);
       const rows = await prisma.$queryRawUnsafe<CourseRatingRow[]>(
         `SELECT * FROM CourseRating WHERE attendanceId IN (${ids.map(() => "?").join(",")})`,
@@ -347,17 +358,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
           feedback: row.feedback,
         };
       }).sort((a, b) => b.date.localeCompare(a.date));
-      // 每堂未停課的課都要有狀態：open=待評分、submitted=已完成、closed=已關閉、not_ready=尚未開放（回報完成後開放）
+      // 只顯示已開放的評分（open/submitted/closed）；未達條件的課堂不顯示，不出現「尚未開放」
       const rowByAttendance = new Map(normalized.map((row) => [row.attendanceId, row]));
-      ratingTasks = records.filter((r) => !r.cancelled).map((record) => {
-        const row = rowByAttendance.get(record.id);
+      ratingTasks = records.filter((r) => !r.cancelled && rowByAttendance.has(r.id)).map((record) => {
+        const row = rowByAttendance.get(record.id)!;
         return {
           attendanceId: record.id,
           date: dateText(record.date),
           courseName: courseLabel(record.course.courseType),
           teacherName: record.actualTeacher.name,
-          status: row ? row.status : "not_ready",
-          ratingUrl: row ? `/rating/${encodeURIComponent(row.token)}` : "",
+          status: row.status,
+          ratingUrl: `/rating/${encodeURIComponent(row.token)}`,
         };
       }).sort((a, b) => b.date.localeCompare(a.date));
     }

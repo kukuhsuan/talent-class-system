@@ -6,7 +6,7 @@ import { normalizeRatingRow, openEligibleRatings, type CourseRatingRow } from "@
 
 export const dynamic = "force-dynamic";
 
-// 安親班評分分頁 API：
+// 評分分頁 API（幼兒園＋安親班共用）：
 // 1. 自動補建符合條件的待評分任務（課已結束＋已回報＋未取消；attendanceId UNIQUE 防重複）
 // 2. 只回待評分（open）與已完成（submitted/closed）；未建立任務（未來課/未回報）不顯示
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -15,10 +15,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const { schoolId } = await resolveSchoolPortalParam(token);
     const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, type: true } });
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
-    if (!String(school.type ?? "").includes("安親")) {
-      // 幼兒園不提供評分功能，也不建立評分任務
-      return NextResponse.json({ pending: [], completed: [] }, { headers: { "X-Robots-Tag": "noindex, nofollow" } });
-    }
 
     // 近 90 天課堂（評分以近期課程為主，避免整包撈取）
     const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
@@ -39,10 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       },
       orderBy: { date: "desc" },
     });
-    const afterSchoolRecords = records.filter((r) => String(r.course.department ?? "").includes("安親"));
-
-    // 自動開放：補建符合條件的評分任務
-    await openEligibleRatings(afterSchoolRecords.map((r) => ({
+    // 自動開放：補建符合條件的評分任務（幼兒園＋安親班皆適用）
+    await openEligibleRatings(records.map((r) => ({
       id: r.id,
       date: r.date,
       cancelled: r.cancelled,
@@ -54,14 +48,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       courseTime: r.course.time,
     })));
 
-    const ids = afterSchoolRecords.map((r) => r.id);
+    const ids = records.map((r) => r.id);
     const rows = ids.length
       ? await prisma.$queryRawUnsafe<CourseRatingRow[]>(
           `SELECT * FROM CourseRating WHERE attendanceId IN (${ids.map(() => "?").join(",")})`,
           ...ids,
         )
       : [];
-    const byId = new Map(afterSchoolRecords.map((r) => [r.id, r]));
+    const byId = new Map(records.map((r) => [r.id, r]));
     const normalized = rows.map(normalizeRatingRow).filter((row) => byId.has(row.attendanceId));
 
     const item = (row: CourseRatingRow) => {

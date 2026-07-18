@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 export type ConfirmationSemester = "1" | "2" | "summer";
 
 export type CourseConfirmation = {
+  toddlerClassCount?: string;
   smallClassCount?: string;
   middleClassCount?: string;
   bigClassCount?: string;
@@ -31,6 +32,8 @@ export type SchoolStartConfirmation = CourseConfirmation & ConfirmationTerm & {
 
 export type ConfirmationHistoryItem = {
   id: number;
+  previousToddlerClassCount: string;
+  newToddlerClassCount: string;
   previousSmallClassCount: string;
   previousMiddleClassCount: string;
   previousBigClassCount: string;
@@ -130,6 +133,7 @@ export async function ensureCourseConfirmationStorage() {
     )
   `);
   await prisma.$executeRawUnsafe("ALTER TABLE SchoolStartConfirmation ADD COLUMN reopenedAt DATETIME").catch(() => undefined);
+  await prisma.$executeRawUnsafe('ALTER TABLE SchoolStartConfirmation ADD COLUMN toddlerClassCount TEXT NOT NULL DEFAULT ""').catch(() => undefined);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS SchoolStartConfirmationHistory (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +148,29 @@ export async function ensureCourseConfirmationStorage() {
       newLargeClassCount TEXT NOT NULL DEFAULT "",
       note TEXT NOT NULL DEFAULT "",
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await prisma.$executeRawUnsafe('ALTER TABLE SchoolStartConfirmationHistory ADD COLUMN previousToddlerClassCount TEXT NOT NULL DEFAULT ""').catch(() => undefined);
+  await prisma.$executeRawUnsafe('ALTER TABLE SchoolStartConfirmationHistory ADD COLUMN newToddlerClassCount TEXT NOT NULL DEFAULT ""').catch(() => undefined);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS CourseStartConfirmation (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      attendanceId INTEGER NOT NULL UNIQUE,
+      schoolId INTEGER NOT NULL,
+      courseId INTEGER NOT NULL,
+      courseName TEXT NOT NULL DEFAULT "",
+      schoolName TEXT NOT NULL DEFAULT "",
+      date TEXT NOT NULL DEFAULT "",
+      teacherId INTEGER,
+      teacherName TEXT NOT NULL DEFAULT "",
+      toddlerClassCount INTEGER NOT NULL DEFAULT 0,
+      smallClassCount INTEGER NOT NULL DEFAULT 0,
+      middleClassCount INTEGER NOT NULL DEFAULT 0,
+      bigClassCount INTEGER NOT NULL DEFAULT 0,
+      totalCount INTEGER NOT NULL DEFAULT 0,
+      location TEXT NOT NULL DEFAULT "",
+      classNotes TEXT NOT NULL DEFAULT "",
+      submittedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
   storageReady = true;
@@ -180,6 +207,7 @@ export function normalizeCourseConfirmation(value: unknown): CourseConfirmation 
     .filter((item) => TEACHING_STYLE_OPTIONS.includes(item as never));
   const location = cleanText(source.location ?? source.classLocation);
   return {
+    toddlerClassCount: cleanCount(source.toddlerClassCount),
     smallClassCount: cleanCount(source.smallClassCount),
     middleClassCount: cleanCount(source.middleClassCount),
     bigClassCount: cleanCount(source.bigClassCount ?? source.largeClassCount),
@@ -214,6 +242,7 @@ function fromRow(row: ConfirmationRow): SchoolStartConfirmation {
     schoolId: Number(row.schoolId),
     academicYear: Number(row.academicYear),
     semester: row.semester as ConfirmationSemester,
+    toddlerClassCount: row.toddlerClassCount ?? "",
     smallClassCount: row.smallClassCount ?? "",
     middleClassCount: row.middleClassCount ?? "",
     bigClassCount: row.bigClassCount ?? "",
@@ -242,6 +271,7 @@ type ConfirmationRow = {
   schoolId: number;
   academicYear: number;
   semester: string;
+  toddlerClassCount: string | null;
   smallClassCount: string;
   middleClassCount: string;
   bigClassCount: string;
@@ -290,11 +320,12 @@ export async function upsertSchoolStartConfirmation(
   const submit = options.submit !== false;
   await prisma.$executeRawUnsafe(
     `INSERT INTO SchoolStartConfirmation (
-      schoolId, academicYear, semester, smallClassCount, middleClassCount, bigClassCount,
+      schoolId, academicYear, semester, toddlerClassCount, smallClassCount, middleClassCount, bigClassCount,
       classLocation, classLocationOther, rainyDayLocation, teachingStyles, classNotes, otherNotes,
       submittedAt, reopenedAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${submit ? "CURRENT_TIMESTAMP" : "NULL"}, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${submit ? "CURRENT_TIMESTAMP" : "NULL"}, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(schoolId, academicYear, semester) DO UPDATE SET
+      toddlerClassCount = excluded.toddlerClassCount,
       smallClassCount = excluded.smallClassCount,
       middleClassCount = excluded.middleClassCount,
       bigClassCount = excluded.bigClassCount,
@@ -310,6 +341,7 @@ export async function upsertSchoolStartConfirmation(
     schoolId,
     term.academicYear,
     term.semester,
+    form.toddlerClassCount ?? "",
     form.smallClassCount ?? "",
     form.middleClassCount ?? "",
     form.bigClassCount ?? "",
@@ -380,6 +412,7 @@ export async function resetSchoolStartConfirmation(schoolId: number, term: Confi
 export async function updateConfirmationCounts(input: {
   schoolId: number;
   term: ConfirmationTerm;
+  toddlerClassCount?: unknown;
   smallClassCount?: unknown;
   middleClassCount?: unknown;
   bigClassCount?: unknown;
@@ -390,6 +423,7 @@ export async function updateConfirmationCounts(input: {
   const current = await getSchoolStartConfirmation(input.schoolId, input.term);
   const next = {
     ...current,
+    toddlerClassCount: cleanCount(input.toddlerClassCount ?? current.toddlerClassCount),
     smallClassCount: cleanCount(input.smallClassCount ?? current.smallClassCount),
     middleClassCount: cleanCount(input.middleClassCount ?? current.middleClassCount),
     bigClassCount: cleanCount(input.bigClassCount ?? current.bigClassCount),
@@ -399,15 +433,17 @@ export async function updateConfirmationCounts(input: {
     await prisma.$executeRawUnsafe(
       `INSERT INTO SchoolStartConfirmationHistory (
         confirmationId, updatedByTeacherId, updatedByAdminId,
-        previousSmallClassCount, previousMiddleClassCount, previousLargeClassCount,
-        newSmallClassCount, newMiddleClassCount, newLargeClassCount, note, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        previousToddlerClassCount, previousSmallClassCount, previousMiddleClassCount, previousLargeClassCount,
+        newToddlerClassCount, newSmallClassCount, newMiddleClassCount, newLargeClassCount, note, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       saved.id,
       input.teacherId ?? null,
       input.adminId ?? null,
+      current.toddlerClassCount ?? "",
       current.smallClassCount ?? "",
       current.middleClassCount ?? "",
       current.bigClassCount ?? "",
+      next.toddlerClassCount ?? "",
       next.smallClassCount ?? "",
       next.middleClassCount ?? "",
       next.bigClassCount ?? "",
@@ -421,6 +457,8 @@ export async function confirmationHistory(confirmationId: number) {
   await ensureCourseConfirmationStorage();
   const rows = await prisma.$queryRawUnsafe<Array<{
     id: number;
+    previousToddlerClassCount: string | null;
+    newToddlerClassCount: string | null;
     previousSmallClassCount: string;
     previousMiddleClassCount: string;
     previousLargeClassCount: string;
@@ -440,6 +478,8 @@ export async function confirmationHistory(confirmationId: number) {
   );
   return rows.map((row) => ({
     id: Number(row.id),
+    previousToddlerClassCount: row.previousToddlerClassCount ?? "",
+    newToddlerClassCount: row.newToddlerClassCount ?? "",
     previousSmallClassCount: row.previousSmallClassCount ?? "",
     previousMiddleClassCount: row.previousMiddleClassCount ?? "",
     previousBigClassCount: row.previousLargeClassCount ?? "",
@@ -455,11 +495,16 @@ export async function confirmationHistory(confirmationId: number) {
 export function courseConfirmationSummary(value: unknown, options: { multiline?: boolean; teacher?: boolean; includeTerm?: boolean } = {}) {
   const termSource = (value && typeof value === "object" ? value : {}) as Partial<ConfirmationTerm>;
   const form = parseCourseConfirmation(value);
-  const people = [
-    form.smallClassCount ? `小班 ${form.smallClassCount}` : "",
-    form.middleClassCount ? `中班 ${form.middleClassCount}` : "",
-    form.bigClassCount ? `大班 ${form.bigClassCount}` : "",
-  ].filter(Boolean).join("｜");
+  const hasAnyCount = Boolean(form.toddlerClassCount || form.smallClassCount || form.middleClassCount || form.bigClassCount);
+  // 若有填任何人數，四班皆顯示（沒填的顯示 0），符合「若沒有幼幼班，顯示 0」規則
+  const people = hasAnyCount
+    ? [
+        `幼幼班 ${form.toddlerClassCount || "0"}`,
+        `小班 ${form.smallClassCount || "0"}`,
+        `中班 ${form.middleClassCount || "0"}`,
+        `大班 ${form.bigClassCount || "0"}`,
+      ].join("｜")
+    : "";
   const locationName = form.location === "其他" ? form.otherLocation : form.location;
   const place = [
     locationName ? `地點：${locationName}` : "",
@@ -507,4 +552,174 @@ export async function courseConfirmationMapBySchoolIds(ids: number[], term = cur
     }
   }
   return map;
+}
+
+// ===== 開課前確認（每課程第一堂課、老師填寫）=====
+
+export type CourseStartConfirmationRecord = {
+  id: number;
+  attendanceId: number;
+  schoolId: number;
+  courseId: number;
+  courseName: string;
+  schoolName: string;
+  date: string;
+  teacherId: number | null;
+  teacherName: string;
+  toddlerClassCount: number;
+  smallClassCount: number;
+  middleClassCount: number;
+  bigClassCount: number;
+  totalCount: number;
+  location: string;
+  classNotes: string;
+  submittedAt: string;
+};
+
+type CourseStartRow = Record<string, unknown>;
+
+function fromCourseStartRow(row: CourseStartRow): CourseStartConfirmationRecord {
+  return {
+    id: Number(row.id),
+    attendanceId: Number(row.attendanceId),
+    schoolId: Number(row.schoolId),
+    courseId: Number(row.courseId),
+    courseName: String(row.courseName ?? ""),
+    schoolName: String(row.schoolName ?? ""),
+    date: String(row.date ?? ""),
+    teacherId: row.teacherId == null ? null : Number(row.teacherId),
+    teacherName: String(row.teacherName ?? ""),
+    toddlerClassCount: Number(row.toddlerClassCount ?? 0),
+    smallClassCount: Number(row.smallClassCount ?? 0),
+    middleClassCount: Number(row.middleClassCount ?? 0),
+    bigClassCount: Number(row.bigClassCount ?? 0),
+    totalCount: Number(row.totalCount ?? 0),
+    location: String(row.location ?? ""),
+    classNotes: String(row.classNotes ?? ""),
+    submittedAt: String(row.submittedAt ?? ""),
+  };
+}
+
+function cleanCountNumber(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(/[^\d]/g, ""));
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(999, parsed)) : 0;
+}
+
+export async function getCourseStartConfirmationByAttendance(attendanceId: number) {
+  await ensureCourseConfirmationStorage();
+  const rows = await prisma.$queryRawUnsafe<CourseStartRow[]>(
+    "SELECT * FROM CourseStartConfirmation WHERE attendanceId = ? LIMIT 1",
+    attendanceId,
+  );
+  return rows[0] ? fromCourseStartRow(rows[0]) : null;
+}
+
+// 同課程本學期是否已完成開課前確認（第一堂填過就不再重複）
+export async function getCourseStartConfirmationForCourseTerm(courseId: number, term = currentConfirmationTerm()) {
+  await ensureCourseConfirmationStorage();
+  const range = confirmationTermRange(term);
+  const rows = await prisma.$queryRawUnsafe<CourseStartRow[]>(
+    "SELECT * FROM CourseStartConfirmation WHERE courseId = ? AND date >= ? AND date < ? ORDER BY submittedAt DESC LIMIT 1",
+    courseId,
+    range.start.toISOString().slice(0, 10),
+    range.end.toISOString().slice(0, 10),
+  );
+  return rows[0] ? fromCourseStartRow(rows[0]) : null;
+}
+
+export async function listCourseStartConfirmationsBySchool(schoolId: number, term = currentConfirmationTerm()) {
+  await ensureCourseConfirmationStorage();
+  const range = confirmationTermRange(term);
+  const rows = await prisma.$queryRawUnsafe<CourseStartRow[]>(
+    "SELECT * FROM CourseStartConfirmation WHERE schoolId = ? AND date >= ? AND date < ? ORDER BY submittedAt DESC",
+    schoolId,
+    range.start.toISOString().slice(0, 10),
+    range.end.toISOString().slice(0, 10),
+  );
+  return rows.map(fromCourseStartRow);
+}
+
+export async function createCourseStartConfirmation(input: {
+  attendanceId: number;
+  schoolId: number;
+  courseId: number;
+  courseName?: unknown;
+  schoolName?: unknown;
+  date?: unknown;
+  teacherId?: number | null;
+  teacherName?: unknown;
+  toddlerClassCount?: unknown;
+  smallClassCount?: unknown;
+  middleClassCount?: unknown;
+  bigClassCount?: unknown;
+  location?: unknown;
+  classNotes?: unknown;
+}) {
+  await ensureCourseConfirmationStorage();
+  const counts = {
+    toddler: cleanCountNumber(input.toddlerClassCount),
+    small: cleanCountNumber(input.smallClassCount),
+    middle: cleanCountNumber(input.middleClassCount),
+    big: cleanCountNumber(input.bigClassCount),
+  };
+  const total = counts.toddler + counts.small + counts.middle + counts.big;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO CourseStartConfirmation (
+      attendanceId, schoolId, courseId, courseName, schoolName, date, teacherId, teacherName,
+      toddlerClassCount, smallClassCount, middleClassCount, bigClassCount, totalCount,
+      location, classNotes, submittedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    input.attendanceId,
+    input.schoolId,
+    input.courseId,
+    cleanText(input.courseName),
+    cleanText(input.schoolName),
+    cleanText(input.date),
+    input.teacherId ?? null,
+    cleanText(input.teacherName),
+    counts.toddler,
+    counts.small,
+    counts.middle,
+    counts.big,
+    total,
+    cleanText(input.location),
+    cleanText(input.classNotes),
+  );
+  return getCourseStartConfirmationByAttendance(input.attendanceId);
+}
+
+export async function updateCourseStartConfirmation(id: number, input: {
+  toddlerClassCount?: unknown;
+  smallClassCount?: unknown;
+  middleClassCount?: unknown;
+  bigClassCount?: unknown;
+  location?: unknown;
+  classNotes?: unknown;
+}) {
+  await ensureCourseConfirmationStorage();
+  const rows = await prisma.$queryRawUnsafe<CourseStartRow[]>("SELECT * FROM CourseStartConfirmation WHERE id = ? LIMIT 1", id);
+  if (!rows[0]) return null;
+  const current = fromCourseStartRow(rows[0]);
+  const counts = {
+    toddler: input.toddlerClassCount === undefined ? current.toddlerClassCount : cleanCountNumber(input.toddlerClassCount),
+    small: input.smallClassCount === undefined ? current.smallClassCount : cleanCountNumber(input.smallClassCount),
+    middle: input.middleClassCount === undefined ? current.middleClassCount : cleanCountNumber(input.middleClassCount),
+    big: input.bigClassCount === undefined ? current.bigClassCount : cleanCountNumber(input.bigClassCount),
+  };
+  await prisma.$executeRawUnsafe(
+    `UPDATE CourseStartConfirmation SET
+      toddlerClassCount = ?, smallClassCount = ?, middleClassCount = ?, bigClassCount = ?, totalCount = ?,
+      location = ?, classNotes = ?
+    WHERE id = ?`,
+    counts.toddler,
+    counts.small,
+    counts.middle,
+    counts.big,
+    counts.toddler + counts.small + counts.middle + counts.big,
+    input.location === undefined ? current.location : cleanText(input.location),
+    input.classNotes === undefined ? current.classNotes : cleanText(input.classNotes),
+    id,
+  );
+  const updated = await prisma.$queryRawUnsafe<CourseStartRow[]>("SELECT * FROM CourseStartConfirmation WHERE id = ? LIMIT 1", id);
+  return updated[0] ? fromCourseStartRow(updated[0]) : null;
 }

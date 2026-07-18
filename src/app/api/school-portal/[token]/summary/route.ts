@@ -20,28 +20,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
 
     const isAfterSchool = String(school.type ?? "").includes("安親");
-    let pendingRatings = 0;
-    let processingChanges = 0;
-    if (isAfterSchool) {
-      await ensureCourseRatingTables();
-      const [ratingRows, changeCount] = await Promise.all([
-        prisma.$queryRawUnsafe<Array<{ n: number | bigint }>>(
-          `SELECT COUNT(*) AS n FROM CourseRating cr
-           JOIN Attendance a ON a.id = cr.attendanceId
-           JOIN Course c ON c.id = a.courseId
-           WHERE cr.status = 'open' AND (a.scheduledSchoolId = ? OR (a.scheduledSchoolId IS NULL AND c.schoolId = ?))`,
-          schoolId, schoolId,
-        ),
-        prisma.courseChangeRequest.count({
-          where: {
-            OR: [{ requestedBySchoolId: schoolId }, { originalSchoolId: schoolId }],
-            status: { notIn: [COURSE_CHANGE_STATUS.completed, COURSE_CHANGE_STATUS.cancelled, COURSE_CHANGE_STATUS.teacherUnavailable] },
-          },
-        }),
-      ]);
-      pendingRatings = Number(ratingRows[0]?.n ?? 0);
-      processingChanges = changeCount;
-    }
+    // 評分待辦：幼兒園＋安親班共用；異動申請目前僅安親班使用
+    await ensureCourseRatingTables();
+    const [ratingRows, changeCount] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ n: number | bigint }>>(
+        `SELECT COUNT(*) AS n FROM CourseRating cr
+         JOIN Attendance a ON a.id = cr.attendanceId
+         JOIN Course c ON c.id = a.courseId
+         WHERE cr.status = 'open' AND (a.scheduledSchoolId = ? OR (a.scheduledSchoolId IS NULL AND c.schoolId = ?))`,
+        schoolId, schoolId,
+      ),
+      isAfterSchool
+        ? prisma.courseChangeRequest.count({
+            where: {
+              OR: [{ requestedBySchoolId: schoolId }, { originalSchoolId: schoolId }],
+              status: { notIn: [COURSE_CHANGE_STATUS.completed, COURSE_CHANGE_STATUS.cancelled, COURSE_CHANGE_STATUS.teacherUnavailable] },
+            },
+          })
+        : Promise.resolve(0),
+    ]);
+    const pendingRatings = Number(ratingRows[0]?.n ?? 0);
+    const processingChanges = changeCount;
 
     const verified = await hasValidPortalSession(req, schoolId);
     return NextResponse.json({

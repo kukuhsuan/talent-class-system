@@ -8,6 +8,7 @@ import { useToast } from "@/lib/useToast";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 
 type CourseConfirmation = {
+  toddlerClassCount?: string;
   smallClassCount?: string;
   middleClassCount?: string;
   bigClassCount?: string;
@@ -30,6 +31,7 @@ type School = {
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 const EMPTY_CONFIRMATION: CourseConfirmation = {
+  toddlerClassCount: "",
   smallClassCount: "",
   middleClassCount: "",
   bigClassCount: "",
@@ -304,7 +306,7 @@ export default function SchoolsPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-3">
-                  {(s.type ?? "").includes("安親") && <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-sm font-medium text-amber-600">評分</a>}
+                  <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-sm font-medium text-amber-600">評分</a>
                   <button onClick={() => copyPortalLink(s.id)} className="text-sm font-medium text-emerald-600">連結</button>
                   <button onClick={() => rotatePortalLink(s.id)} className="text-sm font-medium text-amber-600">重生</button>
                   <button onClick={() => edit(s)} className="text-sm font-medium text-blue-600">編輯</button>
@@ -353,8 +355,8 @@ export default function SchoolsPage() {
                     : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
                 </td>
                 <td className="px-4 py-3 text-right space-x-2">
-                  {(s.type ?? "").includes("安親") && <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-amber-600 hover:underline text-xs">歷史評分</a>}
-                  {(s.type ?? "").includes("安親") && <button onClick={() => setAuthSchool({ id: s.id, name: s.name })} className="text-indigo-600 hover:underline text-xs">驗證碼</button>}
+                  <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-amber-600 hover:underline text-xs">歷史評分</a>
+                  <button onClick={() => setAuthSchool({ id: s.id, name: s.name })} className="text-indigo-600 hover:underline text-xs">驗證碼</button>
                   <button onClick={() => copyPortalLink(s.id)} className="text-emerald-600 hover:underline text-xs">複製園所端連結</button>
                   <button onClick={() => rotatePortalLink(s.id)} className="text-amber-600 hover:underline text-xs">重生連結</button>
                   <button onClick={() => edit(s)} className="text-blue-600 hover:underline text-xs">編輯</button>
@@ -477,7 +479,8 @@ function SchoolConfirmationEditor({ value, onChange, onCopyPrevious, onReopen, o
           )}
         </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
+        <CountInput label="幼幼班" value={value.toddlerClassCount ?? ""} onChange={(v) => update({ toddlerClassCount: v })} />
         <CountInput label="小班" value={value.smallClassCount ?? ""} onChange={(v) => update({ smallClassCount: v })} />
         <CountInput label="中班" value={value.middleClassCount ?? ""} onChange={(v) => update({ middleClassCount: v })} />
         <CountInput label="大班" value={value.bigClassCount ?? ""} onChange={(v) => update({ bigClassCount: v })} />

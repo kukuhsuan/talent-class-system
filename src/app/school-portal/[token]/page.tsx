@@ -68,6 +68,7 @@ type PortalChangeRequest = {
 
 type Tab = "home" | "teachers" | "changes" | "outcomes" | "progress" | "certificates" | "ratings";
 type CourseConfirmation = {
+  toddlerClassCount?: string;
   smallClassCount?: string;
   middleClassCount?: string;
   bigClassCount?: string;
@@ -94,6 +95,7 @@ const NAV: Array<{ id: Tab; label: string; icon: string }> = [
 const LOCATION_OPTIONS = ["教室", "禮堂 / 活動中心", "操場", "其他"];
 const TEACHING_STYLE_OPTIONS = ["活潑互動", "注重秩序", "依班級狀況調整"];
 const EMPTY_CONFIRMATION: CourseConfirmation = {
+  toddlerClassCount: "",
   smallClassCount: "",
   middleClassCount: "",
   bigClassCount: "",
@@ -166,7 +168,7 @@ function KindergartenPortal() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [data, setData] = useState<PortalData | null>(null);
-  const [tab, setTab] = useState<Tab>("home");
+  const [tab, setTab] = useState<Tab>("outcomes");
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -181,18 +183,26 @@ function KindergartenPortal() {
   // 依園所類型顯示不同分頁：安親班以「評分」取代「證書」
   const isAfterSchoolPortal = (data?.school.type ?? "").includes("安親");
   const hasCurriculum = (data?.curriculum?.length ?? 0) > 0;
+  const assessmentCount = data?.assessments?.length ?? 0;
   const nav = useMemo<Array<{ id: Tab; label: string; icon: string }>>(() => {
-    if (!isAfterSchoolPortal) return NAV;
+    if (!isAfterSchoolPortal) {
+      // 幼兒園：成果｜評分｜證書（有證書資料才顯示，無資料整個隱藏）
+      return [
+        { id: "outcomes" as Tab, label: "成果", icon: "★" },
+        { id: "ratings" as Tab, label: "評分", icon: "✎" },
+        ...(assessmentCount > 0 ? [{ id: "certificates" as Tab, label: "證書", icon: "◇" }] : []),
+      ];
+    }
     // 安親班（營隊）：證書改評分；沒有課綱進度就隱藏「進度」
     return NAV
       .filter((item) => item.id !== "progress" || hasCurriculum)
       .map((item) => (item.id === "certificates" ? { id: "ratings" as Tab, label: "評分", icon: "✎" } : item));
-  }, [isAfterSchoolPortal, hasCurriculum]);
+  }, [isAfterSchoolPortal, hasCurriculum, assessmentCount]);
   const pendingRatings = useMemo(() => (data?.ratingTasks ?? []).filter((t) => t.status === "open"), [data]);
 
   // 若目前分頁被隱藏（例如安親班無進度），自動回首頁
   useEffect(() => {
-    if (!nav.some((item) => item.id === tab)) setTab("home");
+    if (!nav.some((item) => item.id === tab)) setTab(nav[0]?.id ?? "outcomes");
   }, [nav, tab]);
 
   // 分頁切換：立即回到頁面最上方，讓使用者確定有切換
@@ -433,6 +443,20 @@ function KindergartenPortal() {
                   <div className="space-y-3 sm:space-y-5">
                     <PanelTitle title="學習成果牆" subtitle="每堂課一張成果卡，讓園所快速看見孩子的課程亮點。" />
                     <OutcomeList rows={data.reports} skillMap={skillMap} />
+                    {/* 開課前確認：幼兒園流程，置於成果分頁下方 */}
+                    {!isAfterSchoolPortal && (
+                      <CourseConfirmationForm
+                        value={confirmation}
+                        onChange={setConfirmation}
+                        onSave={saveConfirmation}
+                        onCopyPrevious={copyPreviousConfirmation}
+                        saving={savingConfirmation}
+                        message={confirmationMessage}
+                        termLabel={data.confirmationTerm?.label ?? ""}
+                        westernLabel={data.confirmationTerm?.westernLabel ?? ""}
+                        locked={confirmation.canSchoolEdit === false}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -538,23 +562,6 @@ function KindergartenPortal() {
 
               {tab === "home" && (
                 <>
-                  {/* 開課前確認為幼兒園流程，安親班不顯示 */}
-                  {!data.school.type.includes("安親") && (
-                    <section className="mt-5">
-                      <CourseConfirmationForm
-                        value={confirmation}
-                        onChange={setConfirmation}
-                        onSave={saveConfirmation}
-                        onCopyPrevious={copyPreviousConfirmation}
-                        saving={savingConfirmation}
-                        message={confirmationMessage}
-                        termLabel={data.confirmationTerm?.label ?? ""}
-                        westernLabel={data.confirmationTerm?.westernLabel ?? ""}
-                        locked={confirmation.canSchoolEdit === false}
-                      />
-                    </section>
-                  )}
-
                   {/* 安親班為一期一期的營隊，沒有課綱進度時不顯示此區 */}
                   {learningMaps.length > 0 && (
                     <section className="mt-5">
@@ -615,7 +622,7 @@ function KindergartenPortal() {
         </main>
       </div>
 
-      <nav className={`fixed inset-x-3 bottom-3 z-30 grid ${nav.length === 5 ? "grid-cols-5" : "grid-cols-6"} gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden`}>
+      <nav className={`fixed inset-x-3 bottom-3 z-30 grid ${{ 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5" }[nav.length] ?? "grid-cols-6"} gap-1 rounded-[24px] bg-white/95 p-2 shadow-[0_14px_42px_rgba(30,64,175,0.16)] ring-1 ring-slate-200/80 lg:hidden`}>
         {nav.map((item) => (
           <button key={item.id} onClick={() => selectTab(item.id)} className={`relative rounded-2xl px-1.5 py-2 text-center text-[10px] font-black transition-colors ${tab === item.id ? "bg-blue-600 text-white" : "text-slate-500"}`}>
             {item.id === "ratings" && pendingRatings.length > 0 && (
@@ -935,7 +942,8 @@ function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, savin
       <div className="space-y-4">
         <div className="rounded-2xl bg-slate-50 p-3 sm:p-4">
           <div className="mb-3 text-sm font-bold text-slate-700">班級人數</div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <NumberField label="幼幼班" value={value.toddlerClassCount ?? ""} onChange={(v) => update({ toddlerClassCount: v })} />
             <NumberField label="小班" value={value.smallClassCount ?? ""} onChange={(v) => update({ smallClassCount: v })} />
             <NumberField label="中班" value={value.middleClassCount ?? ""} onChange={(v) => update({ middleClassCount: v })} />
             <NumberField label="大班" value={value.bigClassCount ?? ""} onChange={(v) => update({ bigClassCount: v })} />
@@ -1006,6 +1014,7 @@ function CourseConfirmationForm({ value, onChange, onSave, onCopyPrevious, savin
 
 function CourseConfirmationReadOnly({ value }: { value: CourseConfirmation }) {
   const people = [
+    `幼幼班 ${value.toddlerClassCount || "0"} 人`,
     `小班 ${value.smallClassCount || "0"} 人`,
     `中班 ${value.middleClassCount || "0"} 人`,
     `大班 ${value.bigClassCount || "0"} 人`,

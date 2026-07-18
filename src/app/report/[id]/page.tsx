@@ -188,6 +188,148 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
   );
 }
 
+// 開課前確認（幼兒園第一堂課，老師手機填寫）
+type StartConfirmationRecord = {
+  id: number;
+  attendanceId: number;
+  toddlerClassCount: number;
+  smallClassCount: number;
+  middleClassCount: number;
+  bigClassCount: number;
+  totalCount: number;
+  location: string;
+  classNotes: string;
+  submittedAt: string;
+};
+
+const START_COUNT_FIELDS = [
+  { key: "toddler", label: "幼幼班" },
+  { key: "small", label: "小班" },
+  { key: "middle", label: "中班" },
+  { key: "big", label: "大班" },
+] as const;
+
+function StartConfirmationCard({ reportId, attendanceId }: { reportId: string; attendanceId: number }) {
+  const [eligible, setEligible] = useState(false);
+  const [record, setRecord] = useState<StartConfirmationRecord | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({ toddler: 0, small: 0, middle: 0, big: 0 });
+  const [location, setLocation] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/report/${reportId}/start-confirmation`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setEligible(Boolean(data.eligible));
+        setRecord(data.record ?? null);
+      })
+      .catch(() => undefined);
+  }, [reportId]);
+
+  const total = counts.toddler + counts.small + counts.middle + counts.big;
+
+  function adjust(key: string, delta: number) {
+    setCounts((current) => ({ ...current, [key]: Math.max(0, Math.min(999, (current[key] ?? 0) + delta)) }));
+  }
+
+  async function submit() {
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const res = await fetch(`/api/report/${reportId}/start-confirmation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toddlerClassCount: counts.toddler,
+          smallClassCount: counts.small,
+          middleClassCount: counts.middle,
+          bigClassCount: counts.big,
+          location,
+          classNotes: notes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.record) {
+          setRecord(data.record);
+          setEligible(false);
+        }
+        throw new Error(data.error || "送出失敗");
+      }
+      setRecord(data.record);
+      setEligible(false);
+    } catch (err) {
+      setMessage((err as Error).message || "送出失敗，請稍後再試");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // 本堂已送出：顯示已送出狀態
+  if (record && record.attendanceId === attendanceId) {
+    return (
+      <section className="rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-bold text-[#3F6B55]">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3F6B55] text-xs text-white">✓</span>
+          開課前確認已送出
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">幼幼班 {record.toddlerClassCount}｜小班 {record.smallClassCount}</div>
+          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">中班 {record.middleClassCount}｜大班 {record.bigClassCount}</div>
+          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">總人數 {record.totalCount} 人</div>
+          {record.location ? <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">地點：{record.location}</div> : null}
+        </div>
+        <div className="mt-3 text-xs text-slate-500">
+          填寫時間：{new Date(record.submittedAt.includes("T") ? record.submittedAt : `${record.submittedAt.replace(" ", "T")}Z`).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}
+        </div>
+      </section>
+    );
+  }
+
+  if (!eligible) return null;
+
+  return (
+    <section className="rounded-2xl border border-[#E3D3B5] bg-[#FDFAF3] p-4 shadow-sm">
+      <div className="text-sm font-bold text-[#8A552D]">開課前確認</div>
+      <p className="mt-1 text-xs leading-5 text-slate-500">本課程第一堂課請先確認各班人數與上課資訊，本學期填寫一次即可。</p>
+      <div className="mt-3 space-y-2">
+        {START_COUNT_FIELDS.map((field) => (
+          <div key={field.key} className="flex items-center gap-2">
+            <div className="w-16 shrink-0 text-sm font-semibold text-slate-700">{field.label}</div>
+            <button type="button" onClick={() => adjust(field.key, -1)}
+              className="h-12 w-12 shrink-0 rounded-xl border border-slate-200 bg-white text-2xl font-bold text-slate-500 active:bg-slate-100">−</button>
+            <input inputMode="numeric" type="number" value={counts[field.key]}
+              onChange={(e) => setCounts((current) => ({ ...current, [field.key]: Math.max(0, Math.min(999, Number(e.target.value.replace(/[^\d]/g, "")) || 0)) }))}
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white text-center text-lg font-semibold outline-none focus:border-[#C8956C]" />
+            <button type="button" onClick={() => adjust(field.key, 1)}
+              className="h-12 w-12 shrink-0 rounded-xl border border-slate-200 bg-white text-2xl font-bold text-slate-500 active:bg-slate-100">＋</button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-xl bg-[#F3E8D3] px-4 py-3 text-sm font-bold text-[#8A552D]">總人數：{total} 人</div>
+      <label className="mt-3 block text-sm font-semibold text-slate-700">
+        上課地點
+        <input value={location} onChange={(e) => setLocation(e.target.value)}
+          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#C8956C]" placeholder="例：操場、活動中心" />
+      </label>
+      <label className="mt-3 block text-sm font-semibold text-slate-700">
+        班級注意事項（選填）
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+          className="mt-2 min-h-16 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#C8956C]" placeholder="例：有孩子需特別留意，或器材放置位置" />
+      </label>
+      {message && <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-600">{message}</div>}
+      <button type="button" onClick={() => void submit()} disabled={saving}
+        className="mt-4 w-full rounded-xl bg-[#8A552D] px-4 py-3 text-sm font-bold text-white disabled:opacity-60">
+        {saving ? "送出中..." : "送出開課前確認"}
+      </button>
+    </section>
+  );
+}
+
 function loadLocalImage(file: File) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -559,6 +701,7 @@ export default function TeacherReportPage() {
       )}
 
       <div className="space-y-4">
+        {isKindergarten && <StartConfirmationCard reportId={params.id} attendanceId={info.id} />}
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">出席人數{needsStudentCount ? "" : "（免填）"}</label>
           {needsStudentCount ? (
