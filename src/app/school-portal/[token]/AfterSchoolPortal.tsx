@@ -3,7 +3,6 @@
 // 設計原則：專業穩重、少圓角漸層、Lucide 風格線條 icon、375px 行動優先
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { courseLabel } from "@/lib/courseMeta";
-import { parseAbilities } from "@/lib/abilityMap";
 
 /* ---------- 型別 ---------- */
 export type PortalSummary = {
@@ -144,83 +143,37 @@ function VerifyModal({ token, onClose, onVerified }: { token: string; onClose: (
 }
 
 /* ---------- 學習成果分享圖（Canvas，不用 Vercel Function） ---------- */
-// crossOrigin=anonymous：跨網域照片（舊資料存公開網址）若無 CORS 直接略過，避免 canvas 被污染導致 toBlob 失敗
 function loadImg(src: string) {
   return new Promise<HTMLImageElement | null>((resolve) => {
     const img = new window.Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = src;
   });
 }
-// 逐字斷行（中文無空白），回傳實際行陣列；超過 maxLines 以 … 收尾
-function breakLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number) {
-  const out: string[] = [];
-  for (const rawLine of text.replace(/\r/g, "").split("\n")) {
-    let line = "";
-    for (const ch of [...rawLine]) {
-      if (ctx.measureText(line + ch).width > maxWidth) {
-        out.push(line); line = ch;
-        if (out.length >= maxLines) { out[maxLines - 1] = out[maxLines - 1].slice(0, -1) + "…"; return out; }
-      } else line += ch;
-    }
-    out.push(line);
-    if (out.length >= maxLines) return out;
+function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines: number) {
+  const chars = [...text.replace(/\s+/g, " ").trim()];
+  let line = ""; let lines = 0;
+  for (const ch of chars) {
+    if (ctx.measureText(line + ch).width > maxWidth) {
+      ctx.fillText(lines === maxLines - 1 ? line.slice(0, -1) + "…" : line, x, y + lines * lineHeight);
+      lines += 1; line = ch;
+      if (lines >= maxLines) return y + lines * lineHeight;
+    } else line += ch;
   }
-  while (out.length && !out[out.length - 1].trim()) out.pop();
-  return out;
+  if (line) { ctx.fillText(line, x, y + lines * lineHeight); lines += 1; }
+  return y + lines * lineHeight;
 }
-// 分享圖：高度依內容動態計算（無照片時不留大片空白）；能力以標籤呈現
 async function generateShareImage(item: ReportItem, schoolName: string) {
-  const W = 1080, M = 48, PAD = 36;
-  const measure = document.createElement("canvas").getContext("2d");
-  if (!measure) return;
-
-  const skills = parseAbilities(item.skillFocus);
-  const summary = (item.aiSummary || item.reportContent).trim();
-  const note = item.aiTeachingNote.trim();
-
-  // 先載資源（logo 同網域必成功；照片失敗自動換下一張，全失敗則無照片版型）
-  const [logo, photo] = await Promise.all([
-    loadImg("/sports-leader-logo.png"),
-    (async () => {
-      for (const url of item.photoUrls.slice(0, 3)) {
-        const img = await loadImg(url);
-        if (img) return img;
-      }
-      return null;
-    })(),
-  ]);
-
-  // 量測文字行數
-  measure.font = "31px 'Noto Sans TC', sans-serif";
-  const summaryLines = summary ? breakLines(measure, summary, W - M * 2 - PAD * 2, photo ? 10 : 14) : [];
-  measure.font = "27px 'Noto Sans TC', sans-serif";
-  const noteLines = !photo && note ? breakLines(measure, note, W - M * 2 - PAD * 2, 6) : [];
-
-  // 版面高度計算
-  const headH = 150;
-  const infoH = skills.length ? 250 : 186;
-  const photoH = photo ? Math.round((W - M * 2) * 3 / 4) : 0;
-  const textH = summaryLines.length
-    ? 100 + summaryLines.length * 50 + (noteLines.length ? 30 + noteLines.length * 42 : 0) + PAD
-    : 0;
-  let y = headH + 40;
-  const infoY = y; y += infoH + 32;
-  const photoY = y; if (photo) y += photoH + 32;
-  const textY = y; if (textH) y += textH + 32;
-  const H = Math.max(900, y + 84);
-
+  const W = 1080, H = 1350;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.fillStyle = "#F5F7FA"; ctx.fillRect(0, 0, W, H);
-
   // 頁首品牌帶
-  ctx.fillStyle = "#1F3A6D"; ctx.fillRect(0, 0, W, headH);
-  ctx.fillStyle = "#D99032"; ctx.fillRect(0, headH - 6, W, 6);
+  ctx.fillStyle = "#1F3A6D"; ctx.fillRect(0, 0, W, 150);
+  const logo = await loadImg("/sports-leader-logo.png");
   if (logo) {
     ctx.save();
     ctx.fillStyle = "#FFFFFF";
@@ -233,80 +186,53 @@ async function generateShareImage(item: ReportItem, schoolName: string) {
   ctx.fillText("運動班長", 168, 70);
   ctx.font = "28px 'Noto Sans TC', sans-serif"; ctx.fillStyle = "#C9D6EA";
   ctx.fillText("安親班課程服務平台", 168, 112);
-
   // 課程資訊卡
   ctx.fillStyle = "#FFFFFF";
-  ctx.beginPath(); ctx.roundRect(M, infoY, W - M * 2, infoH, 16); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(48, 190, W - 96, 190, 16); ctx.fill();
   ctx.fillStyle = "#1F2937"; ctx.font = "bold 42px 'Noto Sans TC', sans-serif";
-  ctx.fillText(`${item.date.replaceAll("-", "/")}｜${item.courseName}`, M + PAD, infoY + 72);
+  ctx.fillText(`${item.date.replaceAll("-", "/")}｜${item.courseName}`, 84, 262);
   ctx.fillStyle = "#64748B"; ctx.font = "30px 'Noto Sans TC', sans-serif";
-  ctx.fillText(`${schoolName}｜${item.teacherName} 老師｜${item.studentCount} 位孩子`, M + PAD, infoY + 132);
-  if (skills.length) {
-    // 能力標籤 pills
-    let px = M + PAD;
-    const py = infoY + 168;
-    ctx.font = "bold 26px 'Noto Sans TC', sans-serif";
-    for (const skill of skills.slice(0, 5)) {
-      const tw = ctx.measureText(skill).width;
-      ctx.fillStyle = "#FBF3E8";
-      ctx.beginPath(); ctx.roundRect(px, py, tw + 44, 52, 26); ctx.fill();
-      ctx.fillStyle = "#D99032";
-      ctx.fillText(skill, px + 22, py + 36);
-      px += tw + 60;
-      if (px > W - M - PAD - 120) break;
-    }
-  }
-
+  ctx.fillText(`${schoolName}｜${item.teacherName} 老師｜${item.studentCount} 位孩子`, 84, 320);
+  ctx.fillStyle = "#D99032"; ctx.font = "bold 28px 'Noto Sans TC', sans-serif";
+  if (item.skillFocus.trim()) ctx.fillText(`能力培養：${item.skillFocus.trim().slice(0, 18)}`, 84, 362);
   // 照片（4:3）
+  let photoBottom = 420;
+  const photo = item.photoUrls[0] ? await loadImg(item.photoUrls[0]) : null;
   if (photo) {
-    const pw = W - M * 2;
-    const scale = Math.max(pw / photo.width, photoH / photo.height);
-    const sw = pw / scale, sh = photoH / scale;
+    const pw = W - 96, ph = Math.round(pw * 3 / 4);
+    const scale = Math.max(pw / photo.width, ph / photo.height);
+    const sw = pw / scale, sh = ph / scale;
     ctx.save();
-    ctx.beginPath(); ctx.roundRect(M, photoY, pw, photoH, 16); ctx.clip();
-    ctx.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, M, photoY, pw, photoH);
+    ctx.beginPath(); ctx.roundRect(48, 420, pw, ph, 16); ctx.clip();
+    ctx.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, 48, 420, pw, ph);
     ctx.restore();
+    photoBottom = 420 + ph + 40;
   }
-
   // 老師回報文字
-  if (summaryLines.length) {
+  const summary = (item.aiSummary || item.reportContent).trim();
+  if (summary) {
     ctx.fillStyle = "#FFFFFF";
-    ctx.beginPath(); ctx.roundRect(M, textY, W - M * 2, textH, 16); ctx.fill();
-    ctx.fillStyle = "#D99032"; ctx.fillRect(M, textY + 26, 8, 36);
+    ctx.beginPath(); ctx.roundRect(48, photoBottom, W - 96, H - photoBottom - 120, 16); ctx.fill();
     ctx.fillStyle = "#1F3A6D"; ctx.font = "bold 32px 'Noto Sans TC', sans-serif";
-    ctx.fillText("課程成果", M + PAD, textY + 56);
-    ctx.fillStyle = "#1F2937"; ctx.font = "31px 'Noto Sans TC', sans-serif";
-    summaryLines.forEach((line, index) => ctx.fillText(line, M + PAD, textY + 116 + index * 50));
-    if (noteLines.length) {
-      const noteY = textY + 116 + summaryLines.length * 50 + 20;
-      ctx.fillStyle = "#64748B"; ctx.font = "27px 'Noto Sans TC', sans-serif";
-      noteLines.forEach((line, index) => ctx.fillText(line, M + PAD, noteY + index * 42));
-    }
+    ctx.fillText("課程成果", 84, photoBottom + 64);
+    ctx.fillStyle = "#1F2937"; ctx.font = "30px 'Noto Sans TC', sans-serif";
+    const maxLines = Math.max(1, Math.floor((H - photoBottom - 240) / 48));
+    wrapText(ctx, summary, 84, photoBottom + 120, W - 168, 48, maxLines);
   }
-
   // 頁尾
   ctx.fillStyle = "#64748B"; ctx.font = "24px 'Noto Sans TC', sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("運動班長｜系統技術支援：WaysLeader AI", W / 2, H - 40);
+  ctx.fillText("運動班長｜系統技術支援：WaysLeader AI", W / 2, H - 48);
   ctx.textAlign = "left";
-
-  // 匯出：污染或不支援時明確提示，不再無聲失敗
-  await new Promise<void>((resolve, reject) => {
-    try {
-      canvas.toBlob((blob) => {
-        if (!blob) { reject(new Error("no-blob")); return; }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `運動班長成果_${item.date}_${item.courseName}.png`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-        resolve();
-      }, "image/png");
-    } catch (err) { reject(err as Error); }
-  }).catch(() => {
-    alert("圖片產生失敗，請改用「複製給家長」以文字分享，或稍後再試。");
-  });
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `運動班長成果_${item.date}_${item.courseName}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }, "image/png");
 }
 function buildParentText(item: ReportItem, schoolName: string) {
   const lines = [
@@ -316,8 +242,7 @@ function buildParentText(item: ReportItem, schoolName: string) {
   ];
   const summary = (item.aiSummary || item.reportContent).trim();
   if (summary) lines.push("", summary);
-  const skills = parseAbilities(item.skillFocus);
-  if (skills.length) lines.push("", `本堂課培養能力：${skills.join("、")}`);
+  if (item.skillFocus.trim()) lines.push("", `本堂課培養能力：${item.skillFocus.trim()}`);
   lines.push("", "— 運動班長 安親班課程服務平台");
   return lines.join("\n");
 }
@@ -328,7 +253,6 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
   const [copied, setCopied] = useState(false);
   const [making, setMaking] = useState(false);
   const summary = (item.aiSummary || item.reportContent).trim();
-  const skills = useMemo(() => parseAbilities(item.skillFocus), [item.skillFocus]);
   const long = summary.length > 80;
 
   async function copyText() {
@@ -346,13 +270,7 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
           {item.incident && <span className="shrink-0 rounded-full bg-[#FBF3E8] px-2.5 py-1 text-xs font-bold text-[#D99032]">特殊狀況</span>}
         </div>
         <p className="mt-1 text-[13px] text-[#64748B]">{item.teacherName} 老師｜{item.time}｜{item.studentCount} 位孩子</p>
-        {skills.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {skills.map((skill) => (
-              <span key={skill} className="rounded-full bg-[#EDF2F9] px-2.5 py-1 text-xs font-bold text-[#315E9F]">{skill}</span>
-            ))}
-          </div>
-        )}
+        {item.skillFocus.trim() && <p className="mt-2 text-[14px] font-bold text-[#315E9F]">能力培養：{item.skillFocus.trim()}</p>}
       </div>
       {item.photoUrls.length > 0 && (
         <div className={expanded ? "grid grid-cols-2 gap-1 px-4" : "px-4"}>
@@ -565,7 +483,7 @@ function ChangesTab({ token, onNeedVerify, onSubmitted }: { token: string; onNee
     && (!types.includes("LOCATION") || newSchoolId != null || newLocation.trim())
     && (!types.includes("STUDENT_COUNT") || newStudentCount !== "");
 
-  async function doSubmit() {
+  const doSubmit = useCallback(async () => {
     if (!attendanceId || saving) return;
     setSaving(true); setMessage("");
     try {
@@ -590,7 +508,7 @@ function ChangesTab({ token, onNeedVerify, onSubmitted }: { token: string; onNee
       onSubmitted();
       await load();
     } catch (err) { setMessage((err as Error).message); } finally { setSaving(false); }
-  }
+  }, [attendanceId, saving, data, newSchoolId, token, targetIds, types, newDate, newStart, newEnd, newLocation, newStudentCount, reasonType, reasonNote, onNeedVerify, onSubmitted, load]);
 
   if (loading) return <div className="space-y-3"><SkeletonCard /><SkeletonCard /></div>;
   if (error) return <ErrorBox message={error} onRetry={load} />;
