@@ -193,9 +193,10 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
   const assessmentCount = data?.assessments?.length ?? 0;
   const nav = useMemo<Array<{ id: Tab; label: string; icon: string }>>(() => {
     if (!isAfterSchoolPortal) {
-      // 幼兒園：成果｜評分｜證書（有證書資料才顯示，無資料整個隱藏）
+      // 幼兒園：成果｜進度（有課綱才顯示）｜評分｜證書（有證書資料才顯示，無資料整個隱藏）
       return [
         { id: "outcomes" as Tab, label: "成果", icon: "★" },
+        ...(hasCurriculum ? [{ id: "progress" as Tab, label: "進度", icon: "⌁" }] : []),
         { id: "ratings" as Tab, label: "評分", icon: "✎" },
         ...(assessmentCount > 0 ? [{ id: "certificates" as Tab, label: "證書", icon: "◇" }] : []),
       ];

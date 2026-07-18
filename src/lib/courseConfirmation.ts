@@ -58,8 +58,8 @@ let storageReady = false;
 export function currentConfirmationTerm(date = new Date()): ConfirmationTerm {
   const month = date.getMonth() + 1;
   const year = date.getFullYear();
-  // 公司學期制：1–8 月為上一學年度第 2 學期，9 月起才進入新學年度第 1 學期。
-  if (month >= 9) return { academicYear: year - 1911, semester: "1" };
+  // 公司學期制：1–6 月為上一學年度第 2 學期，7 月起即進入新學年度第 1 學期（暑期開課即算新學年）。
+  if (month >= 7) return { academicYear: year - 1911, semester: "1" };
   return { academicYear: year - 1912, semester: "2" };
 }
 
