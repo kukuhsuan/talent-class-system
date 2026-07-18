@@ -27,6 +27,7 @@ type Lesson = {
 };
 
 type Scores = Record<(typeof SCORE_FIELDS)[number]["key"], number>;
+type NextLesson = { url: string; date: string; courseName: string; teacherName: string } | null;
 
 // 2026-07-09 → 7月9日
 function dateLabel(iso: string) {
@@ -48,7 +49,9 @@ export default function RatingPage() {
   const [wish, setWish] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [nextLesson, setNextLesson] = useState<NextLesson>(null);
   const [formError, setFormError] = useState("");
+  const [showVerify, setShowVerify] = useState(false);
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = useCallback(async () => {
@@ -105,7 +108,9 @@ export default function RatingPage() {
         body: JSON.stringify({ ...scores, feedback, continueWish: wish }),
       });
       const data = await res.json();
+      if (res.status === 401 && data.requiresVerify) { setShowVerify(true); return; }
       if (!res.ok) { setFormError(data.error ?? "送出失敗"); return; }
+      setNextLesson((data.next as NextLesson) ?? null);
       setDone(true);
       window.scrollTo({ top: 0 });
     } catch {
@@ -114,6 +119,9 @@ export default function RatingPage() {
       setSubmitting(false);
     }
   };
+
+  // 尚缺幾項（5 個評分項＋續排意願）
+  const missing = SCORE_FIELDS.filter(({ key }) => !scores[key]).length + (wish ? 0 : 1);
 
   if (loading) {
     // 骨架畫面：避免長時間空白
@@ -135,22 +143,23 @@ export default function RatingPage() {
       <Shell>
         <BrandHeader />
         <div className="space-y-4 py-12 text-center">
-          <div className="mx-auto flex h-20 w-20 animate-[pop_0.4s_ease-out] items-center justify-center rounded-full bg-green-500 text-4xl text-white shadow-lg shadow-green-200">✓</div>
-          <style>{`@keyframes pop{0%{transform:scale(0.3);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}`}</style>
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#2F855A] text-3xl text-white">✓</div>
           <h1 className="text-xl font-bold text-gray-800">評分已完成，感謝您的回饋！</h1>
           {lesson && (
             <p className="text-sm leading-relaxed text-gray-600">
               {lesson.teacherName} 老師｜{dateLabel(lesson.date)} {lesson.courseName}課程已完成評分
             </p>
           )}
+          {nextLesson ? (
+            <div className="mx-auto max-w-xs rounded-[14px] border border-[#E2E8F0] bg-white p-4">
+              <p className="text-sm font-bold text-gray-800">還有下一堂課待評分</p>
+              <p className="mt-1 text-sm text-gray-600">{dateLabel(nextLesson.date)}｜{nextLesson.courseName}｜{nextLesson.teacherName} 老師</p>
+              <a href={nextLesson.url} className="mt-3 block rounded-[10px] bg-[#1F3A6D] py-3 text-sm font-bold text-white">繼續評分下一堂</a>
+            </div>
+          ) : (
+            <p className="text-sm font-bold text-[#2F855A]">本月待評分課程已全部完成</p>
+          )}
           <p className="text-xs leading-relaxed text-gray-400">我們會依據您的回饋，持續提升教學品質。</p>
-          <button
-            type="button"
-            onClick={() => { window.close(); }}
-            className="mt-2 rounded-2xl border border-gray-200 bg-white px-8 py-3 text-sm font-semibold text-gray-600"
-          >
-            關閉頁面
-          </button>
         </div>
         <Footer />
       </Shell>
@@ -216,7 +225,7 @@ export default function RatingPage() {
                   key={n}
                   type="button"
                   onClick={() => pickScore(key, n)}
-                  className={`flex-1 rounded-xl border py-2.5 text-2xl leading-none transition-colors ${scores[key] >= n ? "border-amber-300 bg-amber-50 text-amber-400" : "border-gray-200 bg-white text-gray-200"}`}
+                  className={`min-h-[44px] flex-1 rounded-xl border py-2.5 text-2xl leading-none transition-colors duration-150 ${scores[key] >= n ? "border-[#D99032] bg-[#FBF3E8] text-[#D99032]" : "border-gray-200 bg-white text-gray-200"}`}
                   aria-label={`${label} ${n} 分`}
                 >
                   ★
@@ -269,15 +278,75 @@ export default function RatingPage() {
         <button
           type="button"
           onClick={submit}
-          disabled={submitting}
-          className="w-full rounded-2xl bg-indigo-600 py-3.5 font-semibold text-white shadow-md shadow-indigo-200 disabled:opacity-50"
+          disabled={submitting || missing > 0}
+          className="w-full rounded-[12px] bg-[#1F3A6D] py-3.5 font-semibold text-white disabled:opacity-40"
         >
-          {submitting ? "送出中…" : "送出評分"}
+          {submitting ? "送出中…" : missing > 0 ? `尚缺 ${missing} 項未填` : "送出評分"}
         </button>
         <p className="pb-2 text-center text-xs text-gray-300">評分結果僅供內部教學品質管理使用</p>
       </div>
       <Footer />
+      {showVerify && (
+        <VerifyModal
+          token={token}
+          onClose={() => setShowVerify(false)}
+          onVerified={() => { setShowVerify(false); void submit(); }}
+        />
+      )}
     </Shell>
+  );
+}
+
+// 園所驗證碼 Modal：首次送出評分時驗證，30 天內免再輸入
+function VerifyModal({ token, onClose, onVerified }: { token: string; onClose: () => void; onVerified: () => void }) {
+  const [code, setCode] = useState("");
+  const [remember, setRemember] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!/^\d{6}$/.test(code)) { setError("請輸入 6 位數驗證碼"); return; }
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(`/api/rating/${token}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, remember }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error ?? "驗證失敗，請稍後再試"); return; }
+      onVerified();
+    } catch {
+      setError("驗證失敗，請稍後再試");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal>
+      <div className="w-full max-w-sm rounded-[16px] bg-white p-5 shadow-xl">
+        <h3 className="text-[17px] font-bold text-gray-800">園所身分驗證</h3>
+        <p className="mt-2 text-sm leading-6 text-gray-500">為確認是園所人員操作，請輸入 6 位數園所驗證碼。驗證成功後，這台裝置 30 天內不需再次輸入。</p>
+        <input
+          inputMode="numeric" pattern="\d*" maxLength={6} value={code} autoFocus
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder="6 位數驗證碼"
+          className="mt-4 w-full rounded-[10px] border border-[#E2E8F0] px-4 py-3 text-center text-xl tracking-[0.4em] outline-none focus:border-[#315E9F]"
+        />
+        <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-4 w-4" />
+          記住這台裝置 30 天
+        </label>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <button disabled={busy || code.length !== 6} onClick={submit} className="mt-4 w-full rounded-[10px] bg-[#1F3A6D] py-3 text-sm font-bold text-white disabled:opacity-40">
+          {busy ? "驗證中…" : "確認並繼續"}
+        </button>
+        <button onClick={onClose} className="mt-2 w-full rounded-[10px] py-2.5 text-sm text-gray-500">取消</button>
+        <p className="mt-3 text-center text-xs text-gray-400">忘記驗證碼？請聯繫運動班長客服重新取得。</p>
+      </div>
+    </div>
   );
 }
 

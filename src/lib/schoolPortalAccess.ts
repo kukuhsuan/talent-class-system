@@ -17,7 +17,8 @@ export async function ensurePortalColumns() {
 // 避開容易混淆的 0/O、1/l/I
 const CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
-function randomPortalCode(length = 8) {
+// 52 碼 ≈ 257 bits（≥ 32 bytes 熵），密碼學安全、不可猜測、無法從 schoolId 推算
+function randomPortalCode(length = 52) {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   let out = "";

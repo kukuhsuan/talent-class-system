@@ -5,20 +5,45 @@ import {
   getRatingByToken,
   raiseLowScoreAlert,
   ratingLessonInfo,
+  ratingSchoolId,
   validScore,
 } from "@/lib/courseRating";
+import { hasValidPortalSession } from "@/lib/portalAuth";
 
-// 公開端點：安親班透過專屬連結讀取課堂資訊（免登入）
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export const dynamic = "force-dynamic";
+
+// 同園所的下一堂待評分課程（完成一堂後自動接續）
+async function nextOpenRating(schoolId: number, excludeAttendanceId: number) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ token: string; attendanceId: number }>>(
+    `SELECT cr.token, cr.attendanceId FROM CourseRating cr
+     JOIN Attendance a ON a.id = cr.attendanceId
+     JOIN Course c ON c.id = a.courseId
+     WHERE cr.status = 'open' AND cr.attendanceId != ?
+       AND (a.scheduledSchoolId = ? OR (a.scheduledSchoolId IS NULL AND c.schoolId = ?))
+     ORDER BY a.date ASC LIMIT 1`,
+    excludeAttendanceId, schoolId, schoolId,
+  );
+  if (!rows.length) return null;
+  const lesson = await ratingLessonInfo(Number(rows[0].attendanceId));
+  if (!lesson) return null;
+  return { url: `/rating/${encodeURIComponent(rows[0].token)}`, date: lesson.date, courseName: lesson.courseName, teacherName: lesson.teacherName };
+}
+
+// 安親班透過專屬連結讀取課堂資訊（查看免驗證；送出需驗證）
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rating = await getRatingByToken(token);
   if (!rating) return NextResponse.json({ error: "找不到這個評分連結" }, { status: 404 });
   const lesson = await ratingLessonInfo(rating.attendanceId);
   if (!lesson) return NextResponse.json({ error: "找不到這堂課的資料" }, { status: 404 });
-  return NextResponse.json({ status: rating.status, lesson });
+  const schoolId = await ratingSchoolId(rating.attendanceId);
+  const verified = schoolId ? await hasValidPortalSession(req, schoolId) : false;
+  return NextResponse.json({ status: rating.status, lesson, verified }, {
+    headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" },
+  });
 }
 
-// 公開端點：提交評分（一堂課僅能提交一次）
+// 提交評分（一堂課僅能提交一次；後端檢查園所驗證 Session）
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const rating = await getRatingByToken(token);
@@ -31,6 +56,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   }
   const lesson = await ratingLessonInfo(rating.attendanceId);
   if (!lesson) return NextResponse.json({ error: "找不到這堂課的資料" }, { status: 404 });
+
+  const schoolId = await ratingSchoolId(rating.attendanceId);
+  if (!schoolId || !(await hasValidPortalSession(req, schoolId))) {
+    return NextResponse.json({ error: "請先完成園所驗證", requiresVerify: true }, { status: 401 });
+  }
 
   const data = await req.json().catch(() => ({}));
   const scores = {
@@ -66,5 +96,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   if ((scores.scoreOverall ?? 5) < 3) {
     await raiseLowScoreAlert(rating.attendanceId, scores.scoreOverall ?? 0, lesson);
   }
-  return NextResponse.json({ ok: true });
+  const next = await nextOpenRating(schoolId, rating.attendanceId).catch(() => null);
+  return NextResponse.json({ ok: true, next });
 }

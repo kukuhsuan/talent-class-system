@@ -6,6 +6,7 @@ import { ABILITY_ICON_MAP, CORE_ABILITIES, parseAbilities, type CoreAbility } fr
 import { courseBearImage } from "@/lib/courseBearMap";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { courseLabel } from "@/lib/courseMeta";
+import AfterSchoolPortal, { type PortalSummary } from "./AfterSchoolPortal";
 
 type PortalData = {
   school: { name: string; type: string; region: string; address: string; contact: string; phone: string };
@@ -110,7 +111,57 @@ const SKILL_MAP: Record<CoreAbility, SkillMeta> = Object.fromEntries(
   CORE_ABILITIES.map((ability) => [ability, { image: ABILITY_ICON_MAP[ability] }]),
 ) as Record<CoreAbility, SkillMeta>;
 
+// 入口：先打輕量 summary API 判斷園所類型，安親班走「運動班長」新版三分頁，幼兒園走原版（完全不動）
 export default function SchoolPortalPage() {
+  const params = useParams<{ token: string }>();
+  const [summary, setSummary] = useState<PortalSummary | null>(null);
+  const [gateError, setGateError] = useState("");
+
+  const loadSummary = () => {
+    setGateError("");
+    fetch(`/api/school-portal/${encodeURIComponent(params.token)}/summary`)
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || "園所連結無效或已過期");
+        return body as PortalSummary;
+      })
+      .then(setSummary)
+      .catch((error) => setGateError((error as Error).message));
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadSummary(); }, [params.token]);
+
+  if (gateError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F7FA] p-6">
+        <div className="w-full max-w-sm rounded-[14px] border border-[#E2E8F0] bg-white p-6 text-center">
+          <p className="text-sm text-[#C24141]">{gateError}</p>
+          <button onClick={loadSummary} className="mt-4 rounded-[10px] bg-[#1F3A6D] px-5 py-2.5 text-sm font-bold text-white">重新載入</button>
+        </div>
+      </div>
+    );
+  }
+  if (!summary) {
+    // 中性骨架：尚未知道園所類型前不顯示任何品牌與分頁，避免閃現幼兒園版
+    return (
+      <div className="min-h-screen bg-[#F5F7FA]">
+        <div className="border-b border-[#E2E8F0] bg-white px-4 py-4">
+          <div className="mx-auto flex max-w-[1040px] items-center gap-3">
+            <div className="h-10 w-10 animate-pulse rounded-full bg-[#E2E8F0]" />
+            <div className="space-y-2"><div className="h-3 w-32 animate-pulse rounded bg-[#E2E8F0]" /><div className="h-3 w-20 animate-pulse rounded bg-[#EDF1F5]" /></div>
+          </div>
+        </div>
+        <div className="mx-auto max-w-[1040px] space-y-3 p-4">
+          {[0, 1, 2].map((index) => <div key={index} className="h-28 animate-pulse rounded-[14px] border border-[#E2E8F0] bg-white" />)}
+        </div>
+      </div>
+    );
+  }
+  if (summary.isAfterSchool) return <AfterSchoolPortal token={params.token} summary={summary} />;
+  return <KindergartenPortal />;
+}
+
+function KindergartenPortal() {
   const params = useParams<{ token: string }>();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);

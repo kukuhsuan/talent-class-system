@@ -135,6 +135,65 @@ export async function raiseLowScoreAlert(attendanceId: number, overall: number, 
   });
 }
 
+// 由課堂反查園所 id（驗證評分權限用）
+export async function ratingSchoolId(attendanceId: number): Promise<number | null> {
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+    select: { scheduledSchoolId: true, course: { select: { schoolId: true } } },
+  });
+  return attendance?.scheduledSchoolId ?? attendance?.course.schoolId ?? null;
+}
+
+// 判斷課堂是否已結束（台灣時間）：日期已過，或同日且結束時間已過（無法解析時間則以日期為準）
+export function lessonEnded(date: Date, timeText: string | null | undefined): boolean {
+  const nowTW = new Date(Date.now() + 8 * 3600 * 1000);
+  const todayISO = nowTW.toISOString().slice(0, 10);
+  const dateISO = date.toISOString().slice(0, 10);
+  if (dateISO < todayISO) return true;
+  if (dateISO > todayISO) return false;
+  const match = String(timeText ?? "").replace(/[：]/g, ":").match(/(\d{1,2}):(\d{2})\s*$/);
+  if (!match) return false;
+  const endMinutes = Number(match[1]) * 60 + Number(match[2]);
+  const nowMinutes = nowTW.getUTCHours() * 60 + nowTW.getUTCMinutes();
+  return nowMinutes >= endMinutes;
+}
+
+// 自動開放評分：課已結束＋老師已回報（成果或出勤人數）＋未取消 → 補建 open 評分任務
+// attendanceId UNIQUE 保證不重複建立
+export async function openEligibleRatings(records: Array<{
+  id: number;
+  date: Date;
+  cancelled: boolean;
+  reportContent: string;
+  studentCount: number | null;
+  studentCountA?: number | null;
+  studentCountB?: number | null;
+  scheduledTime?: string | null;
+  courseTime?: string;
+}>): Promise<void> {
+  await ensureCourseRatingTables();
+  const eligible = records.filter((r) =>
+    !r.cancelled
+    && (r.reportContent.trim() !== "" || r.studentCount != null || r.studentCountA != null || r.studentCountB != null)
+    && lessonEnded(r.date, r.scheduledTime?.trim() || r.courseTime),
+  );
+  if (!eligible.length) return;
+  const ids = eligible.map((r) => r.id);
+  const existing = await prisma.$queryRawUnsafe<Array<{ attendanceId: number }>>(
+    `SELECT attendanceId FROM CourseRating WHERE attendanceId IN (${ids.map(() => "?").join(",")})`,
+    ...ids,
+  );
+  const existingSet = new Set(existing.map((row) => Number(row.attendanceId)));
+  for (const record of eligible) {
+    if (existingSet.has(record.id)) continue;
+    const token = crypto.randomBytes(24).toString("base64url");
+    await prisma.$executeRawUnsafe(
+      "INSERT OR IGNORE INTO CourseRating (attendanceId, token) VALUES (?, ?)",
+      record.id, token,
+    );
+  }
+}
+
 export function validScore(value: unknown): number | null {
   const n = Number(value);
   return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;

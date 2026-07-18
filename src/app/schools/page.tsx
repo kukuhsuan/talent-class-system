@@ -56,6 +56,7 @@ export default function SchoolsPage() {
   const pageSize = 20;
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [authSchool, setAuthSchool] = useState<{ id: number; name: string } | null>(null);
   const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
@@ -353,6 +354,7 @@ export default function SchoolsPage() {
                 </td>
                 <td className="px-4 py-3 text-right space-x-2">
                   {(s.type ?? "").includes("安親") && <a href={`/ratings?school=${encodeURIComponent(s.name)}`} className="text-amber-600 hover:underline text-xs">歷史評分</a>}
+                  {(s.type ?? "").includes("安親") && <button onClick={() => setAuthSchool({ id: s.id, name: s.name })} className="text-indigo-600 hover:underline text-xs">驗證碼</button>}
                   <button onClick={() => copyPortalLink(s.id)} className="text-emerald-600 hover:underline text-xs">複製園所端連結</button>
                   <button onClick={() => rotatePortalLink(s.id)} className="text-amber-600 hover:underline text-xs">重生連結</button>
                   <button onClick={() => edit(s)} className="text-blue-600 hover:underline text-xs">編輯</button>
@@ -368,6 +370,72 @@ export default function SchoolsPage() {
         </div>
       </div>
       <p className="text-xs text-gray-400 mt-3">本頁 {filtered.length} 間園所</p>
+      {authSchool && <PortalAuthModal school={authSchool} onClose={() => setAuthSchool(null)} />}
+    </div>
+  );
+}
+
+// 園所驗證碼管理（安親班）：產生／停用／登出所有裝置＋狀態顯示
+function PortalAuthModal({ school, onClose }: { school: { id: number; name: string }; onClose: () => void }) {
+  const [status, setStatus] = useState<{ enabled: boolean; lastVerifiedAt: string | null; failCount: number; lockedUntil: string | null } | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/schools/${school.id}/portal-auth`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "載入失敗");
+      setStatus(data);
+    } catch (e) { setError((e as Error).message); }
+  }, [school.id]);
+  useEffect(() => { load(); }, [load]);
+
+  async function act(action: "generate" | "disable" | "logoutAll") {
+    if (action === "generate" && status?.enabled && !confirm("產生新驗證碼後，舊驗證碼會立即失效。確定要繼續？")) return;
+    if (action === "disable" && !confirm("停用後園所將無法送出評分與異動申請。確定要停用？")) return;
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(`/api/schools/${school.id}/portal-auth`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "操作失敗");
+      if (action === "generate") setCode(String(data.code ?? ""));
+      if (action === "disable") setCode("");
+      await load();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+
+  const locked = status?.lockedUntil && new Date(status.lockedUntil + "Z") > new Date();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-bold text-gray-800">園所驗證碼管理｜{school.name}</h3>
+        <p className="mt-1 text-xs text-gray-400">園所首次送出評分或異動申請時，需輸入 6 位數驗證碼。</p>
+        {status && (
+          <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+            <p>狀態：{status.enabled ? <span className="font-bold text-emerald-600">已啟用</span> : <span className="font-bold text-slate-400">未啟用</span>}{locked ? <span className="ml-2 font-bold text-red-600">已鎖定 15 分鐘</span> : null}</p>
+            <p>最近驗證成功：{status.lastVerifiedAt ? new Date(status.lastVerifiedAt + "Z").toLocaleString("zh-TW") : "—"}</p>
+            <p>連續失敗次數：{status.failCount}</p>
+          </div>
+        )}
+        {code && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+            <p className="text-xs font-bold text-amber-700">新驗證碼（只顯示這一次，請立即提供給園所）</p>
+            <p className="mt-1 text-3xl font-black tracking-[0.3em] text-gray-800">{code}</p>
+            <button onClick={() => { navigator.clipboard.writeText(`${school.name} 園所驗證碼：${code}（送出評分或異動申請時輸入）`); }} className="mt-2 text-xs font-bold text-indigo-600 underline">複製通知文字</button>
+          </div>
+        )}
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <div className="mt-4 grid gap-2">
+          <button disabled={busy} onClick={() => act("generate")} className="rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">{status?.enabled ? "重新產生驗證碼" : "產生驗證碼"}</button>
+          {status?.enabled && <button disabled={busy} onClick={() => act("logoutAll")} className="rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-600 disabled:opacity-50">登出所有已驗證裝置</button>}
+          {status?.enabled && <button disabled={busy} onClick={() => act("disable")} className="rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 disabled:opacity-50">停用驗證碼</button>}
+          <button onClick={onClose} className="rounded-xl py-2 text-sm text-slate-400">關閉</button>
+        </div>
+      </div>
     </div>
   );
 }
