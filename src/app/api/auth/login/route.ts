@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
 import { ensureUserAccountAuditColumns, writeAuditLog } from "@/lib/auditLog";
 
-const attempts = new Map<string, { count: number; resetAt: number }>();
+// 登入頻率限制改為資料庫持久化：Vercel serverless 重啟後仍有效
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 8;
 
@@ -14,25 +14,51 @@ function clientKey(req: NextRequest) {
     || "unknown";
 }
 
-function rateLimit(req: NextRequest) {
-  const now = Date.now();
-  const key = clientKey(req);
-  const current = attempts.get(key);
-  if (!current || current.resetAt <= now) {
-    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    return false;
-  }
-  current.count += 1;
-  attempts.set(key, current);
-  return current.count > MAX_ATTEMPTS;
+let rateTableReady = false;
+async function ensureRateTable() {
+  if (rateTableReady) return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS LoginRateLimit (
+      key TEXT PRIMARY KEY,
+      count INTEGER NOT NULL DEFAULT 0,
+      resetAt INTEGER NOT NULL
+    )
+  `);
+  rateTableReady = true;
 }
 
-function clearRateLimit(req: NextRequest) {
-  attempts.delete(clientKey(req));
+async function rateLimit(req: NextRequest) {
+  try {
+    await ensureRateTable();
+    const key = clientKey(req);
+    const now = Date.now();
+    const rows = await prisma.$queryRawUnsafe<Array<{ count: number | bigint; resetAt: number | bigint }>>(
+      "SELECT count, resetAt FROM LoginRateLimit WHERE key = ?", key,
+    );
+    const current = rows[0];
+    if (!current || Number(current.resetAt) <= now) {
+      await prisma.$executeRawUnsafe(
+        "INSERT INTO LoginRateLimit (key, count, resetAt) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, resetAt = excluded.resetAt",
+        key, now + WINDOW_MS,
+      );
+      return false;
+    }
+    await prisma.$executeRawUnsafe("UPDATE LoginRateLimit SET count = count + 1 WHERE key = ?", key);
+    return Number(current.count) + 1 > MAX_ATTEMPTS;
+  } catch {
+    return false; // 資料庫暫時異常不擋登入，仍有密碼驗證保護
+  }
+}
+
+async function clearRateLimit(req: NextRequest) {
+  try {
+    await ensureRateTable();
+    await prisma.$executeRawUnsafe("DELETE FROM LoginRateLimit WHERE key = ?", clientKey(req));
+  } catch { /* 忽略 */ }
 }
 
 export async function POST(req: NextRequest) {
-  if (rateLimit(req)) {
+  if (await rateLimit(req)) {
     await writeAuditLog(req, {
       action: "login",
       targetType: "UserAccount",
@@ -46,14 +72,15 @@ export async function POST(req: NextRequest) {
   const { username, password } = await req.json();
   const normalizedUsername = String(username ?? "").trim();
   const rawPassword = String(password ?? "");
-  // 安全性：不再提供 admin123 開發預設密碼；未設定 ADMIN_PASSWORD 即完全停用共用密碼登入
-  const adminPassword = process.env.ADMIN_PASSWORD?.trim() || "";
+  // 安全性：正式環境停用共用 ADMIN_PASSWORD（無法追責到個人）。
+  // 僅開發環境、或明確設定 ALLOW_LEGACY_LOGIN=1 時允許（過渡期用，建議盡快移除）。
+  const legacyAllowed = process.env.NODE_ENV !== "production" || process.env.ALLOW_LEGACY_LOGIN === "1";
+  const adminPassword = legacyAllowed ? (process.env.ADMIN_PASSWORD?.trim() || "") : "";
 
-  // 共用密碼登入：僅在有設定非空 ADMIN_PASSWORD 時允許，避免空密碼直接取得 admin 權限
   if (adminPassword && rawPassword === adminPassword) {
     const token = await signToken({ role: "admin", username: "legacy-admin", name: "系統管理員" });
     const res = NextResponse.json({ ok: true, user: { username: "legacy-admin", name: "系統管理員", role: "admin" } });
-    clearRateLimit(req);
+    await clearRateLimit(req);
     await writeAuditLog(req, {
       actorName: "系統管理員",
       actorRole: "admin",
@@ -90,7 +117,7 @@ export async function POST(req: NextRequest) {
       }
       const token = await signToken({ role: user.role, userId: user.id, username: user.username, name: user.name });
       const res = NextResponse.json({ ok: true, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
-      clearRateLimit(req);
+      await clearRateLimit(req);
       await prisma.userAccount.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => undefined);
       await writeAuditLog(req, {
         actorUserId: user.id,

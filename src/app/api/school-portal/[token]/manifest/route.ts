@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   const { token } = await params;
   let isAfterSchool = false;
   try {
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, _req);
     const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { type: true } });
     isAfterSchool = String(school?.type ?? "").includes("安親");
   } catch { /* 連結無效時回傳預設 manifest */ }

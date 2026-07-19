@@ -5,7 +5,7 @@ import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string; id: string }> }) {
   try {
     const { token, id } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, _req);
     const assessment = await prisma.kindergartenAssessment.findUnique({
       where: { id: Number(id) },
       include: { attendance: { include: { course: true, actualTeacher: true } } },

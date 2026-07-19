@@ -9,6 +9,8 @@ import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { isPendingReport } from "@/lib/reportWindow";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
+import { NOTIFY_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
+import { writeAuditLog } from "@/lib/auditLog";
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -22,7 +24,17 @@ type ReminderCourse = { attendanceId?: number; school: string; time: string; cou
 // POST /api/line/push
 // body: { type: "reminder" | "report_request", teacherId?, teacherName?, date?, dayOffset?, attendanceId? }
 export async function POST(req: NextRequest) {
+  // 路由層權限驗證（不依賴 middleware）＋ same-origin 檢查
+  const { user, response } = await requireRole(NOTIFY_ROLES);
+  if (response) return response;
+  if (!sameOriginOk(req)) return NextResponse.json({ error: "來源不合法" }, { status: 403 });
+
   const body = await req.json();
+  await writeAuditLog(req, {
+    actorName: user?.name, actorRole: user?.role, actorUserId: user?.userId ?? undefined,
+    action: "line_push", targetType: "Line", targetLabel: String(body?.type ?? ""),
+    diffSummary: `LINE 發送：type=${String(body?.type ?? "")}${body?.dayOffset != null ? `，dayOffset=${body.dayOffset}` : ""}${body?.attendanceId ? `，attendanceId=${body.attendanceId}` : ""}`,
+  });
 
   if (body.type === "reminder") {
     // Send class/report reminders to all teachers (or a specific teacher).

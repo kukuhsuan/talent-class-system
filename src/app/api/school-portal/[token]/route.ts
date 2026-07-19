@@ -99,7 +99,7 @@ function resumeSummary(value: string) {
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const { searchParams } = new URL(req.url);
     const selectedMonth = monthRange(
       Number(searchParams.get("year") ?? new Date().getFullYear()),
@@ -492,7 +492,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const body = await req.json();
     const school = await prisma.school.findUnique({ where: { id: schoolId } });
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
@@ -539,7 +539,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const body = await req.json().catch(() => ({}));
     const term = parseConfirmationTerm(body.confirmationTerm ?? body);
     const courseId = Number(body.courseId);

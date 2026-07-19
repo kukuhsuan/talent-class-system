@@ -4,8 +4,10 @@ import { prisma } from "@/lib/prisma";
 
 export const OWNER_ROLES = ["owner", "super_admin", "developer"] as const;
 export const ADMIN_ROLES = ["owner", "super_admin", "developer", "admin"] as const;
-export const BACKOFFICE_ROLES = ["owner", "super_admin", "developer", "admin", "staff", "accountant", "viewer"] as const;
+export const BACKOFFICE_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"] as const;
 export const SALARY_ROLES = ["owner", "super_admin", "developer", "admin", "accountant"] as const;
+// 可發送 LINE 通知的角色：staff/accountant/viewer 預設不可大量發送
+export const NOTIFY_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service"] as const;
 
 export type AppRole = (typeof BACKOFFICE_ROLES)[number];
 
@@ -52,6 +54,17 @@ export async function requireRole(allowed: readonly string[]) {
   if (!user) return { user: null, response: NextResponse.json({ error: "登入狀態已失效，請重新登入後再試" }, { status: 401 }) };
   if (!hasRole(user.role, allowed)) return { user, response: NextResponse.json({ error: "權限不足" }, { status: 403 }) };
   return { user, response: null };
+}
+
+// Same-origin 檢查：寫入 API 需由本站頁面發出（CSRF 防護；同時支援自訂網域與 Vercel 網域）
+export function sameOriginOk(req: NextRequest) {
+  const origin = req.headers.get("origin") ?? "";
+  if (!origin) return true; // 同源 fetch 可能不帶 origin（如 GET 轉導）；cookie SameSite 另有保護
+  try {
+    return new URL(origin).host === (req.headers.get("host") ?? "");
+  } catch {
+    return false;
+  }
 }
 
 export function requestIp(req: NextRequest) {

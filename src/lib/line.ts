@@ -273,7 +273,10 @@ export function isSchoolLineRegion(region: LineRegion) {
 export function verifyLineSignature(body: string, signature: string, secret: string): boolean {
   const hmac = crypto.createHmac("SHA256", secret);
   hmac.update(body);
-  return hmac.digest("base64") === signature;
+  // 固定時間比較，降低時序攻擊風險
+  const expected = Buffer.from(hmac.digest("base64"));
+  const received = Buffer.from(String(signature ?? ""));
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 // 動態載入避免 line.ts ↔ systemAlerts.ts 循環引用；紀錄失敗不影響發送
@@ -1300,5 +1303,7 @@ export function buildTwoMonthScheduleMessage(opts: {
 }
 
 export function generateBindCode(): string {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  // 加密安全亂數，避免可預測的綁定碼
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return [...crypto.randomBytes(6)].map((b) => chars[b % chars.length]).join("");
 }

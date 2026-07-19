@@ -29,7 +29,7 @@ function toPortalUrl(stored: string, token: string) {
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const { searchParams } = new URL(req.url);
     const now = new Date();
     const year = Math.min(2035, Math.max(2020, Number(searchParams.get("year") ?? now.getFullYear()) || now.getFullYear()));

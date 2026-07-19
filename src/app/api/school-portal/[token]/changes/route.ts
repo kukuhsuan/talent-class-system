@@ -23,7 +23,7 @@ function dateText(date: Date) {
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } });
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
 
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     if (!(await hasValidPortalSession(req, schoolId))) {
       return NextResponse.json({ error: "請先完成園所驗證", requiresVerify: true }, { status: 401 });
     }

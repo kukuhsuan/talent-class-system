@@ -17,6 +17,7 @@ const ROLES = [
   { value: "owner", label: "owner 最高權限" },
   { value: "super_admin", label: "super_admin 最高權限" },
   { value: "admin", label: "admin 行政管理" },
+  { value: "customer_service", label: "customer_service 客服（可發通知）" },
   { value: "staff", label: "staff 一般員工" },
   { value: "accountant", label: "accountant 會計" },
   { value: "viewer", label: "viewer 只讀" },

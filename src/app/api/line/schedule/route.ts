@@ -7,6 +7,8 @@ import { regionQueryValues } from "@/lib/courseMeta";
 import { courseIdsWithAnyAttendance } from "@/lib/scheduleLogic";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
+import { NOTIFY_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
+import { writeAuditLog } from "@/lib/auditLog";
 
 const DAY_ORDER = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 const DAY_JS: Record<string, number> = {
@@ -290,7 +292,17 @@ export async function sendScheduleMessages(body: { teacherId?: number | string; 
 // POST /api/line/schedule
 // body: { teacherId? } — omit to send to all bound teachers
 export async function POST(req: NextRequest) {
+  // 路由層權限驗證（不依賴 middleware）＋ same-origin 檢查
+  const { user, response } = await requireRole(NOTIFY_ROLES);
+  if (response) return response;
+  if (!sameOriginOk(req)) return NextResponse.json({ error: "來源不合法" }, { status: 403 });
+
   const body = await req.json().catch(() => ({}));
+  await writeAuditLog(req, {
+    actorName: user?.name, actorRole: user?.role, actorUserId: user?.userId ?? undefined,
+    action: "line_schedule", targetType: "Line", targetLabel: body?.teacherId ? `teacher:${body.teacherId}` : "all",
+    diffSummary: "發送 LINE 課表",
+  });
   try {
     if (body?.type === "lookup_test") return NextResponse.json(await sendScheduleLookupTest(body));
     return NextResponse.json(await sendScheduleMessages(body));

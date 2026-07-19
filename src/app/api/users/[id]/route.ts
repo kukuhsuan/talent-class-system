@@ -4,7 +4,7 @@ import { hashPassword } from "@/lib/password";
 import { diffSummary, ensureUserAccountAuditColumns, writeAuditLog } from "@/lib/auditLog";
 import { OWNER_ROLES, requireRole } from "@/lib/permissions";
 
-const ROLES = new Set(["owner", "super_admin", "developer", "admin", "staff", "accountant", "viewer"]);
+const ROLES = new Set(["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"]);
 const BOOTSTRAP_MANAGER_ROLES = [...OWNER_ROLES, "admin"];
 
 async function hasActiveOwner() {

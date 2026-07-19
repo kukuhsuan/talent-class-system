@@ -21,7 +21,7 @@ function includesPrivatePhoto(value: string | null | undefined, pathname: string
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const pathname = req.nextUrl.searchParams.get("path") ?? "";
     if (!pathname.startsWith("report-photos/")) {
       return NextResponse.json({ error: "照片路徑不正確" }, { status: 400 });

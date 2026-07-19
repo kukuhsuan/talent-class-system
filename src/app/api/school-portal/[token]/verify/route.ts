@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     return NextResponse.json({ verified: await hasValidPortalSession(req, schoolId) }, {
       headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" },
     });
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
     const body = await req.json().catch(() => ({}));
     const result = await verifyPortalCode(schoolId, String(body.code ?? ""));
     if (!result.ok) return NextResponse.json({ error: result.error, locked: result.locked ?? false }, { status: 401 });
