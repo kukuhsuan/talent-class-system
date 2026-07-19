@@ -250,15 +250,23 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.resolve().then(() => {
-      setLoading(true);
-      setError("");
-      fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}${standaloneConfirmation ? "&confirmationOnly=1" : ""}`)
+    // 冷啟動偶爾很慢：30 秒逾時 + 自動重試一次，避免卡在骨架畫面看起來像壞掉
+    const fetchOnce = (timeoutMs: number) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}${standaloneConfirmation ? "&confirmationOnly=1" : ""}`, { signal: controller.signal })
         .then(async (res) => {
           const body = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(body.error || "讀取園所資料失敗");
           return body;
         })
+        .finally(() => clearTimeout(timer));
+    };
+    void Promise.resolve().then(() => {
+      setLoading(true);
+      setError("");
+      fetchOnce(30000)
+        .catch(() => fetchOnce(30000))
         .then((body) => {
           if (!cancelled) {
             setData(body);
@@ -267,7 +275,7 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
             setConfirmation({ ...EMPTY_CONFIRMATION, ...(firstCourse?.confirmation ?? body.courseConfirmation ?? {}) });
           }
         })
-        .catch((e) => { if (!cancelled) setError((e as Error).message || "讀取園所資料失敗"); })
+        .catch((e) => { if (!cancelled) setError((e as Error).name === "AbortError" ? "載入逾時，請點選重新載入" : (e as Error).message || "讀取園所資料失敗"); })
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => {
@@ -350,12 +358,19 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
   }
 
   if (error) {
-    return <div className="min-h-screen bg-[#FAF6EF] px-5 py-16 text-center text-rose-500">{error}</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-5 py-16">
+        <div className="w-full max-w-sm rounded-[24px] border border-[#EBE1D3] bg-[#FDFAF5] p-6 text-center shadow-sm">
+          <p className="text-sm font-bold text-rose-500">{error}</p>
+          <button onClick={() => window.location.reload()} className="mt-4 rounded-full bg-[#C06B3E] px-6 py-2.5 text-sm font-black text-white shadow-sm hover:bg-[#A9552F]">重新載入</button>
+        </div>
+      </div>
+    );
   }
 
   if (standaloneConfirmation) {
     return (
-      <div className="min-h-screen bg-[#FAF6EF] px-3 py-5 text-[#3E332B] sm:px-5">
+      <div className="min-h-screen bg-white px-3 py-5 text-[#3E332B] sm:px-5">
         <div className="mx-auto max-w-2xl">
           <div className="mb-4 rounded-[24px] border border-[#EBE1D3] bg-white p-5 text-center shadow-sm">
             <div className="text-xs font-black tracking-wider text-[#A9552F]">WAYSLEADER AI</div>
@@ -399,8 +414,8 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF6EF] text-[#3E332B]">
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_6%,rgba(217,151,88,0.14),transparent_24%),linear-gradient(180deg,#FAF6EF_0%,#F6EBDD_42%,#FAF6EF_100%)]" />
+    <div className="min-h-screen bg-white text-[#3E332B]">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_82%_6%,rgba(217,151,88,0.08),transparent_24%),linear-gradient(180deg,#FFFFFF_0%,#FBF6EE_45%,#FFFFFF_100%)]" />
 
       <div className="relative mx-auto flex min-h-screen max-w-[1440px] gap-7 px-3 pb-24 pt-3 sm:px-5 lg:px-7 lg:pb-8">
         <aside className="hidden w-[218px] shrink-0 rounded-[26px] bg-white p-4 shadow-[0_16px_42px_rgba(154,94,50,0.08)] ring-1 ring-[#EBE1D3]/80 lg:sticky lg:top-5 lg:block lg:h-[calc(100vh-40px)]">
@@ -464,7 +479,7 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
             <>
               <Hero data={data} year={year} month={month} setYear={setYear} setMonth={setMonth} />
 
-              <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-[#EBE1D3]/80 bg-[#FAF6EF]/90 py-4 backdrop-blur lg:flex">
+              <div className="sticky top-0 z-20 mt-5 hidden gap-3 overflow-x-auto border-y border-[#EBE1D3]/80 bg-white/90 py-4 backdrop-blur lg:flex">
                 {nav.map((item) => (
                   <TabPill key={item.id} active={tab === item.id} onClick={() => selectTab(item.id)} icon={item.icon}>{item.label}</TabPill>
                 ))}
