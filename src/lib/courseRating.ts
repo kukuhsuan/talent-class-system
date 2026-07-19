@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { courseLabel } from "@/lib/courseMeta";
 import { raiseSystemAlert } from "@/lib/systemAlerts";
 
 // 安親班課程評分：每堂課產生專屬評分連結，安親班免登入填寫，一堂課一次評分。
@@ -93,7 +94,7 @@ export async function ratingLessonInfo(attendanceId: number): Promise<RatingLess
   return {
     attendanceId: attendance.id,
     school: attendance.course.school,
-    courseName: attendance.course.courseType,
+    courseName: courseLabel(attendance.course.courseType), // 課程代碼轉中文名稱（FT → 足球）
     courseCode: attendance.course.code,
     date: attendance.date.toISOString().slice(0, 10),
     teacherName: attendance.actualTeacher?.name ?? "",
