@@ -517,20 +517,7 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
                   <div className="space-y-3 sm:space-y-5">
                     <PanelTitle title="學習成果牆" subtitle="每堂課一張成果卡，讓園所快速看見孩子的課程亮點。" />
                     <OutcomeList rows={data.reports} skillMap={skillMap} />
-                    {/* 開課前確認：幼兒園流程，置於成果分頁下方 */}
-                    {!isAfterSchoolPortal && (
-                      <CourseConfirmationForm
-                        value={confirmation}
-                        onChange={setConfirmation}
-                        onSave={saveConfirmation}
-                        onCopyPrevious={copyPreviousConfirmation}
-                        saving={savingConfirmation}
-                        message={confirmationMessage}
-                        termLabel={data.confirmationTerm?.label ?? ""}
-                        westernLabel={data.confirmationTerm?.westernLabel ?? ""}
-                        locked={confirmation.canSchoolEdit === false}
-                      />
-                    )}
+                    {/* 開課前確認改用專屬連結填寫，不再放在成果分頁 */}
                   </div>
                 )}
 

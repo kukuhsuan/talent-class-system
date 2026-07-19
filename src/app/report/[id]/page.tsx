@@ -576,6 +576,11 @@ export default function TeacherReportPage() {
       if (!form.incidentProcess.trim()) { setError("特殊事件請填寫發生經過"); return; }
       if (!form.incidentAction.trim()) { setError("特殊事件請填寫處理方式"); return; }
     }
+    // 照片必填：至少一張課堂活動照片（或提供公開圖片連結）
+    if (photos.length === 0 && !form.representativePhotoUrl.trim()) {
+      setError("請至少上傳 1 張課堂活動照片");
+      return;
+    }
     if (info?.schoolSignatureRequired && !form.schoolVerifierName.trim()) {
       setError("請填寫園所確認老師姓名");
       return;
@@ -627,6 +632,7 @@ export default function TeacherReportPage() {
     needsStudentCount && !form.studentCount ? "出席人數" : "",
     !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
     isKindergarten && form.skillFocus.length < 3 ? `學習目標（已選 ${form.skillFocus.length}／需 3～4 項）` : "",
+    photos.length === 0 && !form.representativePhotoUrl.trim() ? "課堂活動照片（至少 1 張）" : "",
     form.incident && (!form.incidentChild.trim() || !form.incidentProcess.trim() || !form.incidentAction.trim()) ? "特殊事件內容" : "",
     info.schoolSignatureRequired && !form.schoolVerifierName.trim() ? "園所老師姓名" : "",
     info.schoolSignatureRequired && !form.schoolSignatureData ? "園所簽名" : "",
@@ -806,9 +812,12 @@ export default function TeacherReportPage() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">課堂活動照片（選填）</div>
+          <div className="text-sm font-semibold text-slate-800">課堂活動照片（必填，至少 1 張）</div>
           <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
             ⚠️ 點名表請傳到 LINE 官方帳號，這裡只上傳課堂活動照片。
+          </div>
+          <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-600">
+            📸 照片請認真拍好：畫面清晰、拍到孩子上課的樣子，不要亂拍、不要模糊或只拍場地。
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-500">
             每堂課最多 {PHOTO_LIMIT} 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。

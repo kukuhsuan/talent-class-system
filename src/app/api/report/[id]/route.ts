@@ -323,6 +323,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const kindergarten = isKindergarten(attendance.course.department);
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
     const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());
+    // 照片必填：已上傳的照片或本次附上的公開連結，至少要有一張
+    if (parseStoredPhotos(attendance.reportPhotos).length === 0 && !representativePhotoUrl) {
+      return NextResponse.json({ error: "請至少上傳 1 張課堂活動照片" }, { status: 400 });
+    }
     const incident = Boolean(data.incident);
     const signatureRequired = requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name);
     const schoolVerifierName = String(data.schoolVerifierName ?? "").trim();
