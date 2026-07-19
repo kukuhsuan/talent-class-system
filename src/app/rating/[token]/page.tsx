@@ -124,10 +124,14 @@ export default function RatingPage() {
   // 尚缺幾項（5 個評分項＋續排意願）
   const missing = SCORE_FIELDS.filter(({ key }) => !scores[key]).length + (wish ? 0 : 1);
 
+  // 幼兒園：溫暖白底配色（與園所端一致）；安親班：運動班長深藍
+  const kg = Boolean(lesson?.kindergarten);
+  const accentBtn = kg ? "bg-[#C06B3E]" : "bg-[#1F3A6D]";
+
   if (loading) {
     // 骨架畫面：避免長時間空白
     return (
-      <Shell>
+      <Shell kindergarten={lesson?.kindergarten}>
         <BrandHeader kindergarten={lesson?.kindergarten} />
         <div className="mt-4 animate-pulse space-y-4">
           <div className="h-24 rounded-2xl bg-slate-200/70" />
@@ -137,11 +141,11 @@ export default function RatingPage() {
       </Shell>
     );
   }
-  if (error) return <Shell><BrandHeader kindergarten={lesson?.kindergarten} /><p className="py-16 text-center text-red-600">{error}</p><Footer /></Shell>;
+  if (error) return <Shell kindergarten={lesson?.kindergarten}><BrandHeader kindergarten={lesson?.kindergarten} /><p className="py-16 text-center text-red-600">{error}</p><Footer /></Shell>;
 
   if (done) {
     return (
-      <Shell>
+      <Shell kindergarten={lesson?.kindergarten}>
         <BrandHeader kindergarten={lesson?.kindergarten} />
         <div className="space-y-4 py-12 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#2F855A] text-3xl text-white">✓</div>
@@ -155,7 +159,7 @@ export default function RatingPage() {
             <div className="mx-auto max-w-xs rounded-[14px] border border-[#E2E8F0] bg-white p-4">
               <p className="text-sm font-bold text-gray-800">還有下一堂課待評分</p>
               <p className="mt-1 text-sm text-gray-600">{dateLabel(nextLesson.date)}｜{nextLesson.courseName}｜{nextLesson.teacherName} 老師</p>
-              <a href={nextLesson.url} className="mt-3 block rounded-[10px] bg-[#1F3A6D] py-3 text-sm font-bold text-white">繼續評分下一堂</a>
+              <a href={nextLesson.url} className={`mt-3 block rounded-[10px] py-3 text-sm font-bold text-white ${accentBtn}`}>繼續評分下一堂</a>
             </div>
           ) : (
             <p className="text-sm font-bold text-[#2F855A]">本月待評分課程已全部完成</p>
@@ -169,7 +173,7 @@ export default function RatingPage() {
 
   if (status === "submitted") {
     return (
-      <Shell>
+      <Shell kindergarten={lesson?.kindergarten}>
         <BrandHeader kindergarten={lesson?.kindergarten} />
         <div className="mt-4"><LessonCard lesson={lesson} /></div>
         <p className="py-10 text-center text-gray-600">這堂課已完成評分，感謝您的回饋！<br /><span className="text-sm text-gray-400">若需修改，請聯繫我們重新開放。</span></p>
@@ -179,11 +183,11 @@ export default function RatingPage() {
   }
 
   if (status === "closed") {
-    return <Shell><BrandHeader kindergarten={lesson?.kindergarten} /><p className="py-16 text-center text-gray-600">這個評分連結已關閉，若有需要請聯繫我們。</p><Footer /></Shell>;
+    return <Shell kindergarten={lesson?.kindergarten}><BrandHeader kindergarten={lesson?.kindergarten} /><p className="py-16 text-center text-gray-600">這個評分連結已關閉，若有需要請聯繫我們。</p><Footer /></Shell>;
   }
 
   return (
-    <Shell>
+    <Shell kindergarten={lesson?.kindergarten}>
       <BrandHeader kindergarten={lesson?.kindergarten} />
       <h1 className="mt-4 text-xl font-bold text-gray-800">
         {lesson ? `請為本次${lesson.courseName}課程評分` : "課程滿意度評分"}
@@ -194,13 +198,13 @@ export default function RatingPage() {
       </div>
 
       {/* 進度條 */}
-      <div className="sticky top-0 z-10 -mx-4 mt-4 bg-gray-50/95 px-4 py-2 backdrop-blur">
+      <div className={`sticky top-0 z-10 -mx-4 mt-4 px-4 py-2 backdrop-blur ${kg ? "bg-[#FFFDF8]/95" : "bg-gray-50/95"}`}>
         <div className="mb-1 flex justify-between text-xs text-gray-400">
           <span>填寫進度</span>
           <span>{doneSteps}/{totalSteps}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
-          <div className="h-full rounded-full bg-indigo-500 transition-all duration-300" style={{ width: `${(doneSteps / totalSteps) * 100}%` }} />
+          <div className={`h-full rounded-full transition-all duration-300 ${kg ? "bg-[#C06B3E]" : "bg-indigo-500"}`} style={{ width: `${(doneSteps / totalSteps) * 100}%` }} />
         </div>
       </div>
 
@@ -254,7 +258,7 @@ export default function RatingPage() {
                 key={option}
                 type="button"
                 onClick={() => pickWish(option)}
-                className={`flex-1 rounded-xl border py-2.5 text-[13px] font-medium transition-colors ${wish === option ? "border-indigo-600 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}
+                className={`flex-1 rounded-xl border py-2.5 text-[13px] font-medium transition-colors ${wish === option ? (kg ? "border-[#C06B3E] bg-[#C06B3E] text-white" : "border-indigo-600 bg-indigo-600 text-white") : "border-gray-200 bg-white text-gray-600"}`}
               >
                 {option}
               </button>
@@ -271,7 +275,7 @@ export default function RatingPage() {
             rows={4}
             maxLength={2000}
             placeholder="想對我們或老師說的話…"
-            className="mt-2 w-full rounded-xl border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            className={`mt-2 w-full rounded-xl border border-gray-200 p-3 text-sm focus:outline-none focus:ring-2 ${kg ? "focus:ring-[#E5C9AF]" : "focus:ring-indigo-300"}`}
           />
         </div>
 
@@ -280,7 +284,7 @@ export default function RatingPage() {
           type="button"
           onClick={submit}
           disabled={submitting || missing > 0}
-          className="w-full rounded-[12px] bg-[#1F3A6D] py-3.5 font-semibold text-white disabled:opacity-40"
+          className={`w-full rounded-[12px] py-3.5 font-semibold text-white disabled:opacity-40 ${accentBtn}`}
         >
           {submitting ? "送出中…" : missing > 0 ? `尚缺 ${missing} 項未填` : "送出評分"}
         </button>
@@ -351,9 +355,10 @@ function VerifyModal({ token, onClose, onVerified }: { token: string; onClose: (
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, kindergarten = false }: { children: React.ReactNode; kindergarten?: boolean }) {
+  // 幼兒園白底溫暖；安親班灰底
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen ${kindergarten ? "bg-[#FFFDF8]" : "bg-gray-50"}`}>
       <div className="mx-auto max-w-md px-4 py-6">{children}</div>
     </div>
   );
@@ -383,7 +388,7 @@ function BrandHeader({ kindergarten }: { kindergarten?: boolean }) {
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
       />
       <div>
-        <div className="text-base font-black text-[#1e2a63]">{kindergarten ? "WaysLeader AI｜課程回饋" : "運動班長｜課程回饋"}</div>
+        <div className={`text-base font-black ${kindergarten ? "text-[#3E332B]" : "text-[#1e2a63]"}`}>{kindergarten ? "WaysLeader AI｜課程回饋" : "運動班長｜課程回饋"}</div>
         <div className="text-[11px] font-semibold text-gray-400">{kindergarten ? "幼兒園學習成果平台" : "Kids Sports 兒童運動課程"}</div>
       </div>
     </div>
@@ -397,7 +402,7 @@ function Footer() {
 function LessonCard({ lesson }: { lesson: Lesson | null }) {
   if (!lesson) return null;
   return (
-    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm">
+    <div className={`rounded-2xl border p-4 text-sm ${lesson.kindergarten ? "border-[#F0E4D4] bg-[#FDFAF5]" : "border-indigo-100 bg-indigo-50/60"}`}>
       <div className="text-[15px] font-bold text-gray-800">{lesson.school}</div>
       <div className="mt-1 space-y-0.5 text-gray-600">
         <div>{dateLabel(lesson.date)}｜{lesson.courseName}課程</div>
