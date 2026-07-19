@@ -152,7 +152,7 @@ export default function SubstitutesPage() {
 
   const del = async (record: Substitute) => {
     if (typeof record.id === "string") {
-      return showToast("error", "這筆只有出勤資料，請先至出勤紀錄確認");
+      return showToast("error", "這筆只有出勤資料，請先至上課紀錄確認");
     }
     const message = record.attendanceId
       ? "確定取消此筆代課？實際老師將恢復為原排課老師。"
@@ -188,7 +188,7 @@ export default function SubstitutesPage() {
   };
 
   const toggleConfirmed = async (record: Substitute) => {
-    if (typeof record.id === "string") return showToast("error", "請至出勤紀錄處理這筆資料");
+    if (typeof record.id === "string") return showToast("error", "請至上課紀錄處理這筆資料");
     const res = await fetch(`/api/substitutes/${record.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

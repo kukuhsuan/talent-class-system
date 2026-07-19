@@ -154,7 +154,7 @@ export default function RatingsPage() {
         <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-slate-400">載入中…</div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-slate-400">
-          目前沒有評分資料，請先到「出勤紀錄」的安親班課程按「評分連結」產生連結。
+          目前沒有評分資料，請先到「上課紀錄」的安親班課程按「評分連結」產生連結。
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

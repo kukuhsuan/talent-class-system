@@ -139,11 +139,14 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-1 md:flex-wrap">
-        <button onClick={() => setFilterRegion("")} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border transition-colors ${!filterRegion ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>全部地區</button>
-        {[...new Set([...REGION_OPTIONS, ...allRegions])].map((r) => (
-          <button key={r} onClick={() => setFilterRegion(r)} className={`shrink-0 px-3 py-2 md:py-1 rounded-full text-sm border transition-colors ${filterRegion === r ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{r}</button>
-        ))}
+      {/* 縣市改下拉選單，避免整排按鈕佔版面 */}
+      <div className="mb-4 flex items-center gap-2">
+        <label className="text-sm font-semibold text-slate-700">地區</label>
+        <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+          <option value="">全部地區</option>
+          {[...new Set([...REGION_OPTIONS, ...allRegions])].map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        {filterRegion && <button onClick={() => setFilterRegion("")} className="text-sm text-blue-600 hover:underline">清除</button>}
       </div>
 
       {loading ? (

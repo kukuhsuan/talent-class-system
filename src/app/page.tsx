@@ -196,7 +196,7 @@ export default function Home() {
         <div className="flex flex-col gap-2 border-b border-amber-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-semibold text-slate-800">待回報明細</h2>
-            <p className="text-sm text-slate-500">只顯示前 5 筆，完整清單請到出勤紀錄查看。</p>
+            <p className="text-sm text-slate-500">只顯示前 5 筆，完整清單請到上課紀錄查看。</p>
           </div>
           {stats.pendingFillableCount > 5 && (
             <Link href="/attendance?status=missing" className="text-sm font-medium text-amber-700 hover:underline">
@@ -260,7 +260,7 @@ export default function Home() {
         {stats.pendingFillableCount > 0 && stats.pendingFillableCount <= 5 && (
           <div className="border-t border-slate-100 px-4 py-3 text-right">
             <Link href="/attendance?status=missing" className="text-sm font-medium text-amber-700 hover:underline">
-              前往出勤紀錄
+              前往上課紀錄
             </Link>
           </div>
         )}

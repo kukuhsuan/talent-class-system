@@ -95,10 +95,12 @@ function uniqueSortedDates(dates: string[]) {
   return [...new Set(dates.map((d) => d.slice(0, 10)).filter(Boolean))].sort();
 }
 
+// 課程表瘦身：日期只顯示起訖＋總堂數（完整日期在編輯課程內查看）
 function courseDateSummary(dates?: string[]) {
   const unique = uniqueSortedDates(dates ?? []);
   if (unique.length === 0) return "—";
-  return `${unique.slice(0, 6).map(formatMonthDay).join("、")}${unique.length > 6 ? ` 等 ${unique.length} 天` : ""}`;
+  if (unique.length === 1) return `${formatMonthDay(unique[0])} · 共 1 堂`;
+  return `${formatMonthDay(unique[0])} ~ ${formatMonthDay(unique[unique.length - 1])} · 共 ${unique.length} 堂`;
 }
 
 function academicTermOfDate(iso?: string) {
@@ -379,10 +381,10 @@ export default function CoursesPage() {
     try {
       let res: Response;
       if (editing !== null) {
-        setSaveStatus("正在更新課程與未來出勤紀錄…");
+        setSaveStatus("正在更新課程與未來上課紀錄…");
         res = await fetch(`/api/courses/${editing}`, { method: "PUT", headers, body });
       } else {
-        setSaveStatus("正在建立課程與出勤紀錄…");
+        setSaveStatus("正在建立課程與上課紀錄…");
         res = await fetch("/api/courses", { method: "POST", headers, body });
       }
       if (!res.ok) {
@@ -395,7 +397,7 @@ export default function CoursesPage() {
       setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); void loadCourses();
       const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : [];
       const baseMsg = warnings.length > 0 ? `課程已儲存，但${warnings[0]}` : "課程已儲存";
-      const afterSchoolHint = wasAfterSchool ? "｜請至「出勤紀錄」設定每天老師" : "";
+      const afterSchoolHint = wasAfterSchool ? "｜請至「上課紀錄」設定每天老師" : "";
       showToast("success", baseMsg + afterSchoolHint, warnings.length > 0 || wasAfterSchool ? 5000 : 2500);
     } catch (e) {
       showToast("error", (e as Error).message || "課程儲存失敗", 3500);
@@ -406,7 +408,7 @@ export default function CoursesPage() {
   };
 
   const del = async (id: number, code: string) => {
-    if (!confirm(`確定刪除課程「${code}」？（已有出勤紀錄的課程無法刪除，請改用「停用」）`)) return;
+    if (!confirm(`確定刪除課程「${code}」？（已有上課紀錄的課程無法刪除，請改用「停用」）`)) return;
     const res = await fetch(`/api/courses/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const message = await readErrorMessage(res, "刪除失敗，請確認是否仍有關聯資料");
@@ -581,7 +583,7 @@ export default function CoursesPage() {
                 displayName={displayTeacherOption}
               />
               {form.department === "安親班" && (
-                <p className="mt-1 text-xs text-amber-600">安親班每天老師請在「出勤紀錄」逐日設定。此欄選「待排老師」即可。</p>
+                <p className="mt-1 text-xs text-amber-600">安親班每天老師請在「上課紀錄」逐日設定。此欄選「待排老師」即可。</p>
               )}
             </div>
             {form.department !== "安親班" && (
@@ -855,14 +857,6 @@ export default function CoursesPage() {
                   {c.assistantTeacher && <div className="mt-1 text-xs text-blue-600">助教 {c.assistantTeacher.name}</div>}
                   <div className="mt-1 text-xs font-medium text-amber-700">日期：{courseDateSummary(c.scheduledDates)}</div>
                   <div className="mt-1 text-xs text-slate-500">{c.dayOfWeek}{c.time ? ` · ${c.time}` : ""}{c.payrollHours ? ` · 計薪 ${c.payrollHours}h` : ""}</div>
-                  {(c.scheduledDates?.length ?? 0) > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {c.scheduledDates!.slice(0, 4).map((d) => (
-                        <span key={d} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">{formatMonthDay(d)}</span>
-                      ))}
-                      {c.scheduledDates!.length > 4 && <span className="text-[11px] text-slate-400">+{c.scheduledDates!.length - 4}</span>}
-                    </div>
-                  )}
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${c.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{c.isActive ? "開課" : "停課"}</span>
               </div>
@@ -870,14 +864,13 @@ export default function CoursesPage() {
                 {normalizeRegion(c.region) && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-600">{normalizeRegion(c.region)}</span>}
                 <span className={`rounded-full px-2 py-1 font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
               </div>
-              {c.address && <div className="mt-3 text-xs leading-5 text-slate-500">{c.address}</div>}
               <div className="mt-4"><CourseActions course={c} onEdit={edit} onDelete={del} /></div>
             </div>
           ))}
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</div>}
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1200px] text-sm">
+          <table className="w-full min-w-[1000px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="w-24 px-4 py-3 text-left font-semibold">編號</th>
@@ -889,7 +882,6 @@ export default function CoursesPage() {
                 <th className="w-28 px-4 py-3 text-left font-semibold">星期</th>
                 <th className="w-32 px-4 py-3 text-left font-semibold">時間</th>
                 <th className="w-24 px-4 py-3 text-left font-semibold">計薪</th>
-                <th className="min-w-64 px-4 py-3 text-left font-semibold">地址</th>
                 <th className="w-24 px-4 py-3 text-left font-semibold">類別</th>
                 <th className="w-20 px-4 py-3 text-left font-semibold">狀態</th>
                 <th className="w-28 px-4 py-3 text-left font-semibold">操作</th>
@@ -917,7 +909,6 @@ export default function CoursesPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.time || "—"}</td>
                   <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{c.payrollHours ? `${c.payrollHours}h` : "自動估算"}</td>
-                  <td className="px-4 py-3 text-xs leading-5 text-slate-500 whitespace-normal break-words">{c.address || "—"}</td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span></td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive && !courseEnded(c) ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{!c.isActive ? "停課" : courseEnded(c) ? "學期結束" : "開課"}</span></td>
                   <td className="px-4 py-3">
@@ -926,7 +917,7 @@ export default function CoursesPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={13} className="text-center text-slate-400 py-8">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</td></tr>
+                <tr><td colSpan={12} className="text-center text-slate-400 py-8">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</td></tr>
               )}
             </tbody>
           </table>

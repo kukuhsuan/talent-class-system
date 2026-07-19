@@ -92,12 +92,12 @@ export default function AttendancePage() {
     setLoadingRecords(true);
     try {
       const res = await fetch(`/api/attendance?${params}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(await readApiError(res, "出勤紀錄載入失敗"));
+      if (!res.ok) throw new Error(await readApiError(res, "上課紀錄載入失敗"));
       const data = await res.json() as PageResult<Attendance>;
       setRecords(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total) || 0);
     } catch (error) {
-      showToastRef.current("error", (error as Error).message || "出勤紀錄載入失敗", 3000);
+      showToastRef.current("error", (error as Error).message || "上課紀錄載入失敗", 3000);
     } finally {
       setLoadingRecords(false);
     }
@@ -288,7 +288,7 @@ export default function AttendancePage() {
     if (!isCountRequired(r)) return isReportComplete(r) ? "出課完成" : "待確認出課";
     if (isReportComplete(r)) return "完成";
     if (!r.pendingReport) return "待上課";
-    if (r.missingItems?.includes("缺課程進度")) return "缺課程進度";
+    // 課程進度屬教學紀錄，不再列入行政警示
     if (r.missingItems?.includes("缺出席人數")) return "缺出席人數";
     return "待回報";
   };
@@ -381,7 +381,7 @@ export default function AttendancePage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">✏️ 上課紀錄</h1>
           <p className="text-sm text-slate-500">
-            {loadingRecords ? "出勤紀錄載入中…" : `共 ${total} 筆，目前顯示 ${filteredRecords.length} 筆`}
+            {loadingRecords ? "上課紀錄載入中…" : `共 ${total} 筆，目前顯示 ${filteredRecords.length} 筆`}
             {loadingOptions && <span className="ml-2 text-xs text-slate-400">課程/老師選項載入中</span>}
           </p>
         </div>
@@ -660,12 +660,13 @@ export default function AttendancePage() {
                     <span className="text-lg font-semibold text-slate-900">{group.school}</span>
                     <span className="text-sm text-slate-400">{opened ? "收合" : "展開"}</span>
                   </div>
-                  <div className="mt-1 text-sm text-slate-500">本月 {group.rows.length} 堂 · 出席合計 {totalStudents} 人</div>
                 </div>
+                {/* 摘要拆成獨立標籤，數字意義一目了然 */}
                 <div className="flex flex-wrap gap-2">
-                  {missing > 0 && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">待回報 {missing}</span>}
-                  {substitutes > 0 && <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">代課 {substitutes}</span>}
-                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{group.rows.length} 筆</span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">堂數 {group.rows.length}</span>
+                  {totalStudents > 0 && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">學生人次 {totalStudents}</span>}
+                  {substitutes > 0 && <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">代課 {substitutes} 堂</span>}
+                  {missing > 0 && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">待回報 {missing} 筆</span>}
                 </div>
               </button>
 
@@ -684,7 +685,7 @@ export default function AttendancePage() {
                             </div>
                             <span className={`rounded-full px-2 py-1 text-xs ${
                               r.cancelled ? "bg-red-100 text-red-600"
-                              : statusLabel(r) === "缺課程進度" ? "bg-amber-100 text-amber-700 font-semibold"
+                              : statusLabel(r) === "缺出席人數" ? "bg-amber-100 text-amber-700 font-semibold"
                               : isReportComplete(r) ? "bg-green-100 text-green-600"
                               : "bg-slate-100 text-slate-500"
                             }`}>{statusLabel(r)}</span>
@@ -755,7 +756,7 @@ export default function AttendancePage() {
                                 <div className="flex flex-col items-start gap-1">
                                   <span className={`rounded-full px-2.5 py-1 text-xs ${
                                     r.cancelled ? "bg-red-100 text-red-600"
-                                    : statusLabel(r) === "缺課程進度" ? "bg-amber-100 text-amber-700 font-semibold"
+                                    : statusLabel(r) === "缺出席人數" ? "bg-amber-100 text-amber-700 font-semibold"
                                     : isReportComplete(r) ? "bg-green-100 text-green-600"
                                     : "bg-slate-100 text-slate-500"
                                   }`}>{statusLabel(r)}</span>
@@ -785,7 +786,7 @@ export default function AttendancePage() {
         })}
         {groupedRecords.length === 0 && (
           <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-slate-400">
-            {loadingRecords ? "出勤紀錄載入中…" : "目前篩選沒有上課紀錄"}
+            {loadingRecords ? "上課紀錄載入中…" : "目前篩選沒有上課紀錄"}
           </div>
         )}
       </div>
@@ -803,7 +804,7 @@ function AttendanceActions({ row, onEdit, onCopyRating, onDelete }: { row: Atten
   return <details className="relative inline-block text-left">
     <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">操作 <span aria-hidden="true" className="text-slate-400">▾</span></summary>
     <div className="absolute right-0 z-30 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-      <button onClick={(event) => run(event, () => onEdit(row))} className={item}>編輯出勤紀錄</button>
+      <button onClick={(event) => run(event, () => onEdit(row))} className={item}>編輯上課紀錄</button>
       <Link href={`/course-change-requests?attendanceId=${row.id}`} className={item}>申請課程異動</Link>
       <a href={`/attendance/sign-in-sheet?id=${row.id}`} target="_blank" rel="noreferrer" className={item}>開啟簽到表</a>
       {(row.course.department ?? "").includes("安親") && <button onClick={(event) => run(event, () => onCopyRating(row))} className={item}>複製評分連結</button>}

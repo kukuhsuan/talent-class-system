@@ -332,7 +332,7 @@ export default function NotifyPage() {
                   </tr>
                 ))}
                 {attendance.length === 0 && (
-                  <tr><td colSpan={6} className="text-center py-8 text-slate-400">本月尚無出勤紀錄</td></tr>
+                  <tr><td colSpan={6} className="text-center py-8 text-slate-400">本月尚無上課紀錄</td></tr>
                 )}
               </tbody>
             </table>
