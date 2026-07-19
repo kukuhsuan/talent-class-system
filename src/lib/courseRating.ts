@@ -80,14 +80,16 @@ export type RatingLessonInfo = {
   courseCode: string;
   date: string; // YYYY-MM-DD
   teacherName: string;
+  kindergarten: boolean; // 幼兒園課程改用 WaysLeader 品牌顯示
 };
 
 export async function ratingLessonInfo(attendanceId: number): Promise<RatingLessonInfo | null> {
+  // 評分已開放幼兒園，這裡不再限制安親班；token 存在即代表這堂課有評分任務
   const attendance = await prisma.attendance.findUnique({
     where: { id: attendanceId },
     include: { course: true, actualTeacher: true },
   });
-  if (!attendance || !isAfterSchool(attendance.course.department)) return null;
+  if (!attendance) return null;
   return {
     attendanceId: attendance.id,
     school: attendance.course.school,
@@ -95,6 +97,7 @@ export async function ratingLessonInfo(attendanceId: number): Promise<RatingLess
     courseCode: attendance.course.code,
     date: attendance.date.toISOString().slice(0, 10),
     teacherName: attendance.actualTeacher?.name ?? "",
+    kindergarten: !isAfterSchool(attendance.course.department),
   };
 }
 

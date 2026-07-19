@@ -24,6 +24,7 @@ type Lesson = {
   courseCode: string;
   date: string;
   teacherName: string;
+  kindergarten?: boolean;
 };
 
 type Scores = Record<(typeof SCORE_FIELDS)[number]["key"], number>;
@@ -127,7 +128,7 @@ export default function RatingPage() {
     // 骨架畫面：避免長時間空白
     return (
       <Shell>
-        <BrandHeader />
+        <BrandHeader kindergarten={lesson?.kindergarten} />
         <div className="mt-4 animate-pulse space-y-4">
           <div className="h-24 rounded-2xl bg-slate-200/70" />
           {[0, 1, 2].map((i) => <div key={i} className="h-32 rounded-2xl bg-slate-100" />)}
@@ -136,12 +137,12 @@ export default function RatingPage() {
       </Shell>
     );
   }
-  if (error) return <Shell><BrandHeader /><p className="py-16 text-center text-red-600">{error}</p><Footer /></Shell>;
+  if (error) return <Shell><BrandHeader kindergarten={lesson?.kindergarten} /><p className="py-16 text-center text-red-600">{error}</p><Footer /></Shell>;
 
   if (done) {
     return (
       <Shell>
-        <BrandHeader />
+        <BrandHeader kindergarten={lesson?.kindergarten} />
         <div className="space-y-4 py-12 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#2F855A] text-3xl text-white">✓</div>
           <h1 className="text-xl font-bold text-gray-800">評分已完成，感謝您的回饋！</h1>
@@ -169,7 +170,7 @@ export default function RatingPage() {
   if (status === "submitted") {
     return (
       <Shell>
-        <BrandHeader />
+        <BrandHeader kindergarten={lesson?.kindergarten} />
         <div className="mt-4"><LessonCard lesson={lesson} /></div>
         <p className="py-10 text-center text-gray-600">這堂課已完成評分，感謝您的回饋！<br /><span className="text-sm text-gray-400">若需修改，請聯繫我們重新開放。</span></p>
         <Footer />
@@ -178,12 +179,12 @@ export default function RatingPage() {
   }
 
   if (status === "closed") {
-    return <Shell><BrandHeader /><p className="py-16 text-center text-gray-600">這個評分連結已關閉，若有需要請聯繫我們。</p><Footer /></Shell>;
+    return <Shell><BrandHeader kindergarten={lesson?.kindergarten} /><p className="py-16 text-center text-gray-600">這個評分連結已關閉，若有需要請聯繫我們。</p><Footer /></Shell>;
   }
 
   return (
     <Shell>
-      <BrandHeader />
+      <BrandHeader kindergarten={lesson?.kindergarten} />
       <h1 className="mt-4 text-xl font-bold text-gray-800">
         {lesson ? `請為本次${lesson.courseName}課程評分` : "課程滿意度評分"}
       </h1>
@@ -344,7 +345,7 @@ function VerifyModal({ token, onClose, onVerified }: { token: string; onClose: (
           {busy ? "驗證中…" : "確認並繼續"}
         </button>
         <button onClick={onClose} className="mt-2 w-full rounded-[10px] py-2.5 text-sm text-gray-500">取消</button>
-        <p className="mt-3 text-center text-xs text-gray-400">忘記驗證碼？請聯繫運動班長客服重新取得。</p>
+        <p className="mt-3 text-center text-xs text-gray-400">忘記驗證碼？請聯繫我們重新取得。</p>
       </div>
     </div>
   );
@@ -358,20 +359,21 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function BrandHeader() {
+function BrandHeader({ kindergarten = false }: { kindergarten?: boolean }) {
+  // 幼兒園課程顯示 WaysLeader 品牌；安親班維持運動班長
   return (
     <div className="flex items-center gap-3">
-      {/* 運動班長 Logo：載入失敗時自動隱藏，僅留文字品牌 */}
+      {/* Logo：載入失敗時自動隱藏，僅留文字品牌 */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/sports-monitor-logo.png"
-        alt="運動班長"
+        src={kindergarten ? "/upbear-logo-sm.png" : "/sports-monitor-logo.png"}
+        alt={kindergarten ? "WaysLeader AI" : "運動班長"}
         className="h-12 w-12 rounded-xl bg-white object-contain shadow-sm ring-1 ring-slate-200"
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
       />
       <div>
-        <div className="text-base font-black text-[#1e2a63]">運動班長｜課程回饋</div>
-        <div className="text-[11px] font-semibold text-gray-400">Kids Sports 兒童運動課程</div>
+        <div className="text-base font-black text-[#1e2a63]">{kindergarten ? "WaysLeader AI｜課程回饋" : "運動班長｜課程回饋"}</div>
+        <div className="text-[11px] font-semibold text-gray-400">{kindergarten ? "幼兒園學習成果平台" : "Kids Sports 兒童運動課程"}</div>
       </div>
     </div>
   );

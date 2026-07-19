@@ -816,8 +816,8 @@ export default function TeacherReportPage() {
           <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
             ⚠️ 點名表請傳到 LINE 官方帳號，這裡只上傳課堂活動照片。
           </div>
-          <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-600">
-            📸 照片請認真拍好：畫面清晰、拍到孩子上課的樣子，不要亂拍、不要模糊或只拍場地。
+          <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-700">
+            📸 麻煩老師幫忙拍下孩子上課的精彩瞬間，畫面清晰、有拍到活動內容就很棒了，謝謝老師！
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-500">
             每堂課最多 {PHOTO_LIMIT} 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
