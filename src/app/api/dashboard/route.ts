@@ -51,10 +51,9 @@ export async function GET(req: NextRequest) {
       where: {
         cancelled: false,
         date: { gte: pendingStart, lt: tomorrowStart },
-        OR: [
-          { category: { not: "課內" }, studentCount: null, studentCountA: null, studentCountB: null },
-          { reportContent: "" },
-        ],
+        // 待回報只看人數：課程進度是教學紀錄，不列入行政待辦
+        category: { not: "課內" },
+        studentCount: null, studentCountA: null, studentCountB: null,
         ...(dept ? { course: { department: { in: departmentQueryValues(dept) } } } : {}),
       },
       select: {

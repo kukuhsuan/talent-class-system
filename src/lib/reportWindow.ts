@@ -93,15 +93,12 @@ export function attendanceReportWindow(attendance: ReportAttendanceLike, timeTex
 export function attendanceMissingItems(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
   if (attendance.cancelled) return [];
 
-  const window = attendanceReportWindow(attendance, timeText, now);
-  if (!requiresStudentCount(attendance.category)) {
-    return window.ended && !window.expired && !(attendance.reportContent ?? "").trim() ? ["缺課程進度"] : [];
-  }
+  // 行政待回報只看「實際出席人數」：課程進度是老師教學紀錄，不列入行政待辦或月結阻擋。
+  // 課內不需填人數（時數在月結中心核對），因此不會出現在待回報。
+  if (!requiresStudentCount(attendance.category)) return [];
 
-  return [
-    ...(window.fillable && !hasAttendanceCount(attendance) ? ["缺出席人數"] : []),
-    ...(window.ended && !window.expired && !(attendance.reportContent ?? "").trim() ? ["缺課程進度"] : []),
-  ];
+  const window = attendanceReportWindow(attendance, timeText, now);
+  return window.fillable && !hasAttendanceCount(attendance) ? ["缺出席人數"] : [];
 }
 
 export function isPendingReport(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
