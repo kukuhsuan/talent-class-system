@@ -384,6 +384,14 @@ export function buildReminderMessage(opts: {
             ...(course.confirmationSummary ? [{ type: "text" as const, text: course.confirmationSummary, size: "xs" as const, color: "#5F6F83", wrap: true, margin: "sm" as const }] : []),
           ],
         },
+        // 出勤禮儀提醒
+        {
+          type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#FDF2EC", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            { type: "text", text: "出勤提醒", size: "sm", weight: "bold", color: "#B4552D" },
+            { type: "text", text: "⏰ 請準時到校，勿遲到早退\n🙂 請保持禮貌與專業態度", size: "sm", color: "#8A4423", wrap: true, margin: "sm" },
+          ],
+        },
         {
           type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#F3F8F4", cornerRadius: "10px", paddingAll: "13px",
           contents: [
