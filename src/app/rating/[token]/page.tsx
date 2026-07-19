@@ -359,8 +359,19 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function BrandHeader({ kindergarten = false }: { kindergarten?: boolean }) {
-  // 幼兒園課程顯示 WaysLeader 品牌；安親班維持運動班長
+function BrandHeader({ kindergarten }: { kindergarten?: boolean }) {
+  // 幼兒園課程顯示 WaysLeader 熊品牌；安親班維持運動班長；載入中（尚不知課程類型）先顯示中性標題避免品牌閃跳
+  if (kindergarten === undefined) {
+    return (
+      <div className="flex items-center gap-3">
+        <div className="h-12 w-12 rounded-xl bg-slate-100 ring-1 ring-slate-200" />
+        <div>
+          <div className="text-base font-black text-[#1e2a63]">課程回饋</div>
+          <div className="text-[11px] font-semibold text-gray-400">課程滿意度評分</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-3">
       {/* Logo：載入失敗時自動隱藏，僅留文字品牌 */}
