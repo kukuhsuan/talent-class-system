@@ -27,7 +27,7 @@ const PUBLIC_EXACT = [
   "/sports-leader-icon-512.png",
   "/sports-monitor-logo.png",
 ];
-const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/rating/", "/api/rating/"];
+const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/rating/", "/api/rating/", "/notify-ack/", "/api/notify-ack/"];
 // customer_service：客服角色，可用一般後台與通知功能；薪資/帳號管理/稽核仍被下方清單擋下
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);

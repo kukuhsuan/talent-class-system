@@ -50,10 +50,16 @@ export async function ensureNotifyBatchTables() {
       error TEXT NOT NULL DEFAULT '',
       message TEXT NOT NULL DEFAULT '',
       sentAt TEXT,
+      ackToken TEXT NOT NULL DEFAULT '',
+      ackAt TEXT,
       UNIQUE(batchId, recipientType, recipientId)
     )
   `);
+  // 舊表補欄位（SQLite 無 IF NOT EXISTS，重複加會丟錯 → 忽略）
+  await prisma.$executeRawUnsafe("ALTER TABLE NotifyBatchRecipient ADD COLUMN ackToken TEXT NOT NULL DEFAULT ''").catch(() => undefined);
+  await prisma.$executeRawUnsafe("ALTER TABLE NotifyBatchRecipient ADD COLUMN ackAt TEXT").catch(() => undefined);
   await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS idx_nbr_batch ON NotifyBatchRecipient(batchId)").catch(() => undefined);
+  await prisma.$executeRawUnsafe("CREATE INDEX IF NOT EXISTS idx_nbr_ack ON NotifyBatchRecipient(ackToken)").catch(() => undefined);
   tablesReady = true;
 }
 
@@ -117,7 +123,7 @@ export async function listBatches(limit = 50) {
 export async function listBatchRecipients(batchId: number) {
   await ensureNotifyBatchTables();
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    "SELECT id, recipientType, recipientId, name, lineRegion, maskedLineId, status, error, message, sentAt FROM NotifyBatchRecipient WHERE batchId = ? ORDER BY id ASC",
+    "SELECT id, recipientType, recipientId, name, lineRegion, maskedLineId, status, error, message, sentAt, ackAt FROM NotifyBatchRecipient WHERE batchId = ? ORDER BY id ASC",
     batchId,
   );
   return rows.map((r) => ({
@@ -125,7 +131,38 @@ export async function listBatchRecipients(batchId: number) {
     name: String(r.name ?? ""), lineRegion: String(r.lineRegion ?? ""), maskedLineId: String(r.maskedLineId ?? ""),
     status: String(r.status ?? ""), error: String(r.error ?? ""), message: String(r.message ?? ""),
     sentAt: r.sentAt == null ? null : String(r.sentAt),
+    ackAt: r.ackAt == null ? null : String(r.ackAt),
   }));
+}
+
+// ── 確認收到（公開頁使用；token 為每人專屬 32 碼亂數）─────────
+export async function getAckInfo(token: string) {
+  await ensureNotifyBatchTables();
+  if (!/^[0-9a-f]{32}$/.test(token)) return null;
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT r.id, r.name, r.ackAt, b.templateLabel, b.createdAt
+     FROM NotifyBatchRecipient r JOIN NotifyBatch b ON b.id = r.batchId
+     WHERE r.ackToken = ? LIMIT 1`, token,
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    name: String(r.name ?? ""),
+    templateLabel: String(r.templateLabel ?? ""),
+    sentAt: String(r.createdAt ?? ""),
+    ackAt: r.ackAt == null ? null : String(r.ackAt),
+  };
+}
+
+export async function confirmAck(token: string) {
+  const info = await getAckInfo(token);
+  if (!info) return null;
+  if (!info.ackAt) {
+    await prisma.$executeRawUnsafe(
+      "UPDATE NotifyBatchRecipient SET ackAt = datetime('now') WHERE ackToken = ? AND ackAt IS NULL", token,
+    );
+  }
+  return getAckInfo(token);
 }
 
 // 清洗錯誤訊息：不外洩 token/secret
@@ -174,9 +211,9 @@ export async function runNotifyBatch(opts: RunOptions) {
   // 先寫入收件人（UNIQUE 防同批重複；INSERT OR IGNORE 去重）
   for (const r of opts.recipients) {
     await prisma.$executeRawUnsafe(
-      `INSERT OR IGNORE INTO NotifyBatchRecipient (batchId, recipientType, recipientId, name, lineRegion, maskedLineId, status, error, message)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?)`,
-      batchId, opts.targetType, r.id, r.name, r.lineRegion, maskLineId(r.lineUserId), r.message,
+      `INSERT OR IGNORE INTO NotifyBatchRecipient (batchId, recipientType, recipientId, name, lineRegion, maskedLineId, status, error, message, ackToken)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)`,
+      batchId, opts.targetType, r.id, r.name, r.lineRegion, maskLineId(r.lineUserId), r.message, r.ackToken ?? "",
     );
   }
 

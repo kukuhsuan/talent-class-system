@@ -14,7 +14,7 @@ type Recipient = {
 
 type Template = {
   key: string; label: string; target: "teacher" | "school";
-  editable: boolean; needsTyphoonStatus: boolean; description: string; defaultBody: string;
+  editable: boolean; needsTyphoonStatus: boolean; needsAck: boolean; description: string; defaultBody: string;
 };
 
 type PreviewData = {
@@ -36,14 +36,14 @@ type Batch = {
 
 type BatchRecipient = {
   id: number; recipientId: number; name: string; lineRegion: string; maskedLineId: string;
-  status: string; error: string; message: string; sentAt: string | null;
+  status: string; error: string; message: string; sentAt: string | null; ackAt: string | null;
 };
 
 const REGION_LABEL: Record<string, string> = { north: "北部", south: "南部" };
 const OA_LABEL: Record<string, string> = { north: "北部 OA", south: "南部 OA", school: "園所 OA 1", school2: "園所 OA 2" };
 
 // 可用變數：名稱＋範例＋適用對象（只列實際會被替換的變數）
-const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" | "school">; typhoonOnly?: boolean }> = [
+const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" | "school">; typhoonOnly?: boolean; ackOnly?: boolean }> = [
   { name: "姓名", sample: "王小明", targets: ["teacher", "school"] },
   { name: "園所", sample: "快樂幼兒園", targets: ["school"] },
   { name: "日期", sample: "2026/7/20（週一）", targets: ["teacher", "school"] },
@@ -52,6 +52,7 @@ const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" |
   { name: "園所連結", sample: "園所專屬看板網址（自動產生）", targets: ["school"] },
   { name: "開課確認連結", sample: "開課資料確認網址（安親班不附）", targets: ["school"] },
   { name: "停課狀態", sample: "上方所選的課程狀態（颱風範本專用）", targets: ["teacher", "school"], typhoonOnly: true },
+  { name: "確認連結", sample: "每人專屬「確認收到」網址（自動產生，點選後紀錄顯示已確認）", targets: ["teacher"], ackOnly: true },
 ];
 const RESULT_LABEL: Record<string, string> = { success: "成功", failed: "失敗", unbound: "未綁定", skipped: "略過", pending: "處理中" };
 const RESULT_STYLE: Record<string, string> = {
@@ -458,7 +459,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
               <div>
                 <p className="text-xs font-medium text-slate-600 mb-1">可用變數（點選插入游標位置）</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {VAR_DEFS.filter(v => v.targets.includes(targetType) && (!v.typhoonOnly || template.needsTyphoonStatus)).map(v => (
+                  {VAR_DEFS.filter(v => v.targets.includes(targetType) && (!v.typhoonOnly || template.needsTyphoonStatus) && (!v.ackOnly || template.needsAck)).map(v => (
                     <button key={v.name} type="button" onClick={() => insertVar(v.name)}
                       className="px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs hover:bg-blue-100 border border-blue-100"
                       title={`範例：${v.sample}`}>
@@ -468,7 +469,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                 </div>
                 <div className="mt-2 text-xs text-slate-400 space-y-0.5">
                   <p className="font-medium text-slate-500">範例</p>
-                  {VAR_DEFS.filter(v => v.targets.includes(targetType) && (!v.typhoonOnly || template.needsTyphoonStatus)).map(v => (
+                  {VAR_DEFS.filter(v => v.targets.includes(targetType) && (!v.typhoonOnly || template.needsTyphoonStatus) && (!v.ackOnly || template.needsAck)).map(v => (
                     <p key={v.name}>{`{${v.name}}`} → {v.sample}</p>
                   ))}
                 </div>
@@ -628,6 +629,7 @@ function LogsTab() {
                   <th className="text-left px-3 py-2 font-medium">LINE OA</th>
                   <th className="text-left px-3 py-2 font-medium">識別碼</th>
                   <th className="text-left px-3 py-2 font-medium">結果</th>
+                  <th className="text-left px-3 py-2 font-medium">確認收到</th>
                   <th className="text-left px-3 py-2 font-medium">錯誤原因</th>
                 </tr>
               </thead>
@@ -641,6 +643,11 @@ function LogsTab() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${RESULT_STYLE[r.status] ?? "bg-slate-100 text-slate-500"}`}>
                         {RESULT_LABEL[r.status] ?? r.status}
                       </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {r.ackAt
+                        ? <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={r.ackAt}>✅ 已確認</span>
+                        : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500 max-w-[260px] truncate" title={r.error}>{r.error || "—"}</td>
                   </tr>

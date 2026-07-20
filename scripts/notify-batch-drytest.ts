@@ -2,7 +2,7 @@
    執行：TURSO_DATABASE_URL="file:/tmp/notifytest.db" npx tsx scripts/notify-batch-drytest.ts */
 import { prisma } from "../src/lib/prisma";
 import { buildBatchMessages } from "../src/lib/notifyTemplates";
-import { runNotifyBatch, getBatchByUuid, listBatchRecipients, hasDangerousLink, maskLineId, BATCH_MAX_RECIPIENTS } from "../src/lib/notifyBatch";
+import { runNotifyBatch, getBatchByUuid, listBatchRecipients, hasDangerousLink, maskLineId, BATCH_MAX_RECIPIENTS, getAckInfo, confirmAck } from "../src/lib/notifyBatch";
 import { getLineConfig, normalizeLineRegion } from "../src/lib/line";
 import crypto from "crypto";
 
@@ -147,6 +147,26 @@ async function main() {
     recipients: evil, testMode: true, dryRun: true,
   });
   check("危險協定訊息被略過不發送", runEvil.batch.skipped === 1 && runEvil.batch.success === 0);
+
+  // ── 11. 教練工作提醒事項：每人專屬確認連結＋確認收到 ──
+  const coach = await buildBatchMessages({ templateKey: "coach_rules", targetType: "teacher", recipientIds: boundIds.slice(0, 3) });
+  check("教練範本每人訊息含專屬確認連結", coach.every((m) => m.ackToken && m.message.includes(`/notify-ack/${m.ackToken}`)));
+  check("確認連結每人不同", new Set(coach.map((m) => m.ackToken)).size === 3);
+  const runCoach = await runNotifyBatch({
+    uuid: crypto.randomUUID(), actor: { userId: 1, name: "測試客服", role: "customer_service" },
+    templateKey: "coach_rules", templateLabel: "教練工作提醒事項", targetType: "teacher",
+    recipients: coach, testMode: false, dryRun: true,
+  });
+  const ackToken = coach[0].ackToken!;
+  const info0 = await getAckInfo(ackToken);
+  check("確認頁可查到收件人且尚未確認", info0?.name === coach[0].name && info0?.ackAt === null);
+  const acked = await confirmAck(ackToken);
+  check("點選確認後記錄 ackAt", Boolean(acked?.ackAt));
+  const acked2 = await confirmAck(ackToken);
+  check("重複確認不改變首次時間", acked2?.ackAt === acked?.ackAt);
+  const coachRows = await listBatchRecipients(runCoach.batch.id);
+  check("紀錄明細只有 1 位顯示已確認", coachRows.filter((r) => r.ackAt).length === 1);
+  check("無效 token 回 null", (await getAckInfo("zz".repeat(16))) === null && (await getAckInfo("abc")) === null);
 
   console.log(`\n結果：${pass} 通過／${fail} 失敗`);
   process.exit(fail > 0 ? 1 : 0);

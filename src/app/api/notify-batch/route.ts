@@ -10,8 +10,8 @@ export async function GET() {
   if (response) return response;
   const batches = await listBatches(50);
   return NextResponse.json({
-    templates: NOTIFY_TEMPLATES.map(({ key, label, target, editable, needsTyphoonStatus, description, defaultBody }) => ({
-      key, label, target, editable, needsTyphoonStatus: Boolean(needsTyphoonStatus), description, defaultBody,
+    templates: NOTIFY_TEMPLATES.map(({ key, label, target, editable, needsTyphoonStatus, needsAck, description, defaultBody }) => ({
+      key, label, target, editable, needsTyphoonStatus: Boolean(needsTyphoonStatus), needsAck: Boolean(needsAck), description, defaultBody,
     })),
     batches,
   });
