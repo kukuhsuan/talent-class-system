@@ -2,17 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { NOTIFY_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { writeAuditLog } from "@/lib/auditLog";
 import { buildBatchMessages, getTemplate, NOTIFY_TEMPLATES, type NotifyTargetType, type NotifyTemplateKey } from "@/lib/notifyTemplates";
-import { BATCH_MAX_RECIPIENTS, getBatchByUuid, hasDangerousLink, listBatches, maskLineId, runNotifyBatch } from "@/lib/notifyBatch";
+import { BATCH_MAX_RECIPIENTS, deleteTemplateOverride, getBatchByUuid, getTemplateOverrides, hasDangerousLink, listBatches, maskLineId, runNotifyBatch, saveTemplateOverride } from "@/lib/notifyBatch";
 
 // GET：範本清單＋最近批次紀錄
 export async function GET() {
   const { response } = await requireRole(NOTIFY_ROLES);
   if (response) return response;
-  const batches = await listBatches(50);
+  const [batches, overrides] = await Promise.all([listBatches(50), getTemplateOverrides()]);
   return NextResponse.json({
-    templates: NOTIFY_TEMPLATES.map(({ key, label, target, editable, needsTyphoonStatus, needsAck, description, defaultBody }) => ({
-      key, label, target, editable, needsTyphoonStatus: Boolean(needsTyphoonStatus), needsAck: Boolean(needsAck), description, defaultBody,
-    })),
+    templates: NOTIFY_TEMPLATES.map(({ key, label, target, editable, needsTyphoonStatus, needsAck, description, defaultBody }) => {
+      const saved = overrides.get(key);
+      return {
+        key, label, target, editable, needsTyphoonStatus: Boolean(needsTyphoonStatus), needsAck: Boolean(needsAck), description,
+        defaultBody: saved?.body || defaultBody, // 已儲存的自訂內容優先帶入
+        builtinBody: defaultBody,
+        customized: Boolean(saved),
+        customizedBy: saved?.updatedBy ?? "",
+      };
+    }),
     batches,
   });
 }
@@ -39,10 +46,30 @@ export async function POST(req: NextRequest) {
   let body: PostBody;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "請求格式錯誤" }, { status: 400 }); }
 
-  const action = body.action === "send" ? "send" : "preview";
   const targetType: NotifyTargetType = body.targetType === "school" ? "school" : "teacher";
   const template = getTemplate(String(body.templateKey ?? ""));
   if (!template) return NextResponse.json({ error: "請選擇通知範本" }, { status: 400 });
+
+  // 儲存／還原自訂範本內容（全客服共用）
+  if (body.action === "save_template" || body.action === "reset_template") {
+    if (!template.editable) return NextResponse.json({ error: "此範本不可編輯" }, { status: 400 });
+    if (body.action === "save_template") {
+      const saved = String(body.customBody ?? "").slice(0, 4000);
+      if (!saved.trim()) return NextResponse.json({ error: "範本內容不可為空" }, { status: 400 });
+      if (hasDangerousLink(saved)) return NextResponse.json({ error: "訊息內容包含不允許的連結協定" }, { status: 400 });
+      await saveTemplateOverride(template.key, saved, user?.name ?? "");
+    } else {
+      await deleteTemplateOverride(template.key);
+    }
+    await writeAuditLog(req, {
+      action: body.action === "save_template" ? "notify_template_save" : "notify_template_reset",
+      targetType: "NotifyTemplate", targetId: 0, targetLabel: `通知範本：${template.label}`,
+      diffSummary: body.action === "save_template" ? "儲存自訂內容" : "還原預設內容",
+    });
+    return NextResponse.json({ ok: true, body: body.action === "save_template" ? String(body.customBody ?? "").slice(0, 4000) : template.defaultBody });
+  }
+
+  const action = body.action === "send" ? "send" : "preview";
 
   const recipientIds = Array.isArray(body.recipientIds)
     ? [...new Set(body.recipientIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))]

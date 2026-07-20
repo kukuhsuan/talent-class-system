@@ -55,6 +55,15 @@ export async function ensureNotifyBatchTables() {
       UNIQUE(batchId, recipientType, recipientId)
     )
   `);
+  // 客服自訂範本內容（儲存後全客服共用；還原預設即刪除）
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS NotifyTemplateOverride (
+      templateKey TEXT PRIMARY KEY,
+      body TEXT NOT NULL DEFAULT '',
+      updatedBy TEXT NOT NULL DEFAULT '',
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
   // 舊表補欄位（SQLite 無 IF NOT EXISTS，重複加會丟錯 → 忽略）
   await prisma.$executeRawUnsafe("ALTER TABLE NotifyBatchRecipient ADD COLUMN ackToken TEXT NOT NULL DEFAULT ''").catch(() => undefined);
   await prisma.$executeRawUnsafe("ALTER TABLE NotifyBatchRecipient ADD COLUMN ackAt TEXT").catch(() => undefined);
@@ -152,6 +161,31 @@ export async function getAckInfo(token: string) {
     sentAt: String(r.createdAt ?? ""),
     ackAt: r.ackAt == null ? null : String(r.ackAt),
   };
+}
+
+// ── 客服自訂範本內容 ─────────────────────────────
+export async function getTemplateOverrides() {
+  await ensureNotifyBatchTables();
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    "SELECT templateKey, body, updatedBy, updatedAt FROM NotifyTemplateOverride",
+  );
+  return new Map(rows.map((r) => [String(r.templateKey), {
+    body: String(r.body ?? ""), updatedBy: String(r.updatedBy ?? ""), updatedAt: String(r.updatedAt ?? ""),
+  }]));
+}
+
+export async function saveTemplateOverride(templateKey: string, body: string, updatedBy: string) {
+  await ensureNotifyBatchTables();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO NotifyTemplateOverride (templateKey, body, updatedBy, updatedAt) VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(templateKey) DO UPDATE SET body = excluded.body, updatedBy = excluded.updatedBy, updatedAt = datetime('now')`,
+    templateKey, body, updatedBy,
+  );
+}
+
+export async function deleteTemplateOverride(templateKey: string) {
+  await ensureNotifyBatchTables();
+  await prisma.$executeRawUnsafe("DELETE FROM NotifyTemplateOverride WHERE templateKey = ?", templateKey);
 }
 
 // LINE 按鈕 postback 確認：驗證按按鈕的人就是收件老師本人才記錄

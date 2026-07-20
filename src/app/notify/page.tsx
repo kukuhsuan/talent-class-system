@@ -14,7 +14,8 @@ type Recipient = {
 
 type Template = {
   key: string; label: string; target: "teacher" | "school";
-  editable: boolean; needsTyphoonStatus: boolean; needsAck: boolean; description: string; defaultBody: string;
+  editable: boolean; needsTyphoonStatus: boolean; needsAck: boolean; description: string;
+  defaultBody: string; builtinBody: string; customized: boolean; customizedBy: string;
 };
 
 type PreviewData = {
@@ -271,6 +272,33 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
     setConfirmed(false);
   };
 
+  // 儲存／還原自訂範本內容（全客服共用）
+  const [savingTpl, setSavingTpl] = useState(false);
+  const [tplMsg, setTplMsg] = useState("");
+  const saveTemplate = async (reset: boolean) => {
+    if (!templateKey) return;
+    if (reset && !window.confirm("確定要還原成系統預設內容？已儲存的自訂內容將被刪除。")) return;
+    setSavingTpl(true);
+    setTplMsg("");
+    try {
+      const res = await fetch("/api/notify-batch", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: reset ? "reset_template" : "save_template", templateKey, customBody }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "儲存失敗");
+      setTemplates(prev => prev.map(t => t.key === templateKey
+        ? { ...t, defaultBody: data.body, customized: !reset }
+        : t));
+      if (reset) setCustomBody(data.body);
+      setTplMsg(reset ? "已還原預設內容" : "已儲存，之後所有客服都會帶入此內容");
+    } catch (e) {
+      setTplMsg((e as Error).message);
+    } finally {
+      setSavingTpl(false);
+    }
+  };
+
   useEffect(() => {
     fetch("/api/notify-batch").then(r => r.json()).then(data => setTemplates(data.templates ?? []));
   }, []);
@@ -292,6 +320,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
     setTyphoonStatus("");
     setPreview(null);
     setConfirmed(false);
+    setTplMsg("");
   }, [templateKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const regionOptions = useMemo(() => {
@@ -455,6 +484,24 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
               )}
               <textarea ref={bodyRef} value={customBody} onChange={e => { setCustomBody(e.target.value); setPreview(null); setConfirmed(false); }}
                 rows={10} className="border rounded-lg px-3 py-2 text-sm w-full font-mono" />
+              {template.editable && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={() => saveTemplate(false)} disabled={savingTpl || !customBody.trim()}
+                    className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                    {savingTpl ? "儲存中…" : "儲存範本"}
+                  </button>
+                  {template.customized && (
+                    <>
+                      <button onClick={() => saveTemplate(true)} disabled={savingTpl}
+                        className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-50">
+                        還原預設
+                      </button>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">已自訂</span>
+                    </>
+                  )}
+                  {tplMsg && <span className="text-xs text-green-700">{tplMsg}</span>}
+                </div>
+              )}
               <div>
                 <p className="text-xs font-medium text-slate-600 mb-1">可用變數（點選插入游標位置）</p>
                 <div className="flex flex-wrap gap-1.5">
