@@ -28,6 +28,7 @@ import {
   updateInquiryResponse,
   upcomingLeaveCourseChoices,
 } from "@/lib/teacherLeaves";
+import { confirmAckByLineUser } from "@/lib/notifyBatch";
 import { setEquipmentStatus } from "@/lib/equipmentReminder";
 import { equipmentNextStopLabel, type EquipmentStatus } from "@/lib/equipmentReminderCore";
 import { getEquipmentFlow, updateEquipmentFlowStatus } from "@/lib/equipmentFlow";
@@ -614,6 +615,19 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const params = new URLSearchParams(data);
   const action = params.get("action");
   const attendanceId = Number(params.get("id"));
+
+  // 批次通知「確認收到」按鈕：postback 直接記錄，不開網頁
+  if (action === "notify_ack") {
+    const result = await confirmAckByLineUser(params.get("t") ?? "", userId);
+    if (!result.ok) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到這則通知的確認紀錄，請聯絡行政確認。" }], token);
+    } else if (result.already) {
+      await replyMessage(replyToken, [{ type: "text", text: `您先前已確認收到「${result.templateLabel}」，謝謝配合！` }], token);
+    } else {
+      await replyMessage(replyToken, [{ type: "text", text: `✅ ${result.name} 教練，已記錄您確認收到「${result.templateLabel}」，謝謝配合！` }], token);
+    }
+    return;
+  }
 
   // 課前會議出席回覆（會參加／無法參加），同步回後台
   if (action === "meeting_reply") {

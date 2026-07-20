@@ -154,6 +154,28 @@ export async function getAckInfo(token: string) {
   };
 }
 
+// LINE 按鈕 postback 確認：驗證按按鈕的人就是收件老師本人才記錄
+export async function confirmAckByLineUser(token: string, lineUserId: string) {
+  await ensureNotifyBatchTables();
+  if (!/^[0-9a-f]{32}$/.test(token) || !lineUserId) return { ok: false as const };
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    `SELECT r.recipientId, r.recipientType, r.name, r.ackAt, b.templateLabel
+     FROM NotifyBatchRecipient r JOIN NotifyBatch b ON b.id = r.batchId
+     WHERE r.ackToken = ? LIMIT 1`, token,
+  );
+  const row = rows[0];
+  if (!row || String(row.recipientType) !== "teacher") return { ok: false as const };
+  const teacher = await prisma.teacher.findFirst({ where: { lineUserId }, select: { id: true } });
+  if (!teacher || teacher.id !== Number(row.recipientId)) return { ok: false as const };
+  const already = row.ackAt != null;
+  if (!already) {
+    await prisma.$executeRawUnsafe(
+      "UPDATE NotifyBatchRecipient SET ackAt = datetime('now') WHERE ackToken = ? AND ackAt IS NULL", token,
+    );
+  }
+  return { ok: true as const, already, name: String(row.name ?? ""), templateLabel: String(row.templateLabel ?? "") };
+}
+
 export async function confirmAck(token: string) {
   const info = await getAckInfo(token);
   if (!info) return null;
@@ -165,8 +187,8 @@ export async function confirmAck(token: string) {
   return getAckInfo(token);
 }
 
-// needsAck 範本：以 Flex 卡片發送，內容＋底部「確認收到」按鈕（不在內文附純文字連結）
-function buildAckFlex(label: string, text: string, ackUrl: string) {
+// needsAck 範本：以 Flex 卡片發送，底部「確認收到」按鈕直接回傳（postback，不開網頁）
+function buildAckFlex(label: string, text: string, ackToken: string) {
   return {
     type: "flex",
     altText: label,
@@ -184,7 +206,7 @@ function buildAckFlex(label: string, text: string, ackUrl: string) {
         type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC",
         contents: [{
           type: "button", style: "primary", color: "#3E8E5A", height: "sm",
-          action: { type: "uri", label: "✅ 確認收到", uri: ackUrl },
+          action: { type: "postback", label: "✅ 確認收到", data: `action=notify_ack&t=${ackToken}`, displayText: "我已收到並詳閱" },
         }],
       },
     },
@@ -262,8 +284,8 @@ export async function runNotifyBatch(opts: RunOptions) {
     let lastError = "";
     for (let attempt = 0; attempt < 2; attempt++) { // 最多重試 1 次
       try {
-        const payload = r.ackUrl
-          ? [buildAckFlex(opts.templateLabel || "通知", r.message, r.ackUrl)]
+        const payload = r.ackToken
+          ? [buildAckFlex(opts.templateLabel || "通知", r.message, r.ackToken)]
           : [{ type: "text", text: r.message }];
         await pushMessage(r.lineUserId, payload, token);
         success++;

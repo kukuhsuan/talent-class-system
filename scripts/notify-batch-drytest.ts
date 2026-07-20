@@ -2,7 +2,7 @@
    執行：TURSO_DATABASE_URL="file:/tmp/notifytest.db" npx tsx scripts/notify-batch-drytest.ts */
 import { prisma } from "../src/lib/prisma";
 import { buildBatchMessages } from "../src/lib/notifyTemplates";
-import { runNotifyBatch, getBatchByUuid, listBatchRecipients, hasDangerousLink, maskLineId, BATCH_MAX_RECIPIENTS, getAckInfo, confirmAck } from "../src/lib/notifyBatch";
+import { runNotifyBatch, getBatchByUuid, listBatchRecipients, hasDangerousLink, maskLineId, BATCH_MAX_RECIPIENTS, getAckInfo, confirmAck, confirmAckByLineUser } from "../src/lib/notifyBatch";
 import { getLineConfig, normalizeLineRegion } from "../src/lib/line";
 import crypto from "crypto";
 
@@ -167,6 +167,12 @@ async function main() {
   const coachRows = await listBatchRecipients(runCoach.batch.id);
   check("紀錄明細只有 1 位顯示已確認", coachRows.filter((r) => r.ackAt).length === 1);
   check("無效 token 回 null", (await getAckInfo("zz".repeat(16))) === null && (await getAckInfo("abc")) === null);
+  const wrongUser = await confirmAckByLineUser(coach[1].ackToken!, "U_not_the_recipient");
+  check("非本人按按鈕不記錄", wrongUser.ok === false);
+  const byButton = await confirmAckByLineUser(coach[1].ackToken!, coach[1].lineUserId!);
+  check("本人按 LINE 按鈕直接記錄", byButton.ok === true && byButton.already === false);
+  const byButton2 = await confirmAckByLineUser(coach[1].ackToken!, coach[1].lineUserId!);
+  check("重複按按鈕回覆已確認過", byButton2.ok === true && byButton2.already === true);
 
   console.log(`\n結果：${pass} 通過／${fail} 失敗`);
   process.exit(fail > 0 ? 1 : 0);
