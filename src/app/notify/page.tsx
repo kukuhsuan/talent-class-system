@@ -24,7 +24,7 @@ type PreviewData = {
   skipped: Array<{ id: number; name: string; reason: string }>;
   oaGroups: Record<string, number>;
   containsPublicLink: boolean;
-  recipients: Array<{ id: number; name: string; lineBound: boolean; maskedLineId: string; lineRegion: string; message: string; skipped: string }>;
+  recipients: Array<{ id: number; name: string; lineBound: boolean; maskedLineId: string; lineRegion: string; message: string; skipped: string; ackButton?: boolean }>;
 };
 
 type Batch = {
@@ -52,7 +52,6 @@ const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" |
   { name: "園所連結", sample: "園所專屬看板網址（自動產生）", targets: ["school"] },
   { name: "開課確認連結", sample: "開課資料確認網址（安親班不附）", targets: ["school"] },
   { name: "停課狀態", sample: "上方所選的課程狀態（颱風範本專用）", targets: ["teacher", "school"], typhoonOnly: true },
-  { name: "確認連結", sample: "每人專屬「確認收到」網址（自動產生，點選後紀錄顯示已確認）", targets: ["teacher"], ackOnly: true },
 ];
 const RESULT_LABEL: Record<string, string> = { success: "成功", failed: "失敗", unbound: "未綁定", skipped: "略過", pending: "處理中" };
 const RESULT_STYLE: Record<string, string> = {
@@ -528,6 +527,12 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
               <pre className="whitespace-pre-wrap rounded-lg border bg-slate-50 p-3 text-sm text-slate-800 max-h-72 overflow-y-auto">
                 {previewRecipient?.skipped ? `（此收件人將被略過：${previewRecipient.skipped}）` : previewRecipient?.message || "（無訊息）"}
               </pre>
+              {previewRecipient?.ackButton && !previewRecipient.skipped && (
+                <div className="mt-2 rounded-lg border bg-slate-50 p-3">
+                  <p className="text-xs text-slate-400 mb-2">此訊息將以卡片發送，底部附每人專屬按鈕：</p>
+                  <div className="rounded-lg bg-green-600 text-white text-sm text-center py-2 max-w-[240px]">✅ 確認收到</div>
+                </div>
+              )}
             </div>
 
             <div className="border-t pt-4">

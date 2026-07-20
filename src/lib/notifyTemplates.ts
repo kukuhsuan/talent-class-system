@@ -75,7 +75,7 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsAck: true,
-    description: "教練工作規範，每位教練會收到專屬「確認收到」連結，點選後於發送紀錄顯示已確認",
+    description: "教練工作規範，以卡片訊息發送並附「確認收到」按鈕，教練點選後於發送紀錄顯示已確認",
     defaultBody: [
       "📋 教練工作提醒事項",
       "",
@@ -123,8 +123,7 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "",
       "以上事項請所有教練共同遵守，透過一致的教學品質、專業態度及安全管理，提供學生最佳的學習體驗，也建立公司良好的品牌形象。",
       "",
-      "✅ 請點選以下連結，確認您已收到並詳閱本提醒事項：",
-      "{確認連結}",
+      "✅ 請點選下方「確認收到」按鈕，確認您已收到並詳閱本提醒事項。",
     ].join("\n"),
   },
   {
@@ -229,6 +228,7 @@ export type BatchRecipientMessage = {
   message: string;
   skipped?: string; // 略過原因（如當日無課）
   ackToken?: string; // 「確認收到」專屬 token（needsAck 範本）
+  ackUrl?: string;   // 確認頁網址 → 發送時改用 Flex 卡片附按鈕
 };
 
 type BuildOptions = {
@@ -326,10 +326,11 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         課程摘要: summary,
         停課狀態: opts.typhoonStatus ?? "",
       };
-      // needsAck：每人專屬「確認收到」連結
+      // needsAck：每人專屬「確認收到」連結 → 發送時以 Flex 卡片附按鈕
       const ackToken = template.needsAck ? crypto.randomBytes(16).toString("hex") : undefined;
-      if (ackToken) vars.確認連結 = `${appUrl()}/notify-ack/${ackToken}`;
-      return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: finalizeMessage(body, vars), ackToken };
+      const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
+      if (ackUrl) vars.確認連結 = ackUrl;
+      return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: finalizeMessage(body, vars), ackToken, ackUrl };
     });
   }
 

@@ -150,7 +150,7 @@ async function main() {
 
   // ── 11. 教練工作提醒事項：每人專屬確認連結＋確認收到 ──
   const coach = await buildBatchMessages({ templateKey: "coach_rules", targetType: "teacher", recipientIds: boundIds.slice(0, 3) });
-  check("教練範本每人訊息含專屬確認連結", coach.every((m) => m.ackToken && m.message.includes(`/notify-ack/${m.ackToken}`)));
+  check("教練範本每人帶專屬確認按鈕連結（內文不含網址）", coach.every((m) => m.ackToken && m.ackUrl?.includes(`/notify-ack/${m.ackToken}`) && !m.message.includes("notify-ack")));
   check("確認連結每人不同", new Set(coach.map((m) => m.ackToken)).size === 3);
   const runCoach = await runNotifyBatch({
     uuid: crypto.randomUUID(), actor: { userId: 1, name: "測試客服", role: "customer_service" },

@@ -165,6 +165,32 @@ export async function confirmAck(token: string) {
   return getAckInfo(token);
 }
 
+// needsAck 範本：以 Flex 卡片發送，內容＋底部「確認收到」按鈕（不在內文附純文字連結）
+function buildAckFlex(label: string, text: string, ackUrl: string) {
+  return {
+    type: "flex",
+    altText: label,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#2C5DA8", paddingAll: "16px",
+        contents: [{ type: "text", text: label, color: "#FFFFFF", weight: "bold", size: "lg", wrap: true }],
+      },
+      body: {
+        type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#FFFFFF",
+        contents: [{ type: "text", text, size: "sm", color: "#333333", wrap: true }],
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC",
+        contents: [{
+          type: "button", style: "primary", color: "#3E8E5A", height: "sm",
+          action: { type: "uri", label: "✅ 確認收到", uri: ackUrl },
+        }],
+      },
+    },
+  };
+}
+
 // 清洗錯誤訊息：不外洩 token/secret
 function sanitizeError(message: string) {
   return String(message ?? "")
@@ -236,7 +262,10 @@ export async function runNotifyBatch(opts: RunOptions) {
     let lastError = "";
     for (let attempt = 0; attempt < 2; attempt++) { // 最多重試 1 次
       try {
-        await pushMessage(r.lineUserId, [{ type: "text", text: r.message }], token);
+        const payload = r.ackUrl
+          ? [buildAckFlex(opts.templateLabel || "通知", r.message, r.ackUrl)]
+          : [{ type: "text", text: r.message }];
+        await pushMessage(r.lineUserId, payload, token);
         success++;
         await setStatus(r.id, "success");
         return;

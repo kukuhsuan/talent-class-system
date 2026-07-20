@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       containsPublicLink,
       recipients: recipients.map((r) => ({
         id: r.id, name: r.name, lineBound: Boolean(r.lineUserId), maskedLineId: maskLineId(r.lineUserId),
-        lineRegion: r.lineRegion, message: r.message, skipped: r.skipped ?? "",
+        lineRegion: r.lineRegion, message: r.message, skipped: r.skipped ?? "", ackButton: Boolean(r.ackUrl),
       })),
     });
   }
