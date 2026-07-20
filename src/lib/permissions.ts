@@ -6,8 +6,8 @@ export const OWNER_ROLES = ["owner", "super_admin", "developer"] as const;
 export const ADMIN_ROLES = ["owner", "super_admin", "developer", "admin"] as const;
 export const BACKOFFICE_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"] as const;
 export const SALARY_ROLES = ["owner", "super_admin", "developer", "admin", "accountant"] as const;
-// 可發送 LINE 通知的角色：staff/accountant/viewer 預設不可大量發送
-export const NOTIFY_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service"] as const;
+// 可發送 LINE 通知的角色：accountant/viewer 預設不可大量發送
+export const NOTIFY_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff"] as const;
 
 export type AppRole = (typeof BACKOFFICE_ROLES)[number];
 
