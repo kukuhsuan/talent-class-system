@@ -8,8 +8,6 @@ import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 export type NotifyTargetType = "teacher" | "school";
 export type NotifyTemplateKey =
   | "new_term"
-  | "today_reminder"
-  | "tomorrow_reminder"
   | "class_notes"
   | "typhoon"
   | "school_term"
@@ -46,38 +44,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "{課程摘要}",
       "",
       "若資訊有誤或需調整，請與行政聯繫，謝謝！",
-    ].join("\n"),
-  },
-  {
-    key: "today_reminder",
-    label: "今日上課提醒",
-    target: "teacher",
-    editable: true,
-    description: "自動帶入老師今日課程，未排課的老師會自動略過",
-    defaultBody: [
-      "⏰ 今日上課提醒",
-      "",
-      "{姓名} 老師您好，今日（{日期}）課程如下：",
-      "",
-      "{課程摘要}",
-      "",
-      PUNCTUAL_LINES,
-    ].join("\n"),
-  },
-  {
-    key: "tomorrow_reminder",
-    label: "明日上課提醒",
-    target: "teacher",
-    editable: true,
-    description: "自動帶入老師明日課程，未排課的老師會自動略過",
-    defaultBody: [
-      "⏰ 明日上課提醒",
-      "",
-      "{姓名} 老師您好，明日（{日期}）課程如下：",
-      "",
-      "{課程摘要}",
-      "",
-      PUNCTUAL_LINES,
     ].join("\n"),
   },
   {
@@ -256,7 +222,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
 
     // 課程摘要素材
     let summaryByTeacher = new Map<number, string>();
-    let dateIso = taipeiDateStr(0);
+    const dateIso = taipeiDateStr(0);
     if (opts.templateKey === "new_term") {
       const courses = await prisma.course.findMany({
         where: { isActive: true, OR: [{ teacherId: { in: ids } }, { assistantTeacherId: { in: ids } }] },
@@ -282,46 +248,14 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         }
       }
       summaryByTeacher = new Map([...acc].map(([k, v]) => [k, v.join("\n\n")]));
-    } else if (opts.templateKey === "today_reminder" || opts.templateKey === "tomorrow_reminder") {
-      dateIso = taipeiDateStr(opts.templateKey === "tomorrow_reminder" ? 1 : 0);
-      const dayStart = new Date(`${dateIso}T00:00:00.000Z`);
-      const dayEnd = new Date(dayStart.getTime() + 86400000);
-      const atts = await prisma.attendance.findMany({
-        where: {
-          date: { gte: dayStart, lt: dayEnd },
-          cancelled: false,
-          OR: [{ actualTeacherId: { in: ids } }, { assistantTeacherId: { in: ids } }],
-        },
-        include: { course: { select: { school: true, courseType: true, address: true, time: true } } },
-        orderBy: [{ scheduledTime: "asc" }],
-      });
-      const acc = new Map<number, string[]>();
-      for (const a of atts) {
-        const school = a.scheduledSchoolName || a.course.school;
-        const address = a.scheduledAddress || a.course.address;
-        const time = a.scheduledTime || a.course.time || "時間未填";
-        const line = (roleLabel: string) => [
-          `🏫 ${school}`,
-          `📚 ${courseLabel(a.course.courseType)}（${roleLabel}）`,
-          `⏰ ${time}`,
-          ...(address ? [`📍 ${address}`] : []),
-        ].join("\n");
-        if (ids.includes(a.actualTeacherId)) (acc.get(a.actualTeacherId) ?? acc.set(a.actualTeacherId, []).get(a.actualTeacherId)!).push(line("主教"));
-        if (a.assistantTeacherId && ids.includes(a.assistantTeacherId)) {
-          (acc.get(a.assistantTeacherId) ?? acc.set(a.assistantTeacherId, []).get(a.assistantTeacherId)!).push(line("助教"));
-        }
-      }
-      summaryByTeacher = new Map([...acc].map(([k, v]) => [k, v.join("\n\n")]));
     }
 
     return ids.map((id) => {
       const t = byId.get(id);
       if (!t) return { id, name: `#${id}`, lineUserId: null, lineRegion: "north", message: "", skipped: "找不到老師資料" };
       const summary = summaryByTeacher.get(id) ?? "";
-      const needsSummary = ["new_term", "today_reminder", "tomorrow_reminder"].includes(opts.templateKey);
-      if (needsSummary && !summary) {
-        const reason = opts.templateKey === "new_term" ? "無進行中課程" : "當日無排課";
-        return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: "", skipped: reason };
+      if (opts.templateKey === "new_term" && !summary) {
+        return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: "", skipped: "無進行中課程" };
       }
       const vars: Record<string, string> = {
         姓名: t.name,

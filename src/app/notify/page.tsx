@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { courseLabel } from "@/lib/courseMeta";
 
 // 客服批次通知中心：批次發送／老師綁定／園所綁定／發送紀錄
@@ -41,6 +41,18 @@ type BatchRecipient = {
 
 const REGION_LABEL: Record<string, string> = { north: "北部", south: "南部" };
 const OA_LABEL: Record<string, string> = { north: "北部 OA", south: "南部 OA", school: "園所 OA 1", school2: "園所 OA 2" };
+
+// 可用變數：名稱＋範例＋適用對象（只列實際會被替換的變數）
+const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" | "school">; typhoonOnly?: boolean }> = [
+  { name: "姓名", sample: "王小明", targets: ["teacher", "school"] },
+  { name: "園所", sample: "快樂幼兒園", targets: ["school"] },
+  { name: "日期", sample: "2026/7/20（週一）", targets: ["teacher", "school"] },
+  { name: "星期", sample: "週一", targets: ["teacher"] },
+  { name: "課程摘要", sample: "自動帶入每人本學期課程清單（園所／課程／時間）", targets: ["teacher", "school"] },
+  { name: "園所連結", sample: "園所專屬看板網址（自動產生）", targets: ["school"] },
+  { name: "開課確認連結", sample: "開課資料確認網址（安親班不附）", targets: ["school"] },
+  { name: "停課狀態", sample: "上方所選的課程狀態（颱風範本專用）", targets: ["teacher", "school"], typhoonOnly: true },
+];
 const RESULT_LABEL: Record<string, string> = { success: "成功", failed: "失敗", unbound: "未綁定", skipped: "略過", pending: "處理中" };
 const RESULT_STYLE: Record<string, string> = {
   success: "bg-green-100 text-green-700", failed: "bg-red-100 text-red-700",
@@ -240,6 +252,24 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
   const [batchUuid, setBatchUuid] = useState("");
   const [busy, setBusy] = useState<"" | "preview" | "send">("");
   const [error, setError] = useState("");
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // 點選變數 → 插入游標位置
+  const insertVar = (name: string) => {
+    const token = `{${name}}`;
+    const el = bodyRef.current;
+    setCustomBody(prev => {
+      const start = el?.selectionStart ?? prev.length;
+      const end = el?.selectionEnd ?? start;
+      const next = prev.slice(0, start) + token + prev.slice(end);
+      requestAnimationFrame(() => {
+        if (el) { el.focus(); el.selectionStart = el.selectionEnd = start + token.length; }
+      });
+      return next;
+    });
+    setPreview(null);
+    setConfirmed(false);
+  };
 
   useEffect(() => {
     fetch("/api/notify-batch").then(r => r.json()).then(data => setTemplates(data.templates ?? []));
@@ -423,11 +453,26 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                   </div>
                 </div>
               )}
-              <textarea value={customBody} onChange={e => { setCustomBody(e.target.value); setPreview(null); setConfirmed(false); }}
+              <textarea ref={bodyRef} value={customBody} onChange={e => { setCustomBody(e.target.value); setPreview(null); setConfirmed(false); }}
                 rows={10} className="border rounded-lg px-3 py-2 text-sm w-full font-mono" />
-              <p className="text-xs text-slate-400">
-                可用變數：{"{姓名} {園所} {課程} {日期} {星期} {時間} {地址} {課程摘要} {園所連結} {開課確認連結}"}
-              </p>
+              <div>
+                <p className="text-xs font-medium text-slate-600 mb-1">可用變數（點選插入游標位置）</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {VAR_DEFS.filter(v => v.targets.includes(targetType) && (!v.typhoonOnly || template.needsTyphoonStatus)).map(v => (
+                    <button key={v.name} type="button" onClick={() => insertVar(v.name)}
+                      className="px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs hover:bg-blue-100 border border-blue-100"
+                      title={`範例：${v.sample}`}>
+                      {`{${v.name}}`}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 text-xs text-slate-400 space-y-0.5">
+                  <p className="font-medium text-slate-500">範例</p>
+                  {VAR_DEFS.filter(v => v.targets.includes(targetType) && (!v.typhoonOnly || template.needsTyphoonStatus)).map(v => (
+                    <p key={v.name}>{`{${v.name}}`} → {v.sample}</p>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
