@@ -25,7 +25,13 @@ type PreviewData = {
   skipped: Array<{ id: number; name: string; reason: string }>;
   oaGroups: Record<string, number>;
   containsPublicLink: boolean;
-  recipients: Array<{ id: number; name: string; lineBound: boolean; maskedLineId: string; lineRegion: string; message: string; skipped: string; ackButton?: boolean }>;
+  recipients: Array<{
+    id: number; name: string; lineBound: boolean; maskedLineId: string; lineRegion: string;
+    message: string; skipped: string; ackButton?: boolean;
+    flexPre?: string; flexPost?: string;
+    flexBlocks?: Array<{ title: string; lines: string[]; color: string; bg: string }>;
+    linkButtons?: Array<{ label: string; url: string }>;
+  }>;
 };
 
 type Batch = {
@@ -571,13 +577,40 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                 </select>
                 {previewRecipient && <span className="text-xs text-slate-400">{OA_LABEL[previewRecipient.lineRegion] ?? previewRecipient.lineRegion}　{previewRecipient.maskedLineId || "未綁定"}</span>}
               </div>
-              <pre className="whitespace-pre-wrap rounded-lg border bg-slate-50 p-3 text-sm text-slate-800 max-h-72 overflow-y-auto">
-                {previewRecipient?.skipped ? `（此收件人將被略過：${previewRecipient.skipped}）` : previewRecipient?.message || "（無訊息）"}
-              </pre>
-              {previewRecipient?.ackButton && !previewRecipient.skipped && (
-                <div className="mt-2 rounded-lg border bg-slate-50 p-3">
-                  <p className="text-xs text-slate-400 mb-2">此訊息將以卡片發送，底部附每人專屬按鈕：</p>
-                  <div className="rounded-lg bg-green-600 text-white text-sm text-center py-2 max-w-[240px]">✅ 確認收到</div>
+              {previewRecipient?.skipped ? (
+                <pre className="whitespace-pre-wrap rounded-lg border bg-slate-50 p-3 text-sm text-slate-800">
+                  {`（此收件人將被略過：${previewRecipient.skipped}）`}
+                </pre>
+              ) : (
+                /* LINE 卡片模擬預覽 */
+                <div className="rounded-2xl border shadow-sm overflow-hidden max-w-sm bg-white">
+                  <div className="bg-[#2C5DA8] px-4 py-3 text-white text-sm font-bold">{preview.template.label}</div>
+                  <div className="p-4 space-y-3 text-sm text-slate-800 max-h-72 overflow-y-auto">
+                    {(previewRecipient?.flexBlocks?.length ?? 0) > 0 ? (
+                      <>
+                        {previewRecipient?.flexPre && <pre className="whitespace-pre-wrap font-sans">{previewRecipient.flexPre}</pre>}
+                        {(previewRecipient?.flexBlocks ?? []).map((b, i) => (
+                          <div key={i} className="rounded-xl p-3" style={{ backgroundColor: b.bg }}>
+                            <div className="font-bold" style={{ color: b.color }}>{b.title}</div>
+                            {b.lines.map((ln, j) => <div key={j} className="text-slate-600">{ln}</div>)}
+                          </div>
+                        ))}
+                        {previewRecipient?.flexPost && <pre className="whitespace-pre-wrap font-sans">{previewRecipient.flexPost}</pre>}
+                      </>
+                    ) : (
+                      <pre className="whitespace-pre-wrap font-sans">{previewRecipient?.message || "（無訊息）"}</pre>
+                    )}
+                  </div>
+                  {(previewRecipient?.ackButton || (previewRecipient?.linkButtons?.length ?? 0) > 0) && (
+                    <div className="bg-[#F5F9FC] px-4 py-3 space-y-2">
+                      {previewRecipient?.linkButtons?.map((btn, i) => (
+                        <div key={i} className="rounded-lg bg-slate-200 text-slate-700 text-sm text-center py-2">{btn.label}</div>
+                      ))}
+                      {previewRecipient?.ackButton && (
+                        <div className="rounded-lg bg-green-600 text-white text-sm text-center py-2">✅ 確認收到</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

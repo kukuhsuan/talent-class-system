@@ -227,8 +227,39 @@ export async function confirmAck(token: string) {
   return getAckInfo(token);
 }
 
-// needsAck 範本：以 Flex 卡片發送，底部「確認收到」按鈕直接回傳（postback，不開網頁）
-function buildAckFlex(label: string, text: string, ackToken: string) {
+// 通知一律以 Flex 卡片發送：標題＋內文（課程各自色塊）＋連結按鈕＋「確認收到」postback 按鈕
+function flexBodyText(text: string) {
+  return { type: "text", text, size: "sm", color: "#333333", wrap: true, lineSpacing: "4px" };
+}
+
+function buildAckFlex(label: string, r: BatchRecipientMessage) {
+  const bodyContents: object[] = [];
+  if (r.flexBlocks?.length && (r.flexPre || r.flexPost)) {
+    if (r.flexPre) bodyContents.push(flexBodyText(r.flexPre));
+    for (const b of r.flexBlocks) {
+      bodyContents.push({
+        type: "box", layout: "vertical", backgroundColor: b.bg, cornerRadius: "10px",
+        paddingAll: "12px", spacing: "3px",
+        contents: [
+          { type: "text", text: b.title, weight: "bold", size: "sm", color: b.color, wrap: true },
+          ...b.lines.map((line) => ({ type: "text", text: line, size: "sm", color: "#555555", wrap: true })),
+        ],
+      });
+    }
+    if (r.flexPost) bodyContents.push(flexBodyText(r.flexPost));
+  } else {
+    bodyContents.push(flexBodyText(r.message));
+  }
+  const footerContents: object[] = (r.linkButtons ?? []).map((btn) => ({
+    type: "button", style: "secondary", height: "sm",
+    action: { type: "uri", label: btn.label, uri: btn.url },
+  }));
+  if (r.ackToken) {
+    footerContents.push({
+      type: "button", style: "primary", color: "#3E8E5A", height: "sm",
+      action: { type: "postback", label: "✅ 確認收到", data: `action=notify_ack&t=${r.ackToken}`, displayText: "我已收到並詳閱" },
+    });
+  }
   return {
     type: "flex",
     altText: label,
@@ -239,15 +270,12 @@ function buildAckFlex(label: string, text: string, ackToken: string) {
         contents: [{ type: "text", text: label, color: "#FFFFFF", weight: "bold", size: "lg", wrap: true }],
       },
       body: {
-        type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#FFFFFF",
-        contents: [{ type: "text", text, size: "sm", color: "#333333", wrap: true }],
+        type: "box", layout: "vertical", paddingAll: "16px", spacing: "10px", backgroundColor: "#FFFFFF",
+        contents: bodyContents,
       },
       footer: {
-        type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC",
-        contents: [{
-          type: "button", style: "primary", color: "#3E8E5A", height: "sm",
-          action: { type: "postback", label: "✅ 確認收到", data: `action=notify_ack&t=${ackToken}`, displayText: "我已收到並詳閱" },
-        }],
+        type: "box", layout: "vertical", paddingAll: "14px", spacing: "8px", backgroundColor: "#F5F9FC",
+        contents: footerContents,
       },
     },
   };
@@ -324,8 +352,8 @@ export async function runNotifyBatch(opts: RunOptions) {
     let lastError = "";
     for (let attempt = 0; attempt < 2; attempt++) { // 最多重試 1 次
       try {
-        const payload = r.ackToken
-          ? [buildAckFlex(opts.templateLabel || "通知", r.message, r.ackToken)]
+        const payload = r.ackToken || r.flexBlocks?.length || r.linkButtons?.length
+          ? [buildAckFlex(opts.templateLabel || "通知", r)]
           : [{ type: "text", text: r.message }];
         await pushMessage(r.lineUserId, payload, token);
         success++;

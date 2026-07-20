@@ -39,8 +39,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     needsAck: true,
     description: "自動帶入老師本學期每堂課的園所、課程、開始日期、星期、時間、地址與主教/助教身分，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
-      "📚 新學期課程通知",
-      "",
       "{姓名} 老師您好：",
       "",
       "新學期課程安排如下：",
@@ -58,8 +56,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     needsAck: true,
     description: "內文可自行編輯，支援 {姓名} 等變數，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
-      "📌 上課注意事項",
-      "",
       "{姓名} 老師您好：",
       "",
       "1️⃣ 請提前 10 分鐘到校準備",
@@ -79,8 +75,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     needsAck: true,
     description: "教練工作規範，以卡片訊息發送並附「確認收到」按鈕，教練點選後於發送紀錄顯示已確認",
     defaultBody: [
-      "📋 教練工作提醒事項",
-      "",
       "{姓名} 教練您好，為維持課程品質及專業形象，請務必遵守以下規範：",
       "",
       "1️⃣ 準時上下班",
@@ -137,8 +131,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     needsAck: true,
     description: "發送前必須先選擇課程狀態（停課／照常上課／等待園所確認），不預設停課；以卡片發送並附「確認收到」按鈕",
     defaultBody: [
-      "🌀 颱風／停課緊急通知",
-      "",
       "{姓名} 您好：",
       "",
       "因應天候狀況，{日期} 課程狀態：",
@@ -155,8 +147,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     needsAck: true,
     description: "自動帶入該園所本學期課程摘要，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
-      "📚 開課通知",
-      "",
       "{園所} 您好：",
       "",
       "本學期課程安排如下：",
@@ -174,8 +164,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     needsAck: true,
     description: "自動帶入園所專屬看板連結、開課資料確認連結與課程摘要（安親班不附開課資料確認連結），以卡片發送並附「確認收到」按鈕",
     defaultBody: [
-      "🔗 開課資訊懶人包",
-      "",
       "{園所} 您好：",
       "",
       "本學期課程：",
@@ -225,6 +213,10 @@ function stripEmptySections(text: string) {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// 課程色塊（Flex 卡片內每堂課一塊，同課程同色）
+export type FlexBlock = { title: string; lines: string[]; color: string; bg: string };
+export type FlexLinkButton = { label: string; url: string };
+
 export type BatchRecipientMessage = {
   id: number;
   name: string;
@@ -234,7 +226,54 @@ export type BatchRecipientMessage = {
   skipped?: string; // 略過原因（如當日無課）
   ackToken?: string; // 「確認收到」專屬 token（needsAck 範本）
   ackUrl?: string;   // 確認頁網址 → 發送時改用 Flex 卡片附按鈕
+  flexPre?: string;  // 卡片：課程色塊上方文字
+  flexPost?: string; // 卡片：課程色塊下方文字
+  flexBlocks?: FlexBlock[];       // 卡片：課程色塊
+  linkButtons?: FlexLinkButton[]; // 卡片：連結按鈕（開課連結懶人包）
 };
+
+// 依課程名稱固定配色（同課程每次同色）
+const BLOCK_COLORS: Array<{ fg: string; bg: string }> = [
+  { fg: "#2C5DA8", bg: "#EAF1FB" }, // 藍
+  { fg: "#3E8E5A", bg: "#EAF6EE" }, // 綠
+  { fg: "#B0722B", bg: "#FBF3E6" }, // 琥珀
+  { fg: "#7D4CA0", bg: "#F4EDFA" }, // 紫
+  { fg: "#C0564B", bg: "#FBEDEB" }, // 磚紅
+  { fg: "#2A8C8C", bg: "#E9F6F6" }, // 藍綠
+];
+function blockColor(key: string) {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
+  return BLOCK_COLORS[h % BLOCK_COLORS.length];
+}
+
+const SUMMARY_MARK = "\u0000";
+const LINK_MARK = "\u0001";
+
+// 將內文拆成 色塊上段／下段；連結改為卡片按鈕時，一併移除連結行與其上的標題行
+function buildFlexParts(body: string, vars: Record<string, string>, opts?: { stripLinks?: boolean }) {
+  const flexVars: Record<string, string> = { ...vars, 課程摘要: SUMMARY_MARK };
+  if (opts?.stripLinks) { flexVars.園所連結 = LINK_MARK; flexVars.開課確認連結 = LINK_MARK; }
+  let rendered = renderTemplate(body, flexVars);
+  if (opts?.stripLinks) {
+    const kept: string[] = [];
+    for (const line of rendered.split("\n")) {
+      if (line.includes(LINK_MARK)) {
+        while (kept.length && /[：:]\s*$/.test(kept[kept.length - 1].trim())) kept.pop();
+        continue;
+      }
+      kept.push(line);
+    }
+    rendered = kept.join("\n");
+  }
+  rendered = stripEmptySections(rendered);
+  const idx = rendered.indexOf(SUMMARY_MARK);
+  if (idx < 0) return null; // 自訂內文移除了 {課程摘要} → 卡片以純文字呈現
+  return {
+    flexPre: stripEmptySections(rendered.slice(0, idx)),
+    flexPost: stripEmptySections(rendered.slice(idx + 1)),
+  };
+}
 
 type BuildOptions = {
   templateKey: NotifyTemplateKey;
@@ -287,8 +326,8 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     });
     const byId = new Map(teachers.map((t) => [t.id, t]));
 
-    // 課程摘要素材
-    let summaryByTeacher = new Map<number, string>();
+    // 課程摘要素材（文字版供紀錄／備援；色塊版供 Flex 卡片）
+    const itemsByTeacher = new Map<number, Array<{ text: string; block: FlexBlock }>>();
     const dateIso = taipeiDateStr(0);
     if (opts.templateKey === "new_term") {
       const courses = await prisma.course.findMany({
@@ -299,28 +338,32 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         },
         orderBy: [{ school: "asc" }],
       });
-      const acc = new Map<number, string[]>();
       for (const c of courses) {
         const day = (c.dayOfWeek || c.weekday || "").replace("星期", "週") || "週次未填";
         const start = c.startDate ? `${c.startDate.getMonth() + 1}/${c.startDate.getDate()} 起，` : "";
-        const line = (roleLabel: string) => [
-          `🏫 ${c.school}`,
-          `📚 ${courseLabel(c.courseType)}（${roleLabel}）`,
-          `📅 ${start}每${day} ${c.time || "時間未填"}`,
-          ...(c.address ? [`📍 ${c.address}`] : []),
-        ].join("\n");
-        if (ids.includes(c.teacherId)) (acc.get(c.teacherId) ?? acc.set(c.teacherId, []).get(c.teacherId)!).push(line("主教"));
+        const label = courseLabel(c.courseType) || "課程";
+        const palette = blockColor(label);
+        const entry = (roleLabel: string) => {
+          const title = `${label}（${roleLabel}）`;
+          const lines = [
+            c.school,
+            `${start}每${day} ${c.time || "時間未填"}`,
+            ...(c.address ? [c.address] : []),
+          ];
+          return { text: [`◆ ${title}`, ...lines].join("\n"), block: { title, lines, color: palette.fg, bg: palette.bg } };
+        };
+        if (ids.includes(c.teacherId)) (itemsByTeacher.get(c.teacherId) ?? itemsByTeacher.set(c.teacherId, []).get(c.teacherId)!).push(entry("主教"));
         if (c.assistantTeacherId && ids.includes(c.assistantTeacherId)) {
-          (acc.get(c.assistantTeacherId) ?? acc.set(c.assistantTeacherId, []).get(c.assistantTeacherId)!).push(line("助教"));
+          (itemsByTeacher.get(c.assistantTeacherId) ?? itemsByTeacher.set(c.assistantTeacherId, []).get(c.assistantTeacherId)!).push(entry("助教"));
         }
       }
-      summaryByTeacher = new Map([...acc].map(([k, v]) => [k, v.join("\n\n")]));
     }
 
     return ids.map((id) => {
       const t = byId.get(id);
       if (!t) return { id, name: `#${id}`, lineUserId: null, lineRegion: "north", message: "", skipped: "找不到老師資料" };
-      const summary = summaryByTeacher.get(id) ?? "";
+      const items = itemsByTeacher.get(id) ?? [];
+      const summary = items.map((i) => i.text).join("\n\n");
       if (opts.templateKey === "new_term" && !summary) {
         return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: "", skipped: "無進行中課程" };
       }
@@ -335,7 +378,13 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const ackToken = template.needsAck ? crypto.randomBytes(16).toString("hex") : undefined;
       const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
       if (ackUrl) vars.確認連結 = ackUrl;
-      return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: finalizeMessage(body, vars), ackToken, ackUrl };
+      // 課程色塊：卡片內每堂課一塊、依課程配色
+      const flexParts = items.length > 0 ? buildFlexParts(body, vars) : null;
+      return {
+        id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north",
+        message: finalizeMessage(body, vars), ackToken, ackUrl,
+        ...(flexParts ? { ...flexParts, flexBlocks: items.map((i) => i.block) } : {}),
+      };
     });
   }
 
@@ -351,14 +400,19 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     select: { schoolId: true, courseType: true, dayOfWeek: true, weekday: true, time: true, department: true, teacher: { select: { name: true } } },
     orderBy: [{ courseType: "asc" }],
   });
-  const summaryBySchool = new Map<number, string[]>();
+  const itemsBySchool = new Map<number, Array<{ text: string; block: FlexBlock }>>();
   const afterSchoolSet = new Set<number>();
   for (const c of courses) {
     if (c.schoolId == null) continue;
     if ((c.department ?? "").includes("安親")) afterSchoolSet.add(c.schoolId);
     const day = (c.dayOfWeek || c.weekday || "").replace("星期", "週") || "週次未填";
-    const line = `📚 ${courseLabel(c.courseType)}｜每${day} ${c.time || "時間未填"}｜${c.teacher?.name ?? ""}老師`;
-    (summaryBySchool.get(c.schoolId) ?? summaryBySchool.set(c.schoolId, []).get(c.schoolId)!).push(line);
+    const label = courseLabel(c.courseType) || "課程";
+    const palette = blockColor(label);
+    const lines = [`每${day} ${c.time || "時間未填"}`, ...(c.teacher?.name ? [`${c.teacher.name} 老師`] : [])];
+    (itemsBySchool.get(c.schoolId) ?? itemsBySchool.set(c.schoolId, []).get(c.schoolId)!).push({
+      text: `◆ ${label}｜每${day} ${c.time || "時間未填"}｜${c.teacher?.name ?? ""}老師`,
+      block: { title: label, lines, color: palette.fg, bg: palette.bg },
+    });
   }
 
   const results: BatchRecipientMessage[] = [];
@@ -368,7 +422,8 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       results.push({ id, name: `#${id}`, lineUserId: null, lineRegion: "school", message: "", skipped: "找不到園所資料" });
       continue;
     }
-    const summary = (summaryBySchool.get(id) ?? []).join("\n");
+    const items = itemsBySchool.get(id) ?? [];
+    const summary = items.map((i) => i.text).join("\n");
     if (!summary) {
       results.push({ id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school", message: "", skipped: "無進行中課程" });
       continue;
@@ -399,7 +454,18 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     const ackToken = template.needsAck ? crypto.randomBytes(16).toString("hex") : undefined;
     const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
     if (ackUrl) vars.確認連結 = ackUrl;
-    results.push({ id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school", message: finalizeMessage(effectiveBody, vars), ackToken, ackUrl });
+    // 課程色塊＋連結按鈕（懶人包的連結改成卡片按鈕，內文不再出現網址）
+    const isLinks = opts.templateKey === "school_links";
+    const flexParts = items.length > 0 ? buildFlexParts(effectiveBody, vars, { stripLinks: isLinks }) : null;
+    const linkButtons: FlexLinkButton[] = [];
+    if (isLinks && portalLink) linkButtons.push({ label: "📱 園所專屬看板", url: portalLink });
+    if (isLinks && confirmLink) linkButtons.push({ label: "📝 開課資料確認", url: confirmLink });
+    results.push({
+      id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school",
+      message: finalizeMessage(effectiveBody, vars), ackToken, ackUrl,
+      ...(flexParts ? { ...flexParts, flexBlocks: items.map((i) => i.block) } : {}),
+      ...(linkButtons.length > 0 ? { linkButtons } : {}),
+    });
   }
   return results;
 }
