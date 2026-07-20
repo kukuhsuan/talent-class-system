@@ -56,8 +56,8 @@ const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" |
   { name: "日期", sample: "2026/7/20（週一）", targets: ["teacher", "school"] },
   { name: "星期", sample: "週一", targets: ["teacher"] },
   { name: "課程摘要", sample: "自動帶入每人本學期課程清單（園所／課程／時間）", targets: ["teacher", "school"] },
-  { name: "園所連結", sample: "園所專屬看板網址（自動產生）", targets: ["school"] },
-  { name: "開課確認連結", sample: "開課資料確認網址（安親班不附）", targets: ["school"] },
+  { name: "園所連結", sample: "園所專屬看板網址（自動產生，卡片上顯示為按鈕）", targets: ["school"] },
+  { name: "開課確認連結", sample: "開課資料填寫網址（人數／場地，安親班不附，卡片上顯示為按鈕）", targets: ["school"] },
   { name: "停課狀態", sample: "上方所選的課程狀態（颱風範本專用）", targets: ["teacher", "school"], typhoonOnly: true },
 ];
 const RESULT_LABEL: Record<string, string> = { success: "成功", failed: "失敗", unbound: "未綁定", skipped: "略過", pending: "處理中" };

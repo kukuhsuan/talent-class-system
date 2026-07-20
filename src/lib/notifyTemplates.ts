@@ -158,22 +158,22 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
   },
   {
     key: "school_links",
-    label: "開課連結懶人包",
+    label: "新學期開課通知",
     target: "school",
     editable: true,
     needsAck: true,
-    description: "自動帶入園所專屬看板連結、開課資料確認連結與課程摘要（安親班不附開課資料確認連結），以卡片發送並附「確認收到」按鈕",
+    description: "自動帶入課程摘要，卡片按鈕直接連到開課資料填寫（上課人數、場地）與園所專屬看板（安親班不附開課資料填寫），並附「確認收到」按鈕",
     defaultBody: [
       "{園所} 您好：",
       "",
-      "本學期課程：",
+      "新學期課程如下：",
       "{課程摘要}",
       "",
-      "📱 園所專屬看板（成果／回報／評分）：",
-      "{園所連結}",
-      "",
-      "📝 開課資料確認連結（請協助填寫）：",
+      "請協助填寫開課資料（上課人數、上課場地）：",
       "{開課確認連結}",
+      "",
+      "園所專屬看板（成果／回報／評分）：",
+      "{園所連結}",
       "",
       "有任何問題歡迎聯繫客服，謝謝！",
     ].join("\n"),
@@ -229,7 +229,7 @@ export type BatchRecipientMessage = {
   flexPre?: string;  // 卡片：課程色塊上方文字
   flexPost?: string; // 卡片：課程色塊下方文字
   flexBlocks?: FlexBlock[];       // 卡片：課程色塊
-  linkButtons?: FlexLinkButton[]; // 卡片：連結按鈕（開課連結懶人包）
+  linkButtons?: FlexLinkButton[]; // 卡片：連結按鈕（新學期開課通知）
 };
 
 // 依課程名稱固定配色（同課程每次同色）
@@ -438,8 +438,8 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     }
     let effectiveBody = body;
     if (opts.templateKey === "school_links" && !confirmLink) {
-      // 移除開課確認區塊（標題行＋變數行）
-      effectiveBody = body.split("\n").filter((line) => !line.includes("開課資料確認") && !line.includes("{開課確認連結}")).join("\n");
+      // 移除開課資料填寫區塊（標題行＋變數行）
+      effectiveBody = body.split("\n").filter((line) => !line.includes("開課資料") && !line.includes("{開課確認連結}")).join("\n");
     }
     const vars: Record<string, string> = {
       姓名: s.name,
@@ -454,12 +454,12 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     const ackToken = template.needsAck ? crypto.randomBytes(16).toString("hex") : undefined;
     const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
     if (ackUrl) vars.確認連結 = ackUrl;
-    // 課程色塊＋連結按鈕（懶人包的連結改成卡片按鈕，內文不再出現網址）
+    // 課程色塊＋連結按鈕（連結改成卡片按鈕，內文不再出現網址；填寫開課資料按鈕放最前）
     const isLinks = opts.templateKey === "school_links";
     const flexParts = items.length > 0 ? buildFlexParts(effectiveBody, vars, { stripLinks: isLinks }) : null;
     const linkButtons: FlexLinkButton[] = [];
+    if (isLinks && confirmLink) linkButtons.push({ label: "📝 填寫開課資料（人數／場地）", url: confirmLink });
     if (isLinks && portalLink) linkButtons.push({ label: "📱 園所專屬看板", url: portalLink });
-    if (isLinks && confirmLink) linkButtons.push({ label: "📝 開課資料確認", url: confirmLink });
     results.push({
       id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school",
       message: finalizeMessage(effectiveBody, vars), ackToken, ackUrl,
