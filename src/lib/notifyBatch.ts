@@ -188,7 +188,7 @@ export async function deleteTemplateOverride(templateKey: string) {
   await prisma.$executeRawUnsafe("DELETE FROM NotifyTemplateOverride WHERE templateKey = ?", templateKey);
 }
 
-// LINE 按鈕 postback 確認：驗證按按鈕的人就是收件老師本人才記錄
+// LINE 按鈕 postback 確認：驗證按按鈕的人就是收件者本人（老師或園所）才記錄
 export async function confirmAckByLineUser(token: string, lineUserId: string) {
   await ensureNotifyBatchTables();
   if (!/^[0-9a-f]{32}$/.test(token) || !lineUserId) return { ok: false as const };
@@ -198,16 +198,22 @@ export async function confirmAckByLineUser(token: string, lineUserId: string) {
      WHERE r.ackToken = ? LIMIT 1`, token,
   );
   const row = rows[0];
-  if (!row || String(row.recipientType) !== "teacher") return { ok: false as const };
-  const teacher = await prisma.teacher.findFirst({ where: { lineUserId }, select: { id: true } });
-  if (!teacher || teacher.id !== Number(row.recipientId)) return { ok: false as const };
+  if (!row) return { ok: false as const };
+  const recipientType = String(row.recipientType) === "school" ? "school" as const : "teacher" as const;
+  if (recipientType === "teacher") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId }, select: { id: true } });
+    if (!teacher || teacher.id !== Number(row.recipientId)) return { ok: false as const };
+  } else {
+    const school = await prisma.school.findFirst({ where: { lineUserId }, select: { id: true } });
+    if (!school || school.id !== Number(row.recipientId)) return { ok: false as const };
+  }
   const already = row.ackAt != null;
   if (!already) {
     await prisma.$executeRawUnsafe(
       "UPDATE NotifyBatchRecipient SET ackAt = datetime('now') WHERE ackToken = ? AND ackAt IS NULL", token,
     );
   }
-  return { ok: true as const, already, name: String(row.name ?? ""), templateLabel: String(row.templateLabel ?? "") };
+  return { ok: true as const, already, recipientType, name: String(row.name ?? ""), templateLabel: String(row.templateLabel ?? "") };
 }
 
 export async function confirmAck(token: string) {

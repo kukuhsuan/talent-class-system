@@ -624,7 +624,8 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     } else if (result.already) {
       await replyMessage(replyToken, [{ type: "text", text: `您先前已確認收到「${result.templateLabel}」，謝謝配合！` }], token);
     } else {
-      await replyMessage(replyToken, [{ type: "text", text: `✅ ${result.name} 教練，已記錄您確認收到「${result.templateLabel}」，謝謝配合！` }], token);
+      const who = result.recipientType === "school" ? result.name : `${result.name} 教練`;
+      await replyMessage(replyToken, [{ type: "text", text: `✅ ${who}，已記錄您確認收到「${result.templateLabel}」，謝謝配合！` }], token);
     }
     return;
   }

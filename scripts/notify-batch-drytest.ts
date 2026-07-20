@@ -59,6 +59,8 @@ async function main() {
   const msgs = await buildBatchMessages({ templateKey: "class_notes", targetType: "teacher", recipientIds: boundIds.slice(0, 5) });
   check("每位收件人訊息帶入自己的姓名", msgs.every((m) => m.message.includes(m.name)));
   check("訊息不含其他老師姓名", msgs.every((m) => !msgs.some((o) => o.id !== m.id && m.message.includes(o.name))));
+  check("每個範本皆為卡片＋確認按鈕（class_notes 也帶 ackToken）", msgs.every((m) => m.ackToken && m.ackUrl));
+  check("確認 token 每人不同（class_notes）", new Set(msgs.map((m) => m.ackToken)).size === msgs.length);
 
   // ── 2. 颱風範本：未選狀態必須擋下、不預設停課 ──
   const typhoonErr = await buildBatchMessages({ templateKey: "typhoon", targetType: "teacher", recipientIds: boundIds.slice(0, 2) }).then(() => "", (e) => e.message);

@@ -36,7 +36,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     label: "新學期課程通知",
     target: "teacher",
     editable: true,
-    description: "自動帶入老師本學期每堂課的園所、課程、開始日期、星期、時間、地址與主教/助教身分",
+    needsAck: true,
+    description: "自動帶入老師本學期每堂課的園所、課程、開始日期、星期、時間、地址與主教/助教身分，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "📚 新學期課程通知",
       "",
@@ -54,7 +55,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     label: "上課注意事項",
     target: "teacher",
     editable: true,
-    description: "內文可自行編輯，支援 {姓名} 等變數",
+    needsAck: true,
+    description: "內文可自行編輯，支援 {姓名} 等變數，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "📌 上課注意事項",
       "",
@@ -132,7 +134,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsTyphoonStatus: true,
-    description: "發送前必須先選擇課程狀態（停課／照常上課／等待園所確認），不預設停課",
+    needsAck: true,
+    description: "發送前必須先選擇課程狀態（停課／照常上課／等待園所確認），不預設停課；以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "🌀 颱風／停課緊急通知",
       "",
@@ -149,7 +152,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     label: "園所開課通知",
     target: "school",
     editable: true,
-    description: "自動帶入該園所本學期課程摘要",
+    needsAck: true,
+    description: "自動帶入該園所本學期課程摘要，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "📚 開課通知",
       "",
@@ -167,7 +171,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     label: "開課連結懶人包",
     target: "school",
     editable: true,
-    description: "自動帶入園所專屬看板連結、開課資料確認連結與課程摘要（安親班不附開課資料確認連結）",
+    needsAck: true,
+    description: "自動帶入園所專屬看板連結、開課資料確認連結與課程摘要（安親班不附開課資料確認連結），以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "🔗 開課資訊懶人包",
       "",
@@ -390,7 +395,11 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       開課確認連結: confirmLink,
       停課狀態: opts.typhoonStatus ?? "",
     };
-    results.push({ id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school", message: finalizeMessage(effectiveBody, vars) });
+    // needsAck：每園所專屬「確認收到」token → 發送時以 Flex 卡片附按鈕
+    const ackToken = template.needsAck ? crypto.randomBytes(16).toString("hex") : undefined;
+    const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
+    if (ackUrl) vars.確認連結 = ackUrl;
+    results.push({ id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school", message: finalizeMessage(effectiveBody, vars), ackToken, ackUrl });
   }
   return results;
 }
