@@ -140,17 +140,6 @@ export default function SchoolsPage() {
     }
   }
 
-  async function copyBillingLink(id: number) {
-    try {
-      const res = await fetch(`/api/schools/${id}/billing-link`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "園所資料填寫連結產生失敗");
-      await navigator.clipboard.writeText(`您好，為建立首次合作與後續請款資料，請協助填寫以下資訊：\n${data.url}\n約 1 分鐘即可完成，謝謝！`);
-      showToast("success", "新園所資料填寫訊息已複製");
-    } catch (e) {
-      showToast("error", (e as Error).message || "園所資料填寫連結產生失敗", 3000);
-    }
-  }
 
   async function sendBillingPreview(id: number) {
     if (!confirm("確定要將帳務資料填寫連結傳給這間園所的 LINE 綁定人員？")) return;
@@ -349,7 +338,7 @@ export default function SchoolsPage() {
                     <span className="whitespace-nowrap rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{normalizeRegion(s.region) || "—"}</span>
                   </div>
                 </div>
-                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyBillingLink={copyBillingLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
+                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
               </div>
               <div className="mt-3 space-y-1 text-sm text-slate-500">
                 {s.address && <div>{s.address}</div>}
@@ -393,7 +382,7 @@ export default function SchoolsPage() {
                     : <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyBillingLink={copyBillingLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
+                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
                 </td>
               </tr>
             ))}
@@ -430,37 +419,39 @@ type SchoolActionsProps = {
   onEdit: (school: School) => void;
   onAuth: (school: { id: number; name: string }) => void;
   onCopyLink: (id: number) => void;
-  onCopyBillingLink: (id: number) => void;
   onSendBillingPreview: (id: number) => void;
   onCopyConfirmationLink: (id: number) => void;
   onRotateLink: (id: number) => void;
   onDelete: (id: number) => void;
 };
 
-function SchoolActions({ school, onEdit, onAuth, onCopyLink, onCopyBillingLink, onSendBillingPreview, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
+function SchoolActions({ school, onEdit, onAuth, onCopyLink, onSendBillingPreview, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
   const run = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
     const menu = event.currentTarget.closest("details");
     if (menu) menu.open = false;
     action();
   };
   const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50";
+  const groupLabelClass = "px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 select-none";
 
   return (
     <details className="relative inline-block text-left">
       <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200">
         操作 <span aria-hidden="true" className="text-slate-400">▾</span>
       </summary>
-      <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+      <div className="absolute right-0 z-20 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+        <div className={groupLabelClass}>園所資料</div>
         <button onClick={(event) => run(event, () => onEdit(school))} className={itemClass}>編輯園所資料</button>
-        <a href={`/ratings?school=${encodeURIComponent(school.name)}`} className={itemClass}>查看歷史評分</a>
         <button onClick={(event) => run(event, () => onAuth({ id: school.id, name: school.name }))} className={itemClass}>管理園所驗證碼</button>
+        <div className="my-1 border-t border-slate-100" />
+        <div className={groupLabelClass}>連結與表單</div>
         <button onClick={(event) => run(event, () => onCopyLink(school.id))} className={itemClass}>複製園所端連結</button>
-        <button onClick={(event) => run(event, () => onCopyBillingLink(school.id))} className={`${itemClass} font-semibold text-emerald-700`}>複製新園所資料連結</button>
-        <button onClick={(event) => run(event, () => onSendBillingPreview(school.id))} className={`${itemClass} font-semibold text-indigo-700`}>傳帳務表單給園所</button>
+        <button onClick={(event) => run(event, () => onSendBillingPreview(school.id))} className={itemClass}>傳帳務表單給園所</button>
         {!normalizeDepartment(school.type).includes("安親") && (
-          <button onClick={(event) => run(event, () => onCopyConfirmationLink(school.id))} className={`${itemClass} font-semibold text-blue-700`}>複製開課確認連結</button>
+          <button onClick={(event) => run(event, () => onCopyConfirmationLink(school.id))} className={itemClass}>複製開課確認連結</button>
         )}
         <div className="my-1 border-t border-slate-100" />
+        <div className={groupLabelClass}>進階</div>
         <button onClick={(event) => run(event, () => onRotateLink(school.id))} className={`${itemClass} text-amber-700`}>重新產生連結</button>
         <button onClick={(event) => run(event, () => onDelete(school.id))} className={`${itemClass} text-red-600 hover:bg-red-50`}>刪除園所</button>
       </div>
