@@ -133,6 +133,17 @@ export async function POST(req: NextRequest) {
     void schoolRel; void teacher; void assistantTeacher;
     const requestedCode = String(data.code ?? "").trim();
     const code = requestedCode || nextCourseCode((await prisma.course.findMany({ select: { code: true } })).map((r) => r.code));
+    const schoolId = Number(data.schoolId);
+    if (!Number.isInteger(schoolId) || schoolId <= 0) {
+      return NextResponse.json({ error: "請從園所清單選擇正式園所後再儲存，避免請款資料遺漏" }, { status: 400 });
+    }
+    const selectedSchool = await prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, name: true, region: true, type: true, address: true },
+    });
+    if (!selectedSchool) {
+      return NextResponse.json({ error: "選擇的園所不存在或已被移除，請重新選擇" }, { status: 400 });
+    }
 
     const existing = code
       ? await prisma.course.findFirst({
@@ -165,13 +176,13 @@ export async function POST(req: NextRequest) {
     const course = await prisma.course.create({
       data: {
         code,
-        region: normalizeRegion(data.region),
+        region: normalizeRegion(selectedSchool.region || data.region),
         teacherId: Number(data.teacherId),
         assistantTeacherId: data.assistantTeacherId ? Number(data.assistantTeacherId) : null,
-        school: data.school,
-        schoolId: data.schoolId ? Number(data.schoolId) : null,
+        school: selectedSchool.name,
+        schoolId: selectedSchool.id,
         courseType: data.courseType ?? "",
-        address: data.address ?? "",
+        address: data.address || selectedSchool.address || "",
         dayOfWeek,
         ...recurrence,
         time: data.time ?? "",

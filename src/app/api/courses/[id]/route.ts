@@ -41,6 +41,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     void schoolRel; void teacher; void assistantTeacher;
     const courseId = Number(id);
     const code = String(data.code ?? "").trim();
+    const schoolId = Number(data.schoolId);
+    if (!Number.isInteger(schoolId) || schoolId <= 0) {
+      return NextResponse.json({ error: "請從園所清單選擇正式園所後再儲存，避免請款資料遺漏" }, { status: 400 });
+    }
+    const selectedSchool = await prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, name: true, region: true, type: true, address: true },
+    });
+    if (!selectedSchool) {
+      return NextResponse.json({ error: "選擇的園所不存在或已被移除，請重新選擇" }, { status: 400 });
+    }
 
     const [existing, currentCourse] = await Promise.all([
       code
@@ -97,13 +108,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { id: courseId },
       data: {
         code,
-        region: normalizeRegion(data.region),
+        region: normalizeRegion(selectedSchool.region || data.region),
         teacherId: Number(data.teacherId),
         assistantTeacherId: data.assistantTeacherId ? Number(data.assistantTeacherId) : null,
-        school: data.school,
-        schoolId: data.schoolId ? Number(data.schoolId) : null,
+        school: selectedSchool.name,
+        schoolId: selectedSchool.id,
         courseType: data.courseType ?? "",
-        address: data.address ?? "",
+        address: data.address || selectedSchool.address || "",
         dayOfWeek,
         ...recurrence,
         time: newTime,
@@ -228,98 +239,21 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       where: { id: courseId },
       include: { teacher: { select: { id: true, name: true } }, assistantTeacher: { select: { id: true, name: true } } },
     });
-    const lockedCount = await prisma.attendance.count({
-      where: { courseId, isPayrollLocked: true },
-    });
-    if (lockedCount > 0) {
-      return NextResponse.json(
-        { error: `此課程有 ${lockedCount} 筆已鎖定薪資的出勤紀錄，不可刪除` },
-        { status: 409 },
-      );
-    }
-    const attendances = await prisma.attendance.findMany({
-      where: { courseId },
-      select: {
-        id: true,
-        studentCount: true,
-        studentCountA: true,
-        studentCountB: true,
-        cancelled: true,
-        reportContent: true,
-        reportSentAt: true,
-        schoolNotifiedAt: true,
-        reportPhotos: true,
-        incident: true,
-      },
-    });
-    if (attendances.length > 0) {
-      const hasOfficialRecord = attendances.some((attendance) =>
-        attendance.studentCount !== null
-        || attendance.studentCountA !== null
-        || attendance.studentCountB !== null
-        || attendance.cancelled
-        || attendance.reportContent.trim() !== ""
-        || attendance.reportSentAt !== null
-        || attendance.schoolNotifiedAt !== null
-        || attendance.reportPhotos.trim() !== ""
-        || attendance.incident
-      );
-      if (hasOfficialRecord) {
-        return NextResponse.json(
-          { error: `此課程已有正式回報、出席人數或通知紀錄，不可刪除。若課程已結束，請改為「停用」。` },
-          { status: 409 },
-        );
-      }
-
-      const attendanceIds = attendances.map((attendance) => attendance.id);
-      const relatedCounts = await Promise.all([
-        prisma.substitute.count({ where: { attendanceId: { in: attendanceIds } } }),
-        prisma.teacherLeaveRequest.count({ where: { attendanceId: { in: attendanceIds } } }),
-        prisma.kindergartenAssessment.count({ where: { attendanceId: { in: attendanceIds } } }),
-        prisma.attendanceEquipment.count({ where: { attendanceId: { in: attendanceIds } } }),
-        prisma.courseChangeRequestTarget.count({ where: { attendanceId: { in: attendanceIds } } }),
-        prisma.schoolInvoiceDetail.count({ where: { attendanceId: { in: attendanceIds } } }),
-      ]);
-      if (relatedCounts.some((count) => count > 0)) {
-        return NextResponse.json(
-          { error: "此課程已有代課、請假、評量、器材、異動或請款關聯，不可刪除。" },
-          { status: 409 },
-        );
-      }
-
-      // 僅允許清除完全空白、未進入薪資/請款流程的排程資料。
-      await prisma.$transaction(async (tx) => {
-        const marks = attendanceIds.map(() => "?").join(",");
-        const courseTables = ["CourseBriefing", "CourseStartConfirmation"];
-        const attendanceTables = ["CourseRating", "EquipmentReminder", "EquipmentFlow"];
-        for (const table of courseTables) {
-          await tx.$executeRawUnsafe(`DELETE FROM "${table}" WHERE "courseId" = ?`, courseId).catch(() => 0);
-        }
-        for (const table of attendanceTables) {
-          await tx.$executeRawUnsafe(
-            `DELETE FROM "${table}" WHERE "attendanceId" IN (${marks})`,
-            ...attendanceIds,
-          ).catch(() => 0);
-        }
-        await tx.attendance.deleteMany({ where: { id: { in: attendanceIds } } });
-        await tx.courseScheduleException.deleteMany({ where: { courseId } });
-        await tx.course.delete({ where: { id: courseId } });
-      });
-    } else {
-      await prisma.course.delete({ where: { id: courseId } });
-    }
+    if (!before) return NextResponse.json({ error: "找不到課程" }, { status: 404 });
+    await prisma.course.update({ where: { id: courseId }, data: { isActive: false } });
     await writeAuditLog(req, {
-      action: "delete",
+      action: "archive",
       targetType: "Course",
       targetId: courseId,
-      targetLabel: before ? `${before.code} ${before.school} ${before.courseType}` : String(courseId),
+      targetLabel: `${before.code} ${before.school} ${before.courseType}`,
       beforeData: before,
-      diffSummary: before ? `刪除課程：${before.code} ${before.school} ${before.courseType}` : `刪除課程：${courseId}`,
+      afterData: { ...before, isActive: false },
+      diffSummary: `封存課程：${before.code} ${before.school} ${before.courseType}（保留出勤、薪資、請款與回報紀錄）`,
       sensitive: true,
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, archived: true });
   } catch (e) {
-    console.error("course delete failed", e);
-    return NextResponse.json({ error: `課程刪除失敗：${(e as Error).message}` }, { status: 500 });
+    console.error("course archive failed", e);
+    return NextResponse.json({ error: `課程封存失敗：${(e as Error).message}` }, { status: 500 });
   }
 }

@@ -408,10 +408,10 @@ export default function CoursesPage() {
   };
 
   const del = async (id: number, code: string) => {
-    if (!confirm(`確定刪除課程「${code}」？（已有上課紀錄的課程無法刪除，請改用「停用」）`)) return;
+    if (!confirm(`確定封存課程「${code}」？\n\n封存後不再出現在進行中課程，歷史出勤、薪資、請款與回報資料都會完整保留。`)) return;
     const res = await fetch(`/api/courses/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      const message = await readErrorMessage(res, "刪除失敗，請確認是否仍有關聯資料");
+      const message = await readErrorMessage(res, "課程封存失敗");
       alert(message);
       if (message.includes("登入狀態")) window.location.href = "/login";
       return;
@@ -943,7 +943,7 @@ function CourseActions({ course, onEdit, onDelete }: { course: Course; onEdit: (
         <button onClick={(event) => closeAndRun(event, () => onEdit(course))} className={itemClass}>編輯課程</button>
         <Link href={`/course-change-requests?courseId=${course.id}`} className={itemClass}>申請課程異動</Link>
         <div className="my-1 border-t border-slate-100" />
-        <button onClick={(event) => closeAndRun(event, () => onDelete(course.id, course.code))} className={`${itemClass} text-red-600 hover:bg-red-50`}>刪除課程</button>
+        <button onClick={(event) => closeAndRun(event, () => onDelete(course.id, course.code))} className={`${itemClass} text-amber-700 hover:bg-amber-50`}>封存課程</button>
       </div>
     </details>
   );
