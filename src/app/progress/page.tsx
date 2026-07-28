@@ -5,7 +5,7 @@ import { Toast } from "@/components/Toast";
 import { parseAbilities } from "@/lib/abilityMap";
 import { ensureOk } from "@/lib/clientApi";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
-import { COURSE_OPTIONS, courseLabel } from "@/lib/courseMeta";
+import { courseLabel } from "@/lib/courseMeta";
 import { useScrollToFormOnEdit } from "@/lib/useScrollToFormOnEdit";
 import { useToast } from "@/lib/useToast";
 
@@ -46,7 +46,7 @@ export default function ProgressPage() {
   const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [manageCourse, setManageCourse] = useState("足球");
-  const [courseOptions, setCourseOptions] = useState<CourseOption[]>(COURSE_OPTIONS.map((option) => ({ ...option })));
+  const [courseOptions, setCourseOptions] = useState<CourseOption[]>([]);
   const [templateRows, setTemplateRows] = useState<LessonTemplate[]>([]);
   const [templateForm, setTemplateForm] = useState({
     id: 0,
@@ -65,7 +65,18 @@ export default function ProgressPage() {
 
   useEffect(() => {
     fetch("/api/teachers?minimal=1").then((r) => r.json()).then(setTeachers);
-    fetch("/api/course-options").then((r) => r.json()).then(setCourseOptions);
+    fetch("/api/lesson-templates")
+      .then((r) => r.json())
+      .then((rows: LessonTemplate[]) => {
+        const labels = [...new Set(rows.map((row) => courseLabel(row.courseType)).filter(Boolean))];
+        const options = labels.map((label) => ({ code: label, label }));
+        setCourseOptions(options);
+        setManageCourse((current) =>
+          options.length > 0 && !options.some((option) => option.label === current)
+            ? options[0].label
+            : current
+        );
+      });
   }, []);
 
   useEffect(() => {

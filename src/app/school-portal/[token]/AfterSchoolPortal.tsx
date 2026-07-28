@@ -1,5 +1,5 @@
 "use client";
-// 安親班園所端（運動班長品牌）：只保留 成果／申請異動／評分 三個分頁
+// 安親班園所端（運動班長品牌）
 // 設計原則：專業穩重、少圓角漸層、Lucide 風格線條 icon、375px 行動優先
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { courseLabel } from "@/lib/courseMeta";
@@ -817,11 +817,12 @@ function RatingsTab({ token, onCounts }: { token: string; onCounts: (pending: nu
 /* ---------- 主元件 ---------- */
 export default function AfterSchoolPortal({ token, summary }: { token: string; summary: PortalSummary }) {
   const now = new Date();
-  const [tab, setTab] = useState<Tab>("outcomes");
+  // 成果與申請異動目前先從園所端隱藏，入口預設直接進入評分。
+  const [tab, setTab] = useState<Tab>("ratings");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [pendingRatings, setPendingRatings] = useState(summary.pendingRatings);
-  const [processingChanges, setProcessingChanges] = useState(summary.processingChanges);
+  const [, setProcessingChanges] = useState(summary.processingChanges);
   const [verifyRetry, setVerifyRetry] = useState<{ retry: () => void } | null>(null);
 
   // 品牌：分頁標題與 PWA manifest 都用運動班長
@@ -844,8 +845,6 @@ export default function AfterSchoolPortal({ token, summary }: { token: string; s
   }, []);
 
   const NAV: Array<{ id: Tab; label: string; icon: "book" | "calendar" | "star"; badge: number }> = [
-    { id: "outcomes", label: "成果", icon: "book", badge: 0 },
-    { id: "changes", label: "申請異動", icon: "calendar", badge: processingChanges },
     { id: "ratings", label: "評分", icon: "star", badge: pendingRatings },
   ];
 
@@ -906,9 +905,9 @@ export default function AfterSchoolPortal({ token, summary }: { token: string; s
         <footer className="mt-8 pb-2 text-center text-[12px] text-[#64748B]">運動班長｜系統技術支援：WaysLeader AI</footer>
       </main>
 
-      {/* 手機底部導覽（3 項、44px 觸控、safe area） */}
+      {/* 手機底部導覽（目前只開放評分） */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#E2E8F0] bg-white pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <div className="grid grid-cols-3">
+        <div className="grid grid-cols-1">
           {NAV.map((item) => (
             <button key={item.id} onClick={() => selectTab(item.id)} className="relative flex min-h-[56px] flex-col items-center justify-center gap-0.5" aria-label={item.label}>
               {item.badge > 0 && <span className="absolute right-[22%] top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#D99032] px-1 text-[10px] font-bold leading-[18px] text-white">{item.badge}</span>}

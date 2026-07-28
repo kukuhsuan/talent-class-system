@@ -164,7 +164,7 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
       ) : (
         <div className="mt-2 flex h-28 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-sm text-slate-400">尚未簽名</div>
       )}
-      <button type="button" disabled={disabled} onClick={() => { setHasInk(Boolean(value)); setOpen(true); }} className="mt-3 w-full rounded-xl bg-[#3F6B55] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+      <button type="button" disabled={disabled} onClick={() => { setHasInk(Boolean(value)); setOpen(true); }} className="mt-3 w-full rounded-xl bg-[#1D4ED8] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
         {value ? "重新簽名（開啟滿版）" : "開始簽名（開啟滿版）"}
       </button>
       {open && (
@@ -272,16 +272,16 @@ function StartConfirmationCard({ reportId, attendanceId }: { reportId: string; a
   // 本堂已送出：顯示已送出狀態
   if (record && record.attendanceId === attendanceId) {
     return (
-      <section className="rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 shadow-sm">
-        <div className="flex items-center gap-2 text-sm font-bold text-[#3F6B55]">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3F6B55] text-xs text-white">✓</span>
+      <section className="rounded-2xl border border-[#BFDBFE] bg-[#F8FBFF] p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-bold text-[#1D4ED8]">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1D4ED8] text-xs text-white">✓</span>
           開課前確認已送出
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
-          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">幼幼班 {record.toddlerClassCount}｜小班 {record.smallClassCount}</div>
-          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">中班 {record.middleClassCount}｜大班 {record.bigClassCount}</div>
-          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">總人數 {record.totalCount} 人</div>
-          {record.location ? <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">地點：{record.location}</div> : null}
+          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">幼幼班 {record.toddlerClassCount}｜小班 {record.smallClassCount}</div>
+          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">中班 {record.middleClassCount}｜大班 {record.bigClassCount}</div>
+          <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">總人數 {record.totalCount} 人</div>
+          {record.location ? <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">地點：{record.location}</div> : null}
         </div>
         <div className="mt-3 text-xs text-slate-500">
           填寫時間：{new Date(record.submittedAt.includes("T") ? record.submittedAt : `${record.submittedAt.replace(" ", "T")}Z`).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}
@@ -562,12 +562,8 @@ export default function TeacherReportPage() {
       setError("請填寫今日出席人數");
       return;
     }
-    if (!form.progress.trim()) {
+    if (!needsStudentCount && !form.progress.trim()) {
       setError(kindergarten ? "請選擇或填寫今日課程進度" : "請填寫今天訓練什麼");
-      return;
-    }
-    if (kindergarten && (form.skillFocus.length < 3 || form.skillFocus.length > 4)) {
-      setError("請選擇 3～4 個本堂學習目標");
       return;
     }
     // 特殊事件必填：這是事件紀錄，不可留空送出
@@ -575,11 +571,6 @@ export default function TeacherReportPage() {
       if (!form.incidentChild.trim()) { setError("特殊事件請填寫孩子姓名"); return; }
       if (!form.incidentProcess.trim()) { setError("特殊事件請填寫發生經過"); return; }
       if (!form.incidentAction.trim()) { setError("特殊事件請填寫處理方式"); return; }
-    }
-    // 照片必填：至少一張課堂活動照片（或提供公開圖片連結）
-    if (photos.length === 0 && !form.representativePhotoUrl.trim()) {
-      setError("請至少上傳 1 張課堂活動照片");
-      return;
     }
     if (info?.schoolSignatureRequired && !form.schoolVerifierName.trim()) {
       setError("請填寫園所確認老師姓名");
@@ -630,9 +621,7 @@ export default function TeacherReportPage() {
   // 缺項提示：常駐顯示還缺什麼，不用按送出才發現
   const missingItems = [
     needsStudentCount && !form.studentCount ? "出席人數" : "",
-    !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
-    isKindergarten && form.skillFocus.length < 3 ? `學習目標（已選 ${form.skillFocus.length}／需 3～4 項）` : "",
-    photos.length === 0 && !form.representativePhotoUrl.trim() ? "課堂活動照片（至少 1 張）" : "",
+    !needsStudentCount && !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
     form.incident && (!form.incidentChild.trim() || !form.incidentProcess.trim() || !form.incidentAction.trim()) ? "特殊事件內容" : "",
     info.schoolSignatureRequired && !form.schoolVerifierName.trim() ? "園所老師姓名" : "",
     info.schoolSignatureRequired && !form.schoolSignatureData ? "園所簽名" : "",
@@ -655,8 +644,8 @@ export default function TeacherReportPage() {
 
   return (
     <div className="mx-auto max-w-md pb-10">
-      <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#F5EBDD] via-[#F9F6EF] to-[#DCE8DD] px-5 pb-6 pt-5 shadow-sm">
-        <div className="text-xs font-semibold tracking-[0.2em] text-[#7B9E87]">WAYSLEADER AI LEARNING REPORT</div>
+      <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#EAF3FF] via-white to-[#DBEAFE] px-5 pb-6 pt-5 shadow-sm">
+        <div className="text-xs font-semibold tracking-[0.2em] text-[#2563EB]">WAYSLEADER AI LEARNING REPORT</div>
         <h1 className="mt-2 text-2xl font-bold text-[#2E2B27]">課程回報</h1>
         <div className="mt-4 rounded-2xl bg-white/75 p-4 text-sm text-slate-700 shadow-sm">
           <div className="font-semibold text-slate-900">{info.school}</div>
@@ -677,13 +666,13 @@ export default function TeacherReportPage() {
         </div>
       )}
       {showAssessmentEntry && (
-        <div className="mb-4 rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 text-sm text-slate-700">
-          <div className="font-semibold text-[#3F6B55]">這是幼兒園最後一堂課</div>
+        <div className="mb-4 rounded-2xl border border-[#BFDBFE] bg-[#F8FBFF] p-4 text-sm text-slate-700">
+          <div className="font-semibold text-[#1D4ED8]">這是幼兒園最後一堂課</div>
           <p className="mt-1 text-xs text-slate-500">
             {done ? "課程回報已完成，可接著填寫學期末運動評量。" : "若老師忘記填評量，可直接從這裡進入補填。"}
           </p>
           {info.assessmentCount ? <div className="mt-2 text-xs font-semibold text-slate-500">目前已完成 {info.assessmentCount} 位評量</div> : null}
-          <a href={assessmentUrl} className="mt-3 block rounded-xl bg-[#3F6B55] px-4 py-3 text-center text-sm font-bold text-white">
+          <a href={assessmentUrl} className="mt-3 block rounded-xl bg-[#1D4ED8] px-4 py-3 text-center text-sm font-bold text-white">
             進入學期末運動評量
           </a>
         </div>
@@ -708,26 +697,21 @@ export default function TeacherReportPage() {
       )}
 
       <div className="space-y-4">
-        {isKindergarten && <StartConfirmationCard reportId={params.id} attendanceId={info.id} />}
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">出席人數{needsStudentCount ? "" : "（免填）"}</label>
-          {needsStudentCount ? (
+        {needsStudentCount && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm">
+            <label className="text-sm font-semibold text-slate-800">出席人數</label>
             <div className="mt-2 flex items-stretch gap-2">
               <button type="button" disabled={locked} onClick={() => adjustStudentCount(-1)}
                 className="w-14 rounded-xl border border-slate-200 text-2xl font-bold text-slate-500 active:bg-slate-100 disabled:opacity-40">−</button>
               <input inputMode="numeric" type="number" value={form.studentCount} disabled={locked}
                 onChange={(e) => setForm({ ...form, studentCount: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-center text-lg font-semibold outline-none focus:border-[#7B9E87]"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-center text-lg font-semibold outline-none focus:border-[#2563EB]"
                 placeholder="人數" />
               <button type="button" disabled={locked} onClick={() => adjustStudentCount(1)}
                 className="w-14 rounded-xl border border-slate-200 text-2xl font-bold text-slate-500 active:bg-slate-100 disabled:opacity-40">＋</button>
             </div>
-          ) : (
-            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">
-              課內課固定班級，免填每堂出席人數
-            </div>
-          )}
-        </section>
+          </section>
+        )}
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">{isKindergarten ? "今日課程進度" : "今天訓練什麼"}</label>
@@ -747,8 +731,8 @@ export default function TeacherReportPage() {
                       outcomeText: item.outcomeText || form.outcomeText,
                     });
                   }}
-                  className={`rounded-2xl border px-4 py-3 text-left transition-colors ${!customProgress && form.progress === item.value ? "border-[#7B9E87] bg-[#E7F0E9] text-[#2F5D49]" : "border-slate-200 bg-white text-slate-700"}`}>
-                  <div className="text-xs font-semibold text-[#7B9E87]">第 {item.lesson} 堂</div>
+                  className={`rounded-2xl border px-4 py-3 text-left transition-colors ${!customProgress && form.progress === item.value ? "border-[#2563EB] bg-[#EFF6FF] text-[#1E40AF]" : "border-slate-200 bg-white text-slate-700"}`}>
+                  <div className="text-xs font-semibold text-[#2563EB]">第 {item.lesson} 堂</div>
                   <div className="mt-1 text-sm font-semibold leading-5">{item.title}</div>
                 </button>
               ))}
@@ -763,38 +747,16 @@ export default function TeacherReportPage() {
           )}
           {(!isKindergarten || customProgress || !info.progressOptions?.length) && (
             <textarea value={form.progress} disabled={locked} onChange={(e) => setForm({ ...form, progress: e.target.value })}
-              className="mt-3 min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
+              className="mt-3 min-h-20 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563EB]"
               placeholder={isKindergarten ? "例：第 6 堂 側拉球，或自行填寫今日進度" : "例：傳接球、體能循環、分組對抗"} />
           )}
         </section>
-
-        {isKindergarten && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-800">本堂學習目標</div>
-                <div className="mt-1 text-xs text-slate-500">請勾選本堂達成的 3～4 項能力</div>
-              </div>
-              <div className="rounded-full bg-[#FFF4E6] px-3 py-1 text-xs font-bold text-[#A5672C]">{form.skillFocus.length} / 4</div>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              {SKILL_FOCUS_OPTIONS.map((skill, index) => (
-                <button key={skill} type="button" disabled={locked} onClick={() => toggleSkill(skill)}
-                  className={`flex aspect-square flex-col items-center justify-center rounded-full border p-2 text-center text-xs font-bold leading-4 transition-all ${form.skillFocus.includes(skill) ? "scale-[1.03] border-transparent text-[#2E2B27] shadow-md" : "border-slate-200 bg-white text-slate-500"}`}
-                  style={form.skillFocus.includes(skill) ? { backgroundColor: ["#FFE3E3", "#FFF0C7", "#DDF5E7", "#DCEEFF", "#F2E2FF", "#FFE7CF"][index] } : undefined}>
-                  <span className="mb-1 text-lg">{["◎", "✦", "●", "↯", "♥", "◉"][index]}</span>
-                  {skill}
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">成果回報短文</label>
           <p className="mt-1 text-xs text-slate-500">簡短 2～3 行即可，系統不會自動生成文案。</p>
           <textarea value={form.outcomeText} disabled={locked} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
-            className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#7B9E87]"
+            className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#2563EB]"
             placeholder="例：孩子今天能跟著老師完成挑戰，練習控制方向與力道。課堂中大家參與穩定，也願意嘗試不同任務。" />
           {!locked && (
             <div className="mt-2">
@@ -812,12 +774,12 @@ export default function TeacherReportPage() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">課堂活動照片（必填，至少 1 張）</div>
+          <div className="text-sm font-semibold text-slate-800">課堂活動照片（建議附上，非必填）</div>
           <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
             ⚠️ 點名表請傳到 LINE 官方帳號，這裡只上傳課堂活動照片。
           </div>
           <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-700">
-            📸 麻煩老師幫忙拍下孩子上課的精彩瞬間，畫面清晰、有拍到活動內容就很棒了，謝謝老師！
+            📸 建議老師附上孩子上課的活動照片，讓園所與家長更容易看見課程成果；若當天不方便拍攝，仍可直接送出回報。
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-500">
             每堂課最多 {PHOTO_LIMIT} 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
@@ -837,7 +799,7 @@ export default function TeacherReportPage() {
             </div>
           )}
           {photos.length < PHOTO_LIMIT && (
-            <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading || photoLocked ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#9CB8A6] bg-[#F8FBF8] text-[#3F6B55]"}`}>
+            <label className={`mt-3 flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-3 text-sm font-bold transition-colors ${photoUploading || photoLocked ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400" : "border-[#93C5FD] bg-[#F8FBFF] text-[#1D4ED8]"}`}>
               {photoLocked ? "已超過補填期限" : photoUploading ? "照片上傳中..." : `選擇或拍攝活動照片（${photos.length}／${PHOTO_LIMIT}）`}
               <input type="file" accept="image/*" multiple className="hidden" disabled={photoUploading || photoLocked} onChange={uploadPhoto} />
             </label>
@@ -855,7 +817,7 @@ export default function TeacherReportPage() {
               value={form.representativePhotoUrl}
               disabled={locked}
               onChange={(e) => setForm({ ...form, representativePhotoUrl: e.target.value })}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7B9E87]"
+              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563EB]"
               placeholder="https://...（送出時會一併加入照片）"
             />
           </details>
@@ -866,7 +828,7 @@ export default function TeacherReportPage() {
           <div className="mt-3 grid grid-cols-2 gap-2">
             {[false, true].map((value) => (
               <button key={String(value)} type="button" disabled={locked} onClick={() => setForm({ ...form, incident: value })}
-                className={`rounded-xl border px-4 py-3 text-sm font-medium ${form.incident === value ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 text-slate-600"}`}>
+                className={`rounded-xl border px-4 py-3 text-sm font-medium ${form.incident === value ? "border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]" : "border-slate-200 text-slate-600"}`}>
                 {value ? "有" : "無"}
               </button>
             ))}
@@ -881,7 +843,7 @@ export default function TeacherReportPage() {
                 <div className="grid grid-cols-2 gap-2">
                   {["是", "否"].map((v) => (
                     <button key={v} type="button" disabled={locked} onClick={() => setForm({ ...form, incidentNotified: v })}
-                      className={`rounded-xl border px-4 py-3 text-sm font-medium ${form.incidentNotified === v ? "border-[#7B9E87] bg-[#E7F0E9] text-[#3F6B55]" : "border-slate-200 text-slate-600"}`}>
+                      className={`rounded-xl border px-4 py-3 text-sm font-medium ${form.incidentNotified === v ? "border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]" : "border-slate-200 text-slate-600"}`}>
                       {v}
                     </button>
                   ))}
@@ -892,17 +854,17 @@ export default function TeacherReportPage() {
         </section>
 
         {info.schoolSignatureRequired && (
-          <section className="rounded-2xl border border-[#C9DCCB] bg-[#F6FBF5] p-4 shadow-sm">
-            <div className="text-sm font-bold text-[#3F6B55]">園所老師確認簽名</div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">請由現場園所老師確認以上出席與回報內容，並在同一支手機完成簽名。</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
-              <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">日期：{new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
-              <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#C9DCCB]">實際上課人數：{form.studentCount || "請於上方填寫"}</div>
+          <section className="rounded-2xl border border-[#BFDBFE] bg-[#F8FBFF] p-4 shadow-sm">
+            <div className="text-sm font-bold text-[#1D4ED8]">園所老師確認簽名</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">請由現場園所老師確認以上回報內容，並在同一支手機完成簽名。</p>
+            <div className={`mt-3 grid gap-2 text-xs font-semibold text-slate-600 ${needsStudentCount ? "grid-cols-2" : "grid-cols-1"}`}>
+              <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">日期：{new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
+              {needsStudentCount && <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">實際上課人數：{form.studentCount || "請於上方填寫"}</div>}
             </div>
             <label className="mt-4 block text-sm font-semibold text-slate-700">
               園所確認老師姓名（請以正楷簽署本名）
               <input value={form.schoolVerifierName} disabled={locked} onChange={(e) => setForm({ ...form, schoolVerifierName: e.target.value })}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#7B9E87]" placeholder="請輸入本名（正楷）" />
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#2563EB]" placeholder="請輸入本名（正楷）" />
             </label>
             <div className="mt-4 text-sm font-semibold text-slate-700">手寫簽名（請以正楷簽署本名）</div>
             <SignaturePad value={form.schoolSignatureData} disabled={locked} onChange={(schoolSignatureData) => setForm((current) => ({ ...current, schoolSignatureData }))} />
@@ -917,7 +879,7 @@ export default function TeacherReportPage() {
         )}
         {!locked && (
           <button onClick={submit} disabled={saving}
-            className="sticky bottom-4 w-full rounded-2xl bg-[#3F6B55] px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-900/15 disabled:cursor-not-allowed disabled:opacity-60">
+            className="sticky bottom-4 w-full rounded-2xl bg-[#1D4ED8] px-5 py-4 text-base font-bold text-white shadow-lg shadow-blue-900/15 disabled:cursor-not-allowed disabled:opacity-60">
             {saving ? "送出中..." : "送出課程回報"}
           </button>
         )}

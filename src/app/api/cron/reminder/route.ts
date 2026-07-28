@@ -11,6 +11,7 @@ import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/l
 import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
 import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
+import { recordAutomationRun } from "@/lib/automationHealth";
 
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
 type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null };
@@ -147,6 +148,15 @@ export async function GET(req: NextRequest) {
   ];
 
   if (courses.length === 0) {
+    await recordAutomationRun({
+      jobKey: `teacher-reminder:${dayOffset}`,
+      targetDate: targetIso,
+      status: "success",
+      total: 0,
+      success: 0,
+      failed: 0,
+      details: "當日沒有課程",
+    }).catch(() => undefined);
     return NextResponse.json({ sent: 0, message: "no courses today" });
   }
 
@@ -210,6 +220,16 @@ export async function GET(req: NextRequest) {
       errors.push(`${teacher.name}: ${e}`);
     }
   }
+
+  await recordAutomationRun({
+    jobKey: `teacher-reminder:${dayOffset}`,
+    targetDate: targetIso,
+    status: errors.length ? (sent || skippedAlreadySent ? "partial" : "failed") : "success",
+    total: byTeacher.size,
+    success: sent + skippedAlreadySent,
+    failed: errors.length,
+    details: errors.join("\n"),
+  }).catch(() => undefined);
 
   return NextResponse.json({
     ok: errors.length === 0,

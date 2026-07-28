@@ -7,6 +7,7 @@ export const REPORT_NOT_STARTED_MESSAGE = "課程尚未結束，請於下課後�
 type ReportAttendanceLike = {
   date: Date | string;
   category?: string | null;
+  course?: object | null;
   hours?: number | null;
   studentCount?: number | null;
   studentCountA?: number | null;
@@ -14,6 +15,12 @@ type ReportAttendanceLike = {
   reportContent?: string | null;
   cancelled?: boolean | null;
 };
+
+function reportCategory(attendance: ReportAttendanceLike) {
+  // 課程主檔是目前行政設定；Attendance.category 可能是建立出勤時留下的舊值。
+  const courseCategory = (attendance.course as { category?: string | null } | null | undefined)?.category;
+  return courseCategory?.trim() || attendance.category;
+}
 
 function isoDate(value: Date | string) {
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
@@ -62,20 +69,21 @@ export function hasAttendanceCount(attendance: ReportAttendanceLike) {
 
 export function isAttendanceReportComplete(attendance: ReportAttendanceLike) {
   if (attendance.cancelled) return true;
-  const hasReport = Boolean((attendance.reportContent ?? "").trim());
-  if (!requiresStudentCount(attendance.category)) return hasReport;
-  // 課後課 / 營隊：人數 + 課程進度兩者都需要才算完成
-  return hasAttendanceCount(attendance) && hasReport;
+  const reportText = (attendance.reportContent ?? "").trim();
+  // 「正常上課」只是出勤狀態，不是課程進度。
+  const hasReport = Boolean(reportText && reportText !== "正常上課");
+  if (!requiresStudentCount(reportCategory(attendance))) return hasReport;
+  // 課後課 / 營隊的行政必要回報是實際出席人數。
+  return hasAttendanceCount(attendance);
 }
 
 export function attendanceReportWindow(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
   const complete = isAttendanceReportComplete(attendance);
-  const needsStudentCount = requiresStudentCount(attendance.category);
   const endedAt = courseEndAt(attendance, timeText);
   const expiresAt = reportExpiresAt(attendance, timeText);
   const expired = now > expiresAt;
   const ended = now >= endedAt;
-  const fillable = !attendance.cancelled && needsStudentCount && !complete && ended && !expired;
+  const fillable = !attendance.cancelled && !complete && ended && !expired;
 
   return {
     complete,
@@ -84,8 +92,8 @@ export function attendanceReportWindow(attendance: ReportAttendanceLike, timeTex
     expired,
     endedAt,
     expiresAt,
-    status: !needsStudentCount && !attendance.cancelled
-      ? complete ? "出課完成" : ""
+    status: complete
+      ? "出課完成"
       : fillable ? "補填中（48小時內）" : expired && !complete ? "已逾期" : "",
   };
 }
@@ -93,12 +101,13 @@ export function attendanceReportWindow(attendance: ReportAttendanceLike, timeTex
 export function attendanceMissingItems(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
   if (attendance.cancelled) return [];
 
-  // 行政待回報只看「實際出席人數」：課程進度是老師教學紀錄，不列入行政待辦或月結阻擋。
-  // 課內不需填人數（時數在月結中心核對），因此不會出現在待回報。
-  if (!requiresStudentCount(attendance.category)) return [];
-
   const window = attendanceReportWindow(attendance, timeText, now);
-  return window.fillable && !hasAttendanceCount(attendance) ? ["缺出席人數"] : [];
+  if (!window.fillable) return [];
+  if (requiresStudentCount(reportCategory(attendance))) {
+    return !hasAttendanceCount(attendance) ? ["缺出席人數"] : [];
+  }
+  const reportText = (attendance.reportContent ?? "").trim();
+  return !reportText || reportText === "正常上課" ? ["缺課程進度"] : [];
 }
 
 export function isPendingReport(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {

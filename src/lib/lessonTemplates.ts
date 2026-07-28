@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { courseLabel } from "@/lib/courseMeta";
+import { CANONICAL_LESSON_DETAILS } from "@/lib/courseCurriculumDetails";
 import { parseLessonNumber } from "@/lib/lessonContent";
 
 export type LessonTemplateForReport = {
@@ -71,6 +72,40 @@ export async function ensureLessonTemplateTable(prisma: PrismaClient) {
 
 async function syncLessonTemplatesFromProgress(prisma: PrismaClient, courseType: string) {
   const course = courseLabel(courseType);
+  const canonicalRows = CANONICAL_LESSON_DETAILS[course] ?? [];
+  if (canonicalRows.length) {
+    const lastLesson = Math.max(...canonicalRows.map((row) => row.lesson));
+    await prisma.$executeRawUnsafe(
+      "DELETE FROM LessonTemplate WHERE courseType = ? AND lesson > ?",
+      course,
+      lastLesson,
+    );
+    await prisma.courseProgress.deleteMany({
+      where: { courseType: course, lesson: { gt: lastLesson } },
+    });
+    for (const row of canonicalRows) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO LessonTemplate (courseType, lesson, title, focus, skills, activityDirection, aiStyle, updatedAt)
+         VALUES (?, ?, ?, ?, ?, '', '', CURRENT_TIMESTAMP)
+         ON CONFLICT(courseType, lesson) DO UPDATE SET
+           title = excluded.title,
+           focus = excluded.focus,
+           skills = excluded.skills,
+           updatedAt = CURRENT_TIMESTAMP`,
+        course,
+        row.lesson,
+        row.title,
+        row.focus,
+        row.skills.join("、"),
+      );
+      await prisma.courseProgress.upsert({
+        where: { courseType_lesson: { courseType: course, lesson: row.lesson } },
+        update: { title: row.title },
+        create: { courseType: course, lesson: row.lesson, title: row.title },
+      });
+    }
+    return;
+  }
   const progressRows = await prisma.$queryRawUnsafe<Array<{ lesson: number; title: string }>>(
     "SELECT lesson, title FROM CourseProgress WHERE courseType = ? ORDER BY lesson ASC",
     course,

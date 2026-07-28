@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { formatMonthDay, weekdayOfIso } from "@/lib/courseDates";
 import { departmentQueryValues, regionQueryValues } from "@/lib/courseMeta";
-import { courseIdsWithAnyAttendance, isoDatesBetween } from "@/lib/scheduleLogic";
+import { courseIdsWithAnyAttendance, courseOccursOnIso, isoDatesBetween } from "@/lib/scheduleLogic";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 
 const MS_PER_DAY = 86400000;
@@ -84,6 +84,11 @@ export async function GET(req: NextRequest) {
   const coursesRaw = await prisma.course.findMany({
     where: {
       ...courseWhere,
+      // 固定週課只能展開在課程實際起訖期間內，避免新學期課程被倒推到舊月份。
+      AND: [
+        { OR: [{ startDate: null }, { startDate: { lte: to } }] },
+        { OR: [{ endDate: null }, { endDate: { gte: from } }] },
+      ],
       ...(datedCourseIds.size > 0 ? { id: { notIn: [...datedCourseIds] } } : {}),
     },
     include: { teacher: teacherSelect, assistantTeacher: teacherSelect, schoolRel: { select: { address: true } } },
@@ -134,6 +139,7 @@ export async function GET(req: NextRequest) {
   const courses = coursesRaw as unknown as Array<{
     id: number; code: string; region: string; school: string; courseType: string; address?: string;
     dayOfWeek: string; time: string; category: string; enrollCount: string; teacherId: number;
+    startDate?: Date | null; endDate?: Date | null;
     teacher: { id: number; name: string };
     assistantTeacher?: { id: number; name: string } | null;
     assistantTeacherId?: number | null;
@@ -142,7 +148,7 @@ export async function GET(req: NextRequest) {
 
   const rangeDates = isoDatesBetween(fromIso, toIso);
   const recurringItems = courses.flatMap((c) => rangeDates
-    .filter((iso) => weekdayOfIso(iso) === c.dayOfWeek)
+    .filter((iso) => weekdayOfIso(iso) === c.dayOfWeek && courseOccursOnIso(c, iso))
     .map((iso) => ({
       ...c,
       courseId: c.id,

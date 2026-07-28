@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { requiredAuthSecret } from "@/lib/authSecret";
+import { prisma } from "@/lib/prisma";
 
 const secret = new TextEncoder().encode(
   requiredAuthSecret()
@@ -27,11 +28,11 @@ const PUBLIC_EXACT = [
   "/sports-leader-icon-512.png",
   "/sports-monitor-logo.png",
 ];
-const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/rating/", "/api/rating/", "/notify-ack/", "/api/notify-ack/"];
+const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/school-billing/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/course-briefing-ack/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/school-billing/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/api/course-briefing-ack/", "/rating/", "/api/rating/", "/notify-ack/", "/api/notify-ack/"];
 // customer_service：客服角色，可用一般後台與通知功能；薪資/帳號管理/稽核仍被下方清單擋下
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
-const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant"]);
+const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff"]);
 
 function isPublicPath(path: string) {
   return PUBLIC_EXACT.includes(path) || PUBLIC_PREFIX.some((prefix) => path.startsWith(prefix));
@@ -42,7 +43,11 @@ function isMaintenancePath(path: string) {
 }
 
 function isOwnerOnlyPath(path: string) {
-  return path === "/admin/users"
+  return path === "/users"
+    || path.startsWith("/users/")
+    || path === "/api/users"
+    || path.startsWith("/api/users/")
+    || path === "/admin/users"
     || path.startsWith("/admin/users/")
     || path === "/admin/audit-logs"
     || path.startsWith("/admin/audit-logs/")
@@ -73,7 +78,35 @@ function maintenanceSecret(req: NextRequest) {
     || "";
 }
 
-export async function middleware(req: NextRequest) {
+function mutationOriginOk(req: NextRequest) {
+  if (!pathIsWriteApi(req)) return true;
+  const fetchSite = req.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") return false;
+  const origin = req.headers.get("origin");
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === (req.headers.get("host") ?? "");
+  } catch {
+    return false;
+  }
+}
+
+function pathIsWriteApi(req: NextRequest) {
+  return req.nextUrl.pathname.startsWith("/api/")
+    && !["GET", "HEAD", "OPTIONS"].includes(req.method);
+}
+
+async function activeAccountRole(payload: Record<string, unknown>) {
+  const userId = Number(payload.userId);
+  if (!Number.isInteger(userId) || userId <= 0) return String(payload.role ?? "");
+  const account = await prisma.userAccount.findUnique({
+    where: { id: userId },
+    select: { isActive: true, role: true },
+  });
+  return account?.isActive ? account.role : "";
+}
+
+export async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const token = req.cookies.get("auth-token")?.value;
   const unauthorized = () => {
@@ -89,8 +122,14 @@ export async function middleware(req: NextRequest) {
   if (path.startsWith("/login")) {
     if (!token) return NextResponse.next();
     try {
-      await jwtVerify(token, secret);
-      return NextResponse.redirect(new URL("/", req.url));
+      const { payload } = await jwtVerify(token, secret);
+      const role = await activeAccountRole(payload);
+      if (BACKOFFICE_ROLES.has(role)) {
+        return NextResponse.redirect(new URL("/", req.url));
+      }
+      const response = NextResponse.next();
+      response.cookies.delete("auth-token");
+      return response;
     } catch {
       return NextResponse.next();
     }
@@ -104,7 +143,8 @@ export async function middleware(req: NextRequest) {
     if (!token) return unauthorized();
     try {
       const { payload } = await jwtVerify(token, secret);
-      if (!OWNER_ROLES.has(String(payload.role ?? ""))) {
+      const role = await activeAccountRole(payload);
+      if (!OWNER_ROLES.has(role)) {
         return NextResponse.json({ error: "權限不足" }, { status: 403 });
       }
     } catch {
@@ -118,7 +158,7 @@ export async function middleware(req: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token, secret);
-    const role = String(payload.role ?? "");
+    const role = await activeAccountRole(payload);
     if (!BACKOFFICE_ROLES.has(role)) {
       if (path.startsWith("/api/")) {
         return NextResponse.json({ error: "權限不足" }, { status: 403 });
@@ -136,6 +176,9 @@ export async function middleware(req: NextRequest) {
     // viewer 為唯讀角色：只允許讀取類請求，禁止任何寫入 API
     if (role === "viewer" && path.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
       return NextResponse.json({ error: "唯讀帳號無法執行此操作" }, { status: 403 });
+    }
+    if (!mutationOriginOk(req)) {
+      return NextResponse.json({ error: "拒絕跨網站操作" }, { status: 403 });
     }
     return NextResponse.next();
   } catch {

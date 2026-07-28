@@ -237,15 +237,77 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         { status: 409 },
       );
     }
-    // 防呆：有任何出勤紀錄（薪資與請款依據）的課程一律禁止刪除，只能停用
-    const attendanceCount = await prisma.attendance.count({ where: { courseId } });
-    if (attendanceCount > 0) {
-      return NextResponse.json(
-        { error: `此課程已有 ${attendanceCount} 筆出勤紀錄（薪資與請款依據），不可刪除。若課程已結束，請改為「停用」。` },
-        { status: 409 },
+    const attendances = await prisma.attendance.findMany({
+      where: { courseId },
+      select: {
+        id: true,
+        studentCount: true,
+        studentCountA: true,
+        studentCountB: true,
+        cancelled: true,
+        reportContent: true,
+        reportSentAt: true,
+        schoolNotifiedAt: true,
+        reportPhotos: true,
+        incident: true,
+      },
+    });
+    if (attendances.length > 0) {
+      const hasOfficialRecord = attendances.some((attendance) =>
+        attendance.studentCount !== null
+        || attendance.studentCountA !== null
+        || attendance.studentCountB !== null
+        || attendance.cancelled
+        || attendance.reportContent.trim() !== ""
+        || attendance.reportSentAt !== null
+        || attendance.schoolNotifiedAt !== null
+        || attendance.reportPhotos.trim() !== ""
+        || attendance.incident
       );
+      if (hasOfficialRecord) {
+        return NextResponse.json(
+          { error: `此課程已有正式回報、出席人數或通知紀錄，不可刪除。若課程已結束，請改為「停用」。` },
+          { status: 409 },
+        );
+      }
+
+      const attendanceIds = attendances.map((attendance) => attendance.id);
+      const relatedCounts = await Promise.all([
+        prisma.substitute.count({ where: { attendanceId: { in: attendanceIds } } }),
+        prisma.teacherLeaveRequest.count({ where: { attendanceId: { in: attendanceIds } } }),
+        prisma.kindergartenAssessment.count({ where: { attendanceId: { in: attendanceIds } } }),
+        prisma.attendanceEquipment.count({ where: { attendanceId: { in: attendanceIds } } }),
+        prisma.courseChangeRequestTarget.count({ where: { attendanceId: { in: attendanceIds } } }),
+        prisma.schoolInvoiceDetail.count({ where: { attendanceId: { in: attendanceIds } } }),
+      ]);
+      if (relatedCounts.some((count) => count > 0)) {
+        return NextResponse.json(
+          { error: "此課程已有代課、請假、評量、器材、異動或請款關聯，不可刪除。" },
+          { status: 409 },
+        );
+      }
+
+      // 僅允許清除完全空白、未進入薪資/請款流程的排程資料。
+      await prisma.$transaction(async (tx) => {
+        const marks = attendanceIds.map(() => "?").join(",");
+        const courseTables = ["CourseBriefing", "CourseStartConfirmation"];
+        const attendanceTables = ["CourseRating", "EquipmentReminder", "EquipmentFlow"];
+        for (const table of courseTables) {
+          await tx.$executeRawUnsafe(`DELETE FROM "${table}" WHERE "courseId" = ?`, courseId).catch(() => 0);
+        }
+        for (const table of attendanceTables) {
+          await tx.$executeRawUnsafe(
+            `DELETE FROM "${table}" WHERE "attendanceId" IN (${marks})`,
+            ...attendanceIds,
+          ).catch(() => 0);
+        }
+        await tx.attendance.deleteMany({ where: { id: { in: attendanceIds } } });
+        await tx.courseScheduleException.deleteMany({ where: { courseId } });
+        await tx.course.delete({ where: { id: courseId } });
+      });
+    } else {
+      await prisma.course.delete({ where: { id: courseId } });
     }
-    await prisma.course.delete({ where: { id: courseId } });
     await writeAuditLog(req, {
       action: "delete",
       targetType: "Course",

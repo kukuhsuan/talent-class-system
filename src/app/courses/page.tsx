@@ -107,8 +107,8 @@ function academicTermOfDate(iso?: string) {
   if (!iso) return "未設定學期";
   const [year, month] = iso.slice(0, 10).split("-").map(Number);
   if (!year || !month) return "未設定學期";
-  // 7 月起即算新學年度第 1 學期
-  return month >= 7 ? `${year - 1911}-1` : `${year - 1912}-2`;
+  // 1–8 月為前一學年度第 2 學期；9 月起才進入新學年度第 1 學期。
+  return month >= 9 ? `${year - 1911}-1` : `${year - 1912}-2`;
 }
 
 function courseTerm(c: Course) {

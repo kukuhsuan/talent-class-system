@@ -35,8 +35,8 @@ export async function GET(req: NextRequest) {
 
   const schools = await prisma.school.findMany({
     select: {
-      id: true, name: true, region: true, lineUserId: true,
-      courses: { where: { isActive: true }, select: { courseType: true, department: true } },
+      id: true, name: true, type: true, region: true, lineUserId: true,
+      courses: { where: { isActive: true }, select: { courseType: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     maskedLineId: maskLineId(s.lineUserId),
     lineRegion: regionMap.get(s.id) ?? "school",
     courseTypes: [...new Set(s.courses.map((c) => c.courseType).filter(Boolean))],
-    isAfterSchool: s.courses.some((c) => (c.department ?? "").includes("安親")),
+    isAfterSchool: (s.type ?? "").includes("安親"),
     activeCourseCount: s.courses.length,
   })));
 }

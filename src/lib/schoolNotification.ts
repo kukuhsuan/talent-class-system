@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
-import { buildSchoolReportMessage, getLineConfig } from "@/lib/line";
+import { buildSchoolReportMessage, buildUpbearSchoolReportMessage, getLineConfig } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 
@@ -123,19 +123,25 @@ export async function notifySchoolReport(attendanceId: number): Promise<NotifyRe
         ? attData.studentCountA + attData.studentCountB
         : attData.studentCountA ?? attData.studentCountB ?? null);
 
-    const expectedMap = await expectedStudentCountMap([attendanceId]);
-    const portalCode = await getOrCreatePortalCode(school.id);
-    const msg = buildSchoolReportMessage({
-      teacherName: att.actualTeacher.name,
-      school: att.course.school,
-      courseType: att.course.courseType,
-      date: att.date.toISOString().slice(0, 10),
-      expectedStudentCount: expectedMap.get(attendanceId) ?? null,
-      studentCount: displayCount,
-      portalUrl: `${appUrl()}/school-portal/${encodeURIComponent(portalCode)}`,
-      content: att.reportContent,
-      cancelled: att.cancelled,
-    });
+    const msg = schoolRegion === "school2"
+      ? buildUpbearSchoolReportMessage({
+          teacherName: att.actualTeacher.name,
+          courseType: att.course.courseType,
+          date: att.date.toISOString().slice(0, 10),
+          studentCount: displayCount,
+          content: att.reportContent,
+        })
+      : buildSchoolReportMessage({
+          teacherName: att.actualTeacher.name,
+          school: att.course.school,
+          courseType: att.course.courseType,
+          date: att.date.toISOString().slice(0, 10),
+          expectedStudentCount: (await expectedStudentCountMap([attendanceId])).get(attendanceId) ?? null,
+          studentCount: displayCount,
+          portalUrl: `${appUrl()}/school-portal/${encodeURIComponent(await getOrCreatePortalCode(school.id))}`,
+          content: att.reportContent,
+          cancelled: att.cancelled,
+        });
 
     const res = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",

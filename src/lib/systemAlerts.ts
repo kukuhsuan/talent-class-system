@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
+import { pushOperationsAlert } from "@/lib/operationsNotifications";
 
 /**
  * 系統異常管理中心（M12）
@@ -63,8 +64,11 @@ export async function ensureSystemAlertTable() {
 
 /** 推播文字訊息給主管（未設定 ADMIN_ALERT_LINE_USER_ID 時靜默略過） */
 export async function pushAdminAlert(text: string): Promise<boolean> {
+  // 固定營運通知群組：黃一瀞、鄭伃茵、咕咕瑄。
+  const operationsResult = await pushOperationsAlert(text);
   const to = process.env.ADMIN_ALERT_LINE_USER_ID?.trim();
-  if (!to) return false;
+  if (!to) return operationsResult.sent > 0;
+  if (operationsResult.sentLineUserIds.includes(to)) return true;
   const region = (process.env.ADMIN_ALERT_LINE_REGION?.trim() || "north") as LineRegion;
   const token = getLineConfig(region).token;
   if (!token) return false;

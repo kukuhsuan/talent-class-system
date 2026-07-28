@@ -24,6 +24,7 @@ type CourseConfirmation = {
 };
 type School = {
   id: number; name: string; type: string; region: string; address: string; phone: string; contact: string; notes: string; lineUserId: string | null;
+  billingProfile?: { officialName: string; invoiceTitle: string; taxId: string; billingEmail: string; submittedAt: string | null } | null;
   courseConfirmation?: CourseConfirmation;
   courseConfirmationSummary?: string;
   confirmationTerm?: { academicYear: number; semester: string; label: string };
@@ -136,6 +137,30 @@ export default function SchoolsPage() {
       showToast("success", "園所開課確認連結已複製");
     } catch (e) {
       showToast("error", (e as Error).message || "開課確認連結產生失敗", 3000);
+    }
+  }
+
+  async function copyBillingLink(id: number) {
+    try {
+      const res = await fetch(`/api/schools/${id}/billing-link`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "園所資料填寫連結產生失敗");
+      await navigator.clipboard.writeText(`您好，為建立首次合作與後續請款資料，請協助填寫以下資訊：\n${data.url}\n約 1 分鐘即可完成，謝謝！`);
+      showToast("success", "新園所資料填寫訊息已複製");
+    } catch (e) {
+      showToast("error", (e as Error).message || "園所資料填寫連結產生失敗", 3000);
+    }
+  }
+
+  async function sendBillingPreview(id: number) {
+    if (!confirm("確定要將帳務資料填寫連結傳給這間園所的 LINE 綁定人員？")) return;
+    try {
+      const res = await fetch(`/api/schools/${id}/billing-preview`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "LINE 發送失敗");
+      showToast("success", `已將帳務表單傳給 ${data.school} 的 LINE 綁定人員`);
+    } catch (e) {
+      showToast("error", (e as Error).message || "LINE 發送失敗", 3000);
     }
   }
 
@@ -318,12 +343,13 @@ export default function SchoolsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold text-slate-900">{s.name}</div>
+                  <BillingProfileSummary profile={s.billingProfile} />
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className="whitespace-nowrap rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">{s.type ? normalizeDepartment(s.type) : "未分類"}</span>
                     <span className="whitespace-nowrap rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{normalizeRegion(s.region) || "—"}</span>
                   </div>
                 </div>
-                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
+                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyBillingLink={copyBillingLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
               </div>
               <div className="mt-3 space-y-1 text-sm text-slate-500">
                 {s.address && <div>{s.address}</div>}
@@ -354,7 +380,7 @@ export default function SchoolsPage() {
           <tbody className="divide-y">
             {filtered.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium">{s.name}</td>
+                <td className="px-4 py-3 font-medium"><div>{s.name}</div><BillingProfileSummary profile={s.billingProfile} /></td>
                 <td className="px-4 py-3"><span className="whitespace-nowrap bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs">{s.type ? normalizeDepartment(s.type) : "未分類"}</span></td>
                 <td className="px-4 py-3"><span className="whitespace-nowrap bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{normalizeRegion(s.region) || "—"}</span></td>
                 <td className="px-4 py-3 text-gray-500">{s.address || "—"}</td>
@@ -367,7 +393,7 @@ export default function SchoolsPage() {
                     : <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
+                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onCopyBillingLink={copyBillingLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
                 </td>
               </tr>
             ))}
@@ -384,17 +410,34 @@ export default function SchoolsPage() {
   );
 }
 
+function BillingProfileSummary({ profile }: { profile?: School["billingProfile"] }) {
+  if (!profile?.submittedAt) return <div className="mt-1 text-[11px] font-medium text-slate-400">帳務資料未填</div>;
+  return (
+    <details className="mt-1 text-left font-normal">
+      <summary className="cursor-pointer text-[11px] font-bold text-emerald-700">✓ 帳務資料已填</summary>
+      <div className="mt-2 min-w-56 space-y-1 rounded-lg border border-emerald-100 bg-emerald-50 p-2 text-[11px] leading-4 text-slate-600">
+        <div><b>正式名稱：</b>{profile.officialName}</div>
+        <div><b>發票抬頭：</b>{profile.invoiceTitle}</div>
+        <div><b>統一編號：</b>{profile.taxId}</div>
+        <div className="break-all"><b>收件信箱：</b>{profile.billingEmail}</div>
+      </div>
+    </details>
+  );
+}
+
 type SchoolActionsProps = {
   school: School;
   onEdit: (school: School) => void;
   onAuth: (school: { id: number; name: string }) => void;
   onCopyLink: (id: number) => void;
+  onCopyBillingLink: (id: number) => void;
+  onSendBillingPreview: (id: number) => void;
   onCopyConfirmationLink: (id: number) => void;
   onRotateLink: (id: number) => void;
   onDelete: (id: number) => void;
 };
 
-function SchoolActions({ school, onEdit, onAuth, onCopyLink, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
+function SchoolActions({ school, onEdit, onAuth, onCopyLink, onCopyBillingLink, onSendBillingPreview, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
   const run = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
     const menu = event.currentTarget.closest("details");
     if (menu) menu.open = false;
@@ -412,6 +455,8 @@ function SchoolActions({ school, onEdit, onAuth, onCopyLink, onCopyConfirmationL
         <a href={`/ratings?school=${encodeURIComponent(school.name)}`} className={itemClass}>查看歷史評分</a>
         <button onClick={(event) => run(event, () => onAuth({ id: school.id, name: school.name }))} className={itemClass}>管理園所驗證碼</button>
         <button onClick={(event) => run(event, () => onCopyLink(school.id))} className={itemClass}>複製園所端連結</button>
+        <button onClick={(event) => run(event, () => onCopyBillingLink(school.id))} className={`${itemClass} font-semibold text-emerald-700`}>複製新園所資料連結</button>
+        <button onClick={(event) => run(event, () => onSendBillingPreview(school.id))} className={`${itemClass} font-semibold text-indigo-700`}>傳帳務表單給園所</button>
         {!normalizeDepartment(school.type).includes("安親") && (
           <button onClick={(event) => run(event, () => onCopyConfirmationLink(school.id))} className={`${itemClass} font-semibold text-blue-700`}>複製開課確認連結</button>
         )}

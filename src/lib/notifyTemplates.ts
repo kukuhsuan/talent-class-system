@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
+import { resolveCourseTerm } from "@/lib/courseTerm";
 import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 
 // 客服批次通知：範本定義與逐一收件人訊息組裝
@@ -13,7 +14,8 @@ export type NotifyTemplateKey =
   | "coach_rules"
   | "typhoon"
   | "school_term"
-  | "school_links";
+  | "school_links"
+  | "demo_followup";
 
 export const TYPHOON_STATUS_OPTIONS = ["停課", "照常上課", "等待園所確認"] as const;
 
@@ -161,8 +163,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     label: "新學期開課通知",
     target: "school",
     editable: true,
-    needsAck: true,
-    description: "自動帶入課程摘要，卡片按鈕直接連到開課資料填寫（上課人數、場地）與園所專屬看板（安親班不附開課資料填寫），並附「確認收到」按鈕",
+    needsAck: false,
+    description: "自動帶入課程摘要，卡片按鈕直接連到開課資料填寫（上課人數、場地）與園所專屬看板（安親班不附開課資料填寫）",
     defaultBody: [
       "{園所} 您好：",
       "",
@@ -176,6 +178,21 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "{園所連結}",
       "",
       "有任何問題歡迎聯繫客服，謝謝！",
+    ].join("\n"),
+  },
+  {
+    key: "demo_followup",
+    label: "Demo 後報名狀況確認",
+    target: "school",
+    editable: true,
+    needsAck: false,
+    description: "體驗課程結束後，向園所確認後續報名狀況，方便安排老師與準備器材",
+    defaultBody: [
+      "{園所} 老師您好：",
+      "",
+      "上週的體驗課程已順利完成，想請問目前後續的報名狀況如何呢？",
+      "",
+      "為方便我們提前安排授課老師並準備課程所需器材，再麻煩您協助告知預計報名人數，謝謝！",
     ].join("\n"),
   },
 ];
@@ -215,7 +232,7 @@ function stripEmptySections(text: string) {
 
 // 課程色塊（Flex 卡片內每堂課一塊，同課程同色）
 export type FlexBlock = { title: string; lines: string[]; color: string; bg: string };
-export type FlexLinkButton = { label: string; url: string };
+export type FlexLinkButton = { label: string; url: string; primary?: boolean };
 
 export type BatchRecipientMessage = {
   id: number;
@@ -334,11 +351,13 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         where: { isActive: true, OR: [{ teacherId: { in: ids } }, { assistantTeacherId: { in: ids } }] },
         select: {
           teacherId: true, assistantTeacherId: true, school: true, courseType: true,
-          dayOfWeek: true, weekday: true, time: true, address: true, startDate: true,
+          dayOfWeek: true, weekday: true, time: true, address: true, startDate: true, notes: true,
         },
         orderBy: [{ school: "asc" }],
       });
       for (const c of courses) {
+        // 新學期通知只列 115-1；舊課即使仍為啟用狀態也不顯示。
+        if (resolveCourseTerm(c) !== "115-1") continue;
         const day = (c.dayOfWeek || c.weekday || "").replace("星期", "週") || "週次未填";
         const start = c.startDate ? `${c.startDate.getMonth() + 1}/${c.startDate.getDate()} 起，` : "";
         const label = courseLabel(c.courseType) || "課程";
@@ -365,7 +384,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const items = itemsByTeacher.get(id) ?? [];
       const summary = items.map((i) => i.text).join("\n\n");
       if (opts.templateKey === "new_term" && !summary) {
-        return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: "", skipped: "無進行中課程" };
+        return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: "", skipped: "沒有 115-1 開課課程" };
       }
       const vars: Record<string, string> = {
         姓名: t.name,
@@ -391,20 +410,20 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
   // 園所
   const schools = await prisma.school.findMany({
     where: { id: { in: ids } },
-    select: { id: true, name: true, lineUserId: true },
+    select: { id: true, name: true, type: true, lineUserId: true },
   });
   const byId = new Map(schools.map((s) => [s.id, s]));
   const regionMap = await schoolLineRegions(ids);
   const courses = await prisma.course.findMany({
     where: { isActive: true, schoolId: { in: ids } },
-    select: { schoolId: true, courseType: true, dayOfWeek: true, weekday: true, time: true, department: true, teacher: { select: { name: true } } },
+    select: { schoolId: true, courseType: true, dayOfWeek: true, weekday: true, time: true, startDate: true, notes: true, teacher: { select: { name: true } } },
     orderBy: [{ courseType: "asc" }],
   });
   const itemsBySchool = new Map<number, Array<{ text: string; block: FlexBlock }>>();
-  const afterSchoolSet = new Set<number>();
   for (const c of courses) {
     if (c.schoolId == null) continue;
-    if ((c.department ?? "").includes("安親")) afterSchoolSet.add(c.schoolId);
+    // 「新學期開課通知」只帶入 115-1 課程；其他通知仍可使用所有啟用課程。
+    if (opts.templateKey === "school_links" && resolveCourseTerm(c) !== "115-1") continue;
     const day = (c.dayOfWeek || c.weekday || "").replace("星期", "週") || "週次未填";
     const label = courseLabel(c.courseType) || "課程";
     const palette = blockColor(label);
@@ -424,8 +443,9 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     }
     const items = itemsBySchool.get(id) ?? [];
     const summary = items.map((i) => i.text).join("\n");
-    if (!summary) {
-      results.push({ id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school", message: "", skipped: "無進行中課程" });
+    if (!summary && opts.templateKey !== "demo_followup") {
+      const reason = opts.templateKey === "school_links" ? "沒有 115-1 開課課程" : "無進行中課程";
+      results.push({ id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school", message: "", skipped: reason });
       continue;
     }
     let portalLink = "";
@@ -433,8 +453,9 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     if (opts.templateKey === "school_links") {
       const code = await getOrCreatePortalCode(id);
       portalLink = `${appUrl()}/school-portal/${encodeURIComponent(code)}`;
-      // 安親班不附開課資料確認連結
-      confirmLink = afterSchoolSet.has(id) ? "" : `${portalLink}?confirmation=1`;
+      // 依「園所類型」判斷，避免幼兒園只因其中一堂課的 department 標成安親而誤刪確認按鈕。
+      const isAfterSchool = (s.type ?? "").includes("安親");
+      confirmLink = isAfterSchool ? "" : `${portalLink}?confirmation=1`;
     }
     let effectiveBody = body;
     if (opts.templateKey === "school_links" && !confirmLink) {
@@ -458,7 +479,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     const isLinks = opts.templateKey === "school_links";
     const flexParts = items.length > 0 ? buildFlexParts(effectiveBody, vars, { stripLinks: isLinks }) : null;
     const linkButtons: FlexLinkButton[] = [];
-    if (isLinks && confirmLink) linkButtons.push({ label: "📝 填寫開課資料（人數／場地）", url: confirmLink });
+    if (isLinks && confirmLink) linkButtons.push({ label: "📝 填寫開課資料（人數／場地）", url: confirmLink, primary: true });
     if (isLinks && portalLink) linkButtons.push({ label: "📱 園所專屬看板", url: portalLink });
     results.push({
       id, name: s.name, lineUserId: s.lineUserId, lineRegion: regionMap.get(id) ?? "school",

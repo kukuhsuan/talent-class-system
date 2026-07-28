@@ -55,5 +55,6 @@ talent-class-system-backup-*.json
 /.next 2/
 /.next 3/
 /outputs/
+/tmp/
 * 2.ts
 * 2/

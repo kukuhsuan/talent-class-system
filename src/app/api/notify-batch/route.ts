@@ -96,7 +96,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  const containsPublicLink = recipients.some((r) => r.message.includes("/school-portal/"));
+  const containsPublicLink = recipients.some((r) =>
+    r.message.includes("/school-portal/") || (r.linkButtons ?? []).some((button) => button.url.includes("/school-portal/")),
+  );
   const oaGroups: Record<string, number> = {};
   for (const r of recipients) {
     if (r.skipped || !r.lineUserId) continue;

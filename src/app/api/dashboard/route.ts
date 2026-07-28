@@ -8,6 +8,7 @@ import { attendanceMissingItems, isPendingReport } from "@/lib/reportWindow";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
+import { automationRunsForDates } from "@/lib/automationHealth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dept = searchParams.get("dept") ?? "";
   const todayIso = searchParams.get("today") ?? taipeiDateIso();
+  const tomorrowDate = new Date(`${todayIso}T00:00:00.000Z`);
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+  const tomorrowIso = tomorrowDate.toISOString().slice(0, 10);
   const todayDayName = dayNameOfIso(todayIso);
   const todayStart = utcStartOfIsoDay(todayIso);
   const tomorrowStart = utcStartOfNextIsoDay(todayIso);
@@ -51,9 +55,6 @@ export async function GET(req: NextRequest) {
       where: {
         cancelled: false,
         date: { gte: pendingStart, lt: tomorrowStart },
-        // 待回報只看人數：課程進度是教學紀錄，不列入行政待辦
-        category: { not: "課內" },
-        studentCount: null, studentCountA: null, studentCountB: null,
         ...(dept ? { course: { department: { in: departmentQueryValues(dept) } } } : {}),
       },
       select: {
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
             id: true,
             school: true,
             courseType: true,
+            category: true,
             time: true,
             startDate: true,
             endDate: true,
@@ -155,9 +157,21 @@ export async function GET(req: NextRequest) {
     cannotHelpCount: equipmentItems.filter((item) => item.status === "無法協助").length,
     items: equipmentItems,
   };
+  const automationRuns = await automationRunsForDates([todayIso, tomorrowIso]).catch(() => []);
+  const automationHealth = automationRuns.map((run) => ({
+    jobKey: run.jobKey,
+    targetDate: run.targetDate,
+    status: run.status,
+    total: Number(run.total),
+    success: Number(run.success),
+    failed: Number(run.failed),
+    details: run.details,
+    ranAt: run.ranAt instanceof Date ? run.ranAt.toISOString() : String(run.ranAt),
+  }));
 
   return NextResponse.json({
     equipment,
+    automationHealth,
     todayCourseCount: todayCourseIds.size,
     todaySubstituteCount,
     pendingFillableCount,

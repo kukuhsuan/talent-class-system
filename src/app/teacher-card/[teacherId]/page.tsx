@@ -3,26 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
-// 動態載入 html-to-image（支援 Tailwind v4 的 lab/oklch 色彩；僅在下載時載入）
-type HtmlToImage = { toPng: (el: HTMLElement, opts?: Record<string, unknown>) => Promise<string> };
-let htmlToImagePromise: Promise<HtmlToImage> | null = null;
-function loadHtmlToImage() {
-  if (!htmlToImagePromise) {
-    htmlToImagePromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.js";
-      script.onload = () => {
-        const lib = (window as unknown as { htmlToImage?: HtmlToImage }).htmlToImage;
-        if (lib) resolve(lib);
-        else reject(new Error("圖檔工具載入失敗"));
-      };
-      script.onerror = () => reject(new Error("圖檔工具載入失敗，請檢查網路後再試"));
-      document.head.appendChild(script);
-    });
-  }
-  return htmlToImagePromise;
-}
-
 type TeachingProfile = {
   primaryRegionLabel: string;
   primarySpecialtyLabel: string;
@@ -56,6 +36,15 @@ function firstLine(value: string) {
 
 function initials(name: string) {
   return name.trim().slice(0, 1) || "師";
+}
+
+function dataUrlToBlob(dataUrl: string) {
+  const [header, encoded = ""] = dataUrl.split(",", 2);
+  const mimeType = header.match(/^data:([^;]+)/)?.[1] || "image/png";
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mimeType });
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -115,23 +104,34 @@ export default function TeacherCardPage() {
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [downloadUrl, setDownloadUrl] = useState("");
   const cardRef = useRef<HTMLDivElement>(null);
 
   async function downloadImage() {
     if (downloading || !cardRef.current || !resume) return;
     setDownloading(true);
     setDownloadError("");
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl("");
+    }
     try {
-      const htmlToImage = await loadHtmlToImage();
+      // 工具隨本站程式一起部署，不再依賴可能被阻擋或載入失敗的外部 CDN。
+      const htmlToImage = await import("html-to-image");
       const dataUrl = await htmlToImage.toPng(cardRef.current, {
         pixelRatio: 2,
         backgroundColor: "#f3f7ff",
         cacheBust: true,
       });
+      const imageBlob = dataUrlToBlob(dataUrl);
+      const objectUrl = URL.createObjectURL(imageBlob);
+      setDownloadUrl(objectUrl);
       const link = document.createElement("a");
       link.download = `${resume.teacherName}老師簡歷.png`;
-      link.href = dataUrl;
+      link.href = objectUrl;
+      document.body.appendChild(link);
       link.click();
+      link.remove();
     } catch (err) {
       setDownloadError((err as Error).message || "圖檔產生失敗，請再試一次");
     } finally {
@@ -150,6 +150,10 @@ export default function TeacherCardPage() {
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoading(false));
   }, [params.teacherId]);
+
+  useEffect(() => () => {
+    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  }, [downloadUrl]);
 
   const derived = useMemo(() => {
     if (!resume) return null;
@@ -183,6 +187,15 @@ export default function TeacherCardPage() {
       <div className="mx-auto max-w-4xl">
         <div className="mb-4 flex items-center justify-end gap-3">
           {downloadError && <span className="text-sm text-red-600">{downloadError}</span>}
+          {downloadUrl && (
+            <a
+              href={downloadUrl}
+              download={`${resume.teacherName}老師簡歷.png`}
+              className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              圖檔已產生，點此下載
+            </a>
+          )}
           <button
             onClick={downloadImage}
             disabled={downloading}

@@ -154,7 +154,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       school: attendance.course.school,
       courseType: attendance.course.courseType,
       department: attendance.course.department,
-      category: attendance.category,
+      category: attendance.course.category || attendance.category,
       reportMode: isKindergarten(attendance.course.department) ? "kindergarten" : "simple",
       courseName: normalizedCourseType,
       className: attendance.course.enrollCount,
@@ -316,17 +316,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const data = (await req.json()) as ReportPayload;
     const progress = String(data.progress ?? "").trim();
-    const needsStudentCount = requiresStudentCount(attendance.category);
+    const needsStudentCount = requiresStudentCount(attendance.course.category || attendance.category);
     if (needsStudentCount && data.studentCount == null) {
       return NextResponse.json({ error: "請填寫今日出席人數" }, { status: 400 });
     }
     const kindergarten = isKindergarten(attendance.course.department);
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
     const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());
-    // 照片必填：已上傳的照片或本次附上的公開連結，至少要有一張
-    if (parseStoredPhotos(attendance.reportPhotos).length === 0 && !representativePhotoUrl) {
-      return NextResponse.json({ error: "請至少上傳 1 張課堂活動照片" }, { status: 400 });
-    }
     const incident = Boolean(data.incident);
     const signatureRequired = requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name);
     const schoolVerifierName = String(data.schoolVerifierName ?? "").trim();
@@ -348,9 +344,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const skillFocus = kindergarten
       ? normalizeAbilities(safeJsonArray(data.skillFocus), 4)
       : [];
-    if (kindergarten && skillFocus.length < 3) {
-      return NextResponse.json({ error: "請選擇 3～4 個本堂學習目標" }, { status: 400 });
-    }
     const focusText = kindergarten ? String(lessonTemplate?.focus ?? "").trim() : "";
     const outcomeText = String(data.outcomeText ?? lessonTemplate?.activityDirection ?? "").trim();
 

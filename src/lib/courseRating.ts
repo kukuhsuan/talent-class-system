@@ -2,6 +2,9 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { raiseSystemAlert } from "@/lib/systemAlerts";
+import { getLineConfig, pushMessage } from "@/lib/line";
+import type { LineRegion } from "@/lib/line";
+import { operationsRecipientRows } from "@/lib/operationsNotifications";
 
 // 安親班課程評分：每堂課產生專屬評分連結，安親班免登入填寫，一堂課一次評分。
 
@@ -128,15 +131,87 @@ export async function getRatingByToken(token: string): Promise<CourseRatingRow |
   return rows.length ? normalizeRatingRow(rows[0]) : null;
 }
 
-// 整體滿意度 < 3 分 → 開立異常單進待處理中心
+// 整體滿意度 < 3 分 → 開立異常單進待處理中心。
+// 安親班評分不走全體營運 P1 推播；評分通知只傳給 Amber，避免其他營運人員收到。
 export async function raiseLowScoreAlert(attendanceId: number, overall: number, lesson: RatingLessonInfo) {
   await raiseSystemAlert({
-    level: "P1",
+    level: "P2",
     category: "安親班評分",
     title: `低分評分：${lesson.school} ${lesson.teacherName} 整體滿意度 ${overall} 分`,
     detail: `${lesson.date}｜${lesson.courseName}（${lesson.courseCode}）老師：${lesson.teacherName}，請儘速了解狀況。`,
     dedupeKey: `course-rating-low:${attendanceId}`,
   });
+}
+
+export async function notifyOperationsOfAfterSchoolRating(input: {
+  lesson: RatingLessonInfo;
+  scorePunctuality: number;
+  scoreTeaching: number;
+  scoreOrder: number;
+  scoreInteraction: number;
+  scoreOverall: number;
+  continueWish: string;
+  feedback: string;
+}) {
+  if (input.lesson.kindergarten) return { sent: 0, errors: [] as string[] };
+  const message = {
+    type: "flex",
+    altText: `⭐ 安親班滿意度｜${input.lesson.school}｜${input.scoreOverall} 分`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#6750A4", paddingAll: "18px",
+        contents: [
+          { type: "text", text: "⭐ 安親班滿意度已送出", color: "#FFFFFF", weight: "bold", size: "lg" },
+          { type: "text", text: `${input.lesson.date}｜${input.lesson.school}`, color: "#EEE8FF", size: "xs", margin: "sm" },
+        ],
+      },
+      body: {
+        type: "box", layout: "vertical", paddingAll: "18px", spacing: "md",
+        contents: [
+          { type: "text", text: `${input.lesson.courseName}｜${input.lesson.teacherName} 老師`, weight: "bold", color: "#293246", size: "md", wrap: true },
+          { type: "text", text: `整體滿意度　${"★".repeat(input.scoreOverall)}${"☆".repeat(5 - input.scoreOverall)}　${input.scoreOverall} 分`, color: "#6750A4", weight: "bold", size: "sm", wrap: true },
+          { type: "separator", color: "#E6E0F2" },
+          {
+            type: "text",
+            text: [
+              `準時與準備　${input.scorePunctuality} 分`,
+              `教學與專業　${input.scoreTeaching} 分`,
+              `課堂與秩序　${input.scoreOrder} 分`,
+              `孩子互動　　${input.scoreInteraction} 分`,
+              `續排意願　　${input.continueWish}`,
+            ].join("\n"),
+            color: "#566178", size: "sm", wrap: true, lineSpacing: "5px",
+          },
+          ...(input.feedback ? [{
+            type: "box", layout: "vertical", backgroundColor: "#F6F3FC", cornerRadius: "10px", paddingAll: "12px",
+            contents: [
+              { type: "text", text: "園所回饋", color: "#6750A4", weight: "bold", size: "xs" },
+              { type: "text", text: input.feedback, color: "#4E5668", size: "sm", wrap: true, margin: "xs" },
+            ],
+          }] : []),
+        ],
+      },
+    },
+  };
+  const recipients = (await operationsRecipientRows()).filter((item) => item.name === "Amber");
+  let sent = 0;
+  const errors: string[] = [];
+  for (const item of recipients) {
+    const teacher = item.teacher;
+    if (!teacher?.lineUserId) {
+      errors.push(`${item.name}：尚未綁定 LINE`);
+      continue;
+    }
+    try {
+      const region = (teacher.lineRegion || "north") as LineRegion;
+      await pushMessage(teacher.lineUserId, [message], getLineConfig(region).token);
+      sent += 1;
+    } catch (error) {
+      errors.push(`${item.name}：${error instanceof Error ? error.message : "發送失敗"}`);
+    }
+  }
+  return { sent, errors };
 }
 
 // 由課堂反查園所 id（驗證評分權限用）

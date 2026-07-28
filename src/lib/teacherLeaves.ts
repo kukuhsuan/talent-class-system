@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { courseLabel } from "@/lib/courseMeta";
 import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
+import { cancelSubstitute } from "@/lib/substituteAssignment";
 
 export const LEAVE_STATUS = {
   pending: "待審核",
@@ -68,6 +69,7 @@ export type TeacherLeaveListItem = {
   createdAt: string;
   isPayrollLocked: boolean;
   isReported: boolean;
+  confirmedSubstituteTeacherId: number | null;
   inquiries: Array<{
     id: number;
     candidateTeacherId: number;
@@ -117,6 +119,7 @@ type RawLeaveRow = {
   studentCountA: number | null;
   studentCountB: number | null;
   reportContent: string | null;
+  confirmedSubstituteTeacherId: number | null;
 };
 
 type RawInquiryRow = {
@@ -458,11 +461,13 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
       c."school", c."courseType", c."address",
       lr."reason", lr."notes", lr."status", lr."semesterLeaveCountAtSubmit",
       lr."reviewedBy", lr."reviewedAt", lr."rejectedReason", lr."createdAt",
-      a."isPayrollLocked", a."studentCount", a."studentCountA", a."studentCountB", a."reportContent"
+      a."isPayrollLocked", a."studentCount", a."studentCountA", a."studentCountB", a."reportContent",
+      s."substituteTeacherId" AS "confirmedSubstituteTeacherId"
      FROM "TeacherLeaveRequest" lr
      LEFT JOIN "Teacher" t ON t."id" = lr."teacherId"
      LEFT JOIN "Attendance" a ON a."id" = lr."attendanceId"
      LEFT JOIN "Course" c ON c."id" = lr."courseId"
+     LEFT JOIN "Substitute" s ON s."attendanceId" = lr."attendanceId" AND s."role" = lr."role" AND s."confirmed" = 1
      ${whereSql}
      ORDER BY lr."leaveDate" ASC, lr."createdAt" DESC, lr."id" DESC`,
     ...params,
@@ -514,6 +519,9 @@ export async function listTeacherLeavesFiltered(options: TeacherLeaveListOptions
       createdAt: toIsoStringOrNull(row.createdAt) ?? "",
       isPayrollLocked: Boolean(row.isPayrollLocked),
       isReported: Boolean(row.reportContent?.trim() || row.studentCount != null || row.studentCountA != null || row.studentCountB != null),
+      confirmedSubstituteTeacherId: row.confirmedSubstituteTeacherId == null
+        ? null
+        : Number(row.confirmedSubstituteTeacherId),
       inquiries: (inquiriesByLeave.get(row.id) ?? []).map((inquiry) => ({
         id: Number(inquiry.id),
         candidateTeacherId: Number(inquiry.candidateTeacherId),
@@ -581,6 +589,45 @@ export async function updateInquiryResponse(inquiryId: number, status: string) {
     status,
     inquiryId,
   );
+}
+
+export async function reopenLeaveAfterConfirmedSubstituteCancellation(inquiryId: number) {
+  await ensureTeacherLeaveTables();
+  const inquiry = await getInquiryWithLeave(inquiryId);
+  if (!inquiry) throw new Error("找不到這筆代課詢問");
+  const leaveStatus = (inquiry as typeof inquiry & { leaveStatus?: string }).leaveStatus;
+  if (leaveStatus !== LEAVE_STATUS.found) {
+    await updateInquiryResponse(inquiryId, INQUIRY_STATUS.cancelled);
+    return { reopened: false, inquiry };
+  }
+
+  const role = inquiry.role === "助教" ? "助教" : "主教";
+  const substitute = await prisma.substitute.findUnique({
+    where: { attendanceId_role: { attendanceId: Number(inquiry.attendanceId), role } },
+  });
+  if (!substitute || Number(substitute.substituteTeacherId) !== Number(inquiry.candidateTeacherId)) {
+    throw new Error("正式代課紀錄與取消老師不一致，請由行政人工確認");
+  }
+
+  // 先撤銷正式代課並恢復原老師；成功後才重開請假，避免課堂指派與畫面狀態不一致。
+  await cancelSubstitute(substitute.id);
+  await prisma.$transaction([
+    prisma.$executeRawUnsafe(
+      `UPDATE "TeacherLeaveRequest"
+       SET "status" = ?, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = ?`,
+      LEAVE_STATUS.searching,
+      Number(inquiry.leaveRequestId),
+    ),
+    prisma.$executeRawUnsafe(
+      `UPDATE "SubstituteInquiry"
+       SET "status" = ?, "respondedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = ?`,
+      INQUIRY_STATUS.cancelled,
+      inquiryId,
+    ),
+  ]);
+  return { reopened: true, inquiry };
 }
 
 export async function getInquiryWithLeave(inquiryId: number) {

@@ -12,6 +12,7 @@ import {
   upsertSchoolStartConfirmation,
 } from "@/lib/courseConfirmation";
 import { writeAuditLog } from "@/lib/auditLog";
+import { ensureSchoolBillingProfileTable } from "@/lib/schoolBillingProfile";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -53,17 +54,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(schools);
   }
 
-  await ensureCourseConfirmationColumn();
+  await Promise.all([ensureCourseConfirmationColumn(), ensureSchoolBillingProfileTable()]);
   const [schools, total] = await Promise.all([
     prisma.school.findMany({ ...query, ...(pageSize ? { skip: (page - 1) * pageSize, take: pageSize } : {}) }),
     pageSize ? prisma.school.count({ where }) : Promise.resolve(0),
   ]);
   const ids = schools.map((school) => school.id);
+  const billingRows = ids.length ? await prisma.$queryRawUnsafe<Array<{
+    schoolId: number; officialName: string; invoiceTitle: string; taxId: string; billingEmail: string; submittedAt: string | null;
+  }>>('SELECT "schoolId", "officialName", "invoiceTitle", "taxId", "billingEmail", "submittedAt" FROM "SchoolBillingProfile"') : [];
+  const billingMap = new Map(billingRows.map((row) => [Number(row.schoolId), row]));
   const confirmationMap = await courseConfirmationMapBySchoolIds(ids, term);
   const items = schools.map((school) => {
     const courseConfirmation = confirmationMap.get(school.id) ?? parseCourseConfirmation({});
     return {
       ...school,
+      billingProfile: billingMap.get(school.id) ?? null,
       courseConfirmation,
       courseConfirmationSummary: courseConfirmationSummary(courseConfirmation, { includeTerm: true, multiline: true }),
       confirmationTerm: { ...term, label: termLabel(term) },

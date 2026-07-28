@@ -36,6 +36,7 @@ type LeaveItem = {
   createdAt: string;
   isPayrollLocked: boolean;
   isReported: boolean;
+  confirmedSubstituteTeacherId: number | null;
   inquiries: Inquiry[];
 };
 
@@ -287,6 +288,32 @@ export default function TeacherLeavesPage() {
         return;
       }
       alert(message);
+    }
+  }
+
+  async function reopenConfirmedSubstitute(leave: LeaveItem, inquiry: Inquiry) {
+    if (!confirm(`確定取消 ${inquiry.candidateTeacherName} 的代課，並重新開放尋找代課嗎？`)) return;
+    try {
+      await action(
+        `/api/teacher-leaves/${leave.id}/reopen-substitute`,
+        "已取消原代課、恢復原老師，並重新開放尋找代課",
+        { inquiryId: inquiry.id },
+      );
+    } catch (error) {
+      alert((error as Error).message);
+    }
+  }
+
+  async function markInquiryCancelled(leave: LeaveItem, inquiry: Inquiry) {
+    if (!confirm(`確定將 ${inquiry.candidateTeacherName} 標記為「已取消代課」嗎？`)) return;
+    try {
+      await action(
+        `/api/teacher-leaves/${leave.id}/mark-inquiry-cancelled`,
+        `已將 ${inquiry.candidateTeacherName} 標記為取消代課`,
+        { inquiryId: inquiry.id },
+      );
+    } catch (error) {
+      alert((error as Error).message);
     }
   }
 
@@ -570,6 +597,28 @@ export default function TeacherLeavesPage() {
                           {inquiry.status === "available" && item.status !== "已找到代課" && (
                             <button onClick={() => confirmSubstitute(item, inquiry)} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
                               確認此老師代課
+                            </button>
+                          )}
+                          {item.status === "已找到代課" &&
+                            item.confirmedSubstituteTeacherId === inquiry.candidateTeacherId && (
+                            <button
+                              disabled={Boolean(busy) || item.isPayrollLocked}
+                              onClick={() => reopenConfirmedSubstitute(item, inquiry)}
+                              className="rounded-md bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                            >
+                              取消此代課並重找
+                            </button>
+                          )}
+                          {item.status === "已找到代課" &&
+                            item.confirmedSubstituteTeacherId !== inquiry.candidateTeacherId &&
+                            inquiry.status === "noLongerNeeded" && (
+                            <button
+                              aria-label={`標記 ${inquiry.candidateTeacherName} 已取消代課`}
+                              disabled={Boolean(busy)}
+                              onClick={() => markInquiryCancelled(item, inquiry)}
+                              className="rounded-md bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-700 disabled:opacity-50"
+                            >
+                              標記已取消
                             </button>
                           )}
                           </div>

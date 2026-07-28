@@ -24,6 +24,7 @@ const GROUPS = [
       { href: "/substitutes", label: "代課紀錄" },
       { href: "/equipment", label: "器材管理" },
       { href: "/pre-class-meeting", label: "課前會議" },
+      { href: "/course-briefings", label: "課前交辦" },
     ],
   },
   {
@@ -50,8 +51,8 @@ const GROUPS = [
     title: "系統管理",
     items: [
       { href: "/alerts", label: "異常管理", ownerOnly: true },
-      { href: "/users", label: "帳號管理" },
-      { href: "/admin/audit-logs", label: "操作歷程" },
+      { href: "/users", label: "帳號管理", ownerOnly: true },
+      { href: "/admin/audit-logs", label: "操作歷程", ownerOnly: true },
     ],
   },
 ];
@@ -108,9 +109,11 @@ export default function NavBar() {
     pathname.startsWith("/report")
     || pathname.startsWith("/assessment/")
     || pathname.startsWith("/school-portal")
+    || pathname.startsWith("/school-billing")
     || pathname.startsWith("/recruitment/")
     || pathname.startsWith("/teacher-resume/")
     || pathname.startsWith("/teacher-card/")
+    || pathname.startsWith("/course-briefing-ack/")
     || pathname.startsWith("/rating/")
   ) return null;
 

@@ -51,7 +51,7 @@ type PortalData = {
     primaryCourseTypes: string[];
   }>;
   monthlyRows: Array<{ id: number; date: string; courseName: string; teacherName: string; time: string; studentCount: number; reportContent: string }>;
-  curriculum: Array<{ courseType: string; courseName: string; items: Array<{ lesson: number; title: string }> }>;
+  curriculum: Array<{ courseType: string; courseName: string; completedLessons: number; items: Array<{ lesson: number; title: string }> }>;
   assessments: Array<{ id: number; childName: string; courseName: string; teacherName: string; date: string; title: string; comment: string; certificateUrl: string }>;
   skillCards: Array<{ name: string; icon: string; imageUrl: string; description: string }>;
   courseChangeOptions: PortalChangeOption[];
@@ -1137,8 +1137,9 @@ type LearningMap = {
 function buildLearningMaps(reports: PortalData["reports"], curriculum: PortalData["curriculum"]): LearningMap[] {
   return curriculum.filter((course) => course.items.length > 0).map((course) => {
     const courseReports = reports.filter((row) => row.courseName === course.courseName || row.courseType === course.courseType);
-    const currentLesson = courseReports.reduce((max, row) => Math.max(max, extractLesson(row.reportContent)), 0);
-    const fallbackLesson = currentLesson || Math.min(...course.items.map((item) => item.lesson));
+    const reportedLesson = courseReports.reduce((max, row) => Math.max(max, extractLesson(row.reportContent)), 0);
+    const completedLessons = Math.min(course.items.length, Math.max(course.completedLessons || 0, reportedLesson));
+    const fallbackLesson = Math.max(1, completedLessons);
     const currentItem = course.items.find((item) => item.lesson === fallbackLesson) ?? course.items[0];
     const nextItem = course.items.find((item) => item.lesson > fallbackLesson);
     const reportsByLesson = new Map<number, PortalData["reports"][number]>();
@@ -1146,7 +1147,7 @@ function buildLearningMaps(reports: PortalData["reports"], curriculum: PortalDat
       const lesson = extractLesson(row.reportContent);
       if (lesson && !reportsByLesson.has(lesson)) reportsByLesson.set(lesson, row);
     });
-    const completion = Math.min(100, Math.round((fallbackLesson / Math.max(course.items.length, 1)) * 100));
+    const completion = Math.min(100, Math.round((completedLessons / Math.max(course.items.length, 1)) * 100));
     return {
       courseName: course.courseName,
       currentLesson: fallbackLesson,

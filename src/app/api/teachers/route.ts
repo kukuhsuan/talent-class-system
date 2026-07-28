@@ -4,6 +4,8 @@ import { writeAuditLog } from "@/lib/auditLog";
 import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, NOTIFY_ROLES, SALARY_ROLES, hasRole, requireRole, sameOriginOk } from "@/lib/permissions";
 
+const TEACHER_CREATE_ROLES = [...ADMIN_ROLES, "staff"] as const;
+
 // 遮罩 LINE User ID：只顯示前 6 碼供辨識（route 檔不可 export 非 HTTP handler）
 function maskLineUserId(id: string | null | undefined) {
   const value = String(id ?? "");
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { response } = await requireRole(ADMIN_ROLES);
+  const { response } = await requireRole(TEACHER_CREATE_ROLES);
   if (response) return response;
   if (!sameOriginOk(req)) return NextResponse.json({ error: "來源不合法" }, { status: 403 });
   const data = await req.json();

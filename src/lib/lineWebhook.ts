@@ -4,7 +4,7 @@ import { notifySchoolReport } from "@/lib/schoolNotification";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage,
-  buildReportRequestMessage, buildCurriculumSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
+  buildReportRequestMessage, buildCurriculumSelectMessage, buildProgressSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
   buildLeaveCourseSelectMessage, buildLeaveCancelSelectMessage,
   buildEquipmentFlowAcceptedMessage,
   isSchoolLineRegion,
@@ -24,11 +24,13 @@ import {
   getInquiryWithLeave,
   INQUIRY_STATUS,
   LEAVE_STATUS,
+  reopenLeaveAfterConfirmedSubstituteCancellation,
   semesterLeaveCount,
   updateInquiryResponse,
   upcomingLeaveCourseChoices,
 } from "@/lib/teacherLeaves";
 import { confirmAckByLineUser } from "@/lib/notifyBatch";
+import { confirmCourseBriefingByLineUser } from "@/lib/courseBriefing";
 import { setEquipmentStatus } from "@/lib/equipmentReminder";
 import { equipmentNextStopLabel, type EquipmentStatus } from "@/lib/equipmentReminderCore";
 import { getEquipmentFlow, updateEquipmentFlowStatus } from "@/lib/equipmentFlow";
@@ -117,7 +119,7 @@ async function ensureTeacherCanSubmitReport(lineUserId: string, attendanceId: nu
   if (requiresSchoolSignature(attendance.course.department, attendance.actualTeacher?.name)) {
     await replyMessage(replyToken, [
       { type: "text", text: "安親班課程需要園所老師現場簽名，請使用下方課後回報表單完成。" },
-      buildReportRequestMessage({ school: attendance.course.school, courseType: attendance.course.courseType, attendanceId }),
+      buildReportRequestMessage({ school: attendance.course.school, courseType: attendance.course.courseType, attendanceId, category: attendance.course.category || attendance.category }),
     ], token);
     return false;
   }
@@ -324,7 +326,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
           course: { isActive: true },
         },
         include: { course: true },
-      }) as unknown as Promise<Array<{ id: number; scheduledSchoolName?: string | null; course: { id: number; school: string; courseType: string; category: string; department: string; time: string } }>>,
+      }) as unknown as Promise<Array<{ id: number; category: string; scheduledSchoolName?: string | null; course: { id: number; school: string; courseType: string; category: string; department: string; time: string } }>>,
       prisma.course.findMany({
         where: {
           teacherId: teacher.id,
@@ -341,17 +343,17 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       return;
     }
 
-    const atts: Array<{ id: number; school: string; courseType: string; department: string; dateLabel?: string }> = [];
+    const atts: Array<{ id: number; school: string; courseType: string; category: string; department: string; dateLabel?: string }> = [];
 
     // 過去待回報優先放入
     for (const att of pendingPast) {
       const iso = att.date instanceof Date ? att.date.toISOString().slice(0, 10) : String(att.date).slice(0, 10);
-      atts.push({ id: att.id, school: att.scheduledSchoolName?.trim() || att.course.school, courseType: att.course.courseType, department: att.course.department, dateLabel: formatMonthDay(iso) });
+      atts.push({ id: att.id, school: att.scheduledSchoolName?.trim() || att.course.school, courseType: att.course.courseType, category: att.course.category || att.category, department: att.course.department, dateLabel: formatMonthDay(iso) });
     }
 
     // 今日課程
     for (const att of scheduledAttendances) {
-      atts.push({ id: att.id, school: att.scheduledSchoolName?.trim() || att.course.school, courseType: att.course.courseType, department: att.course.department });
+      atts.push({ id: att.id, school: att.scheduledSchoolName?.trim() || att.course.school, courseType: att.course.courseType, category: att.course.category || att.category, department: att.course.department });
     }
     for (const course of weekdayCourses) {
       let att = await prisma.attendance.findFirst({
@@ -371,7 +373,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
         }) as { id: number };
         await stampAttendanceTime(course.id, [todayIso], course.time ?? "");
       }
-      atts.push({ id: att.id, school: course.school, courseType: course.courseType, department: course.department });
+      atts.push({ id: att.id, school: course.school, courseType: course.courseType, category: course.category, department: course.department });
     }
 
     // 組合回覆文字
@@ -388,7 +390,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
 
     const replyMsgs: object[] = [{ type: "text", text: introText }];
     for (const a of atts.slice(0, 3)) {
-      replyMsgs.push(buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id }));
+      replyMsgs.push(buildReportRequestMessage({ school: a.school, courseType: a.courseType, attendanceId: a.id, category: a.category }));
     }
     await replyMessage(replyToken, replyMsgs, token);
     return;
@@ -630,6 +632,19 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     return;
   }
 
+  // 課前交辦「確認收到」：在 LINE 內直接記錄，不開啟任何網頁。
+  if (action === "course_briefing_ack") {
+    const result = await confirmCourseBriefingByLineUser(params.get("t") ?? "", userId);
+    if (!result.ok) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到這則課前交辦，或此通知不是發給您的，請聯絡行政確認。" }], token);
+    } else if (result.already) {
+      await replyMessage(replyToken, [{ type: "text", text: `您已確認收到 ${result.row.targetDate}「${result.row.school}｜${result.row.courseType}」課前交辦，謝謝配合！` }], token);
+    } else {
+      await replyMessage(replyToken, [{ type: "text", text: `✅ ${result.row.teacherName} 老師，已記錄您確認收到 ${result.row.targetDate}「${result.row.school}｜${result.row.courseType}」課前交辦。` }], token);
+    }
+    return;
+  }
+
   // 課前會議出席回覆（會參加／無法參加），同步回後台
   if (action === "meeting_reply") {
     const attendeeId = Number(params.get("attId"));
@@ -716,11 +731,30 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     if (action === "sub_cancel") {
       const afterConfirmed = leaveStatus === LEAVE_STATUS.found;
       const detail = `${String(inquiry.leaveDate).slice(0, 10)} ${inquiry.startTime}-${inquiry.endTime}｜${inquiry.school}｜${inquiry.courseType}（原請假老師：${inquiry.teacherName}）`;
+      if (afterConfirmed) {
+        try {
+          await reopenLeaveAfterConfirmedSubstituteCancellation(inquiryId);
+        } catch (error) {
+          const reason = (error as Error).message || "取消正式代課失敗";
+          await raiseSystemAlert({
+            level: "P1",
+            category: "代課取消",
+            title: `${inquiry.candidateTeacherName} 老師取消代課，但系統未能自動恢復原老師`,
+            detail: `${detail}\n原因：${reason}`,
+            dedupeKey: `sub-cancel-sync-failed:${inquiryId}`,
+          }).catch((alertError) => console.error("raiseSystemAlert failed:", alertError));
+          await replyMessage(replyToken, [{
+            type: "text",
+            text: "已收到您的取消通知，但課程指派需要行政人工確認；行政已收到緊急提醒，將盡快與您聯絡。",
+          }], token);
+          return;
+        }
+      }
       await raiseSystemAlert({
         level: afterConfirmed ? "P1" : "P2",
         category: "代課取消",
         title: afterConfirmed
-          ? `${inquiry.candidateTeacherName} 老師取消代課（該課已確認代課，可能開天窗，請立即處理）`
+          ? `${inquiry.candidateTeacherName} 老師取消已確認代課，已恢復原老師並重新開放安排`
           : `${inquiry.candidateTeacherName} 老師取消先前的代課回覆`,
         detail,
         dedupeKey: `sub-cancel:${inquiryId}:${Date.now()}`,
@@ -728,6 +762,13 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       if (!afterConfirmed) {
         // 未確認前的取消不推 P1，但仍即時通知行政知悉
         await pushAdminAlert(`ℹ️【代課取消】${inquiry.candidateTeacherName} 老師取消先前的代課回覆\n${detail}`).catch(() => undefined);
+      }
+      if (afterConfirmed) {
+        await replyMessage(replyToken, [{
+          type: "text",
+          text: "✅ 已取消這堂代課。系統已恢復原授課老師並重新開放行政安排，營運人員也已同步收到提醒。",
+        }], token);
+        return;
       }
     }
     if (leaveStatus === LEAVE_STATUS.found
@@ -899,9 +940,9 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     });
     const attInfo = await prisma.attendance.findUnique({
       where: { id: attendanceId }, include: { course: true },
-    }) as unknown as { category: string; course: { department: string } } | null;
+    }) as unknown as { category: string; course: { category: string; department: string } } | null;
     const dept = attInfo?.course?.department ?? "幼兒園";
-    await completeOrAskCount(attendanceId, attInfo?.category, dept, replyToken, token, `✅ 已記錄：【${content}】`);
+    await completeOrAskCount(attendanceId, attInfo?.course?.category || attInfo?.category, dept, replyToken, token, `✅ 已記錄：【${content}】`);
     return;
   }
 
@@ -919,15 +960,27 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     const cancelled = status === "cancelled";
     await prisma.attendance.update({
       where: { id: attendanceId },
-      data: { cancelled, reportContent: cancelled ? "停課" : "正常上課", reportSentAt: new Date() },
+      data: {
+        cancelled,
+        reportContent: cancelled ? "停課" : "",
+        reportSentAt: cancelled ? new Date() : null,
+      },
     });
 
     if (!cancelled) {
       const attInfo = await prisma.attendance.findUnique({
         where: { id: attendanceId }, include: { course: true },
-      }) as unknown as { category: string; course: { department: string } } | null;
+      }) as unknown as { category: string; course: { category: string; department: string } } | null;
       const dept = attInfo?.course?.department ?? "幼兒園";
-      await completeOrAskCount(attendanceId, attInfo?.category, dept, replyToken, token, "✅ 已記錄正常上課！");
+      const category = attInfo?.course?.category || attInfo?.category;
+      if (!requiresStudentCount(category)) {
+        await replyMessage(replyToken, [
+          { type: "text", text: "✅ 已確認正常上課！\n課內課仍需回報本堂課程進度，完成進度後才算回報完成。" },
+          buildProgressSelectMessage(attendanceId),
+        ], token);
+      } else {
+        await completeOrAskCount(attendanceId, category, dept, replyToken, token, "✅ 已確認正常上課！");
+      }
     } else {
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
     }

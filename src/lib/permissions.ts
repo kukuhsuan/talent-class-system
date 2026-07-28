@@ -3,9 +3,10 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const OWNER_ROLES = ["owner", "super_admin", "developer"] as const;
-export const ADMIN_ROLES = ["owner", "super_admin", "developer", "admin"] as const;
+// 一般員工可執行所有日常營運操作；系統管理三項由 OWNER_ROLES 另行限制。
+export const ADMIN_ROLES = ["owner", "super_admin", "developer", "admin", "staff"] as const;
 export const BACKOFFICE_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"] as const;
-export const SALARY_ROLES = ["owner", "super_admin", "developer", "admin", "accountant"] as const;
+export const SALARY_ROLES = ["owner", "super_admin", "developer", "admin", "accountant", "staff"] as const;
 // 可發送 LINE 通知的角色：accountant/viewer 預設不可大量發送
 export const NOTIFY_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff"] as const;
 
@@ -72,4 +73,3 @@ export function requestIp(req: NextRequest) {
     || req.headers.get("x-real-ip")
     || "";
 }
-

@@ -183,6 +183,7 @@ export async function POST(req: NextRequest) {
       school: att.course.school,
       courseType: att.course.courseType,
       attendanceId: att.id,
+      category: att.course.category || att.category,
     });
     try {
       await pushMessage(teacher.lineUserId, [msg], cfg.token);

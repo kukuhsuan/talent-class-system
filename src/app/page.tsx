@@ -35,6 +35,20 @@ type EquipmentItem = {
   nextStop: string;
   status: string;
 };
+type BriefingItem = {
+  id: number; targetDate: string; school: string; courseType: string; courseTime: string;
+  teacherName: string; content: string; ackAt: string | null; status: string;
+};
+type AutomationHealth = {
+  jobKey: string;
+  targetDate: string;
+  status: "success" | "partial" | "failed";
+  total: number;
+  success: number;
+  failed: number;
+  details: string;
+  ranAt: string;
+};
 
 const EMPTY_STATS: DashboardStats = {
   todayCourseCount: 0,
@@ -52,9 +66,12 @@ export default function Home() {
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [pendingDetails, setPendingDetails] = useState<PendingDetail[]>([]);
   const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
+  const [briefingItems, setBriefingItems] = useState<BriefingItem[]>([]);
+  const [automationHealth, setAutomationHealth] = useState<AutomationHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [reminding, setReminding] = useState<number | null>(null);
   const [remindedIds, setRemindedIds] = useState<Set<number>>(new Set());
+  const [courseReminderSending, setCourseReminderSending] = useState<0 | 1 | null>(null);
 
   const now = new Date();
   const todayStr = taipeiDateIso(now);
@@ -69,7 +86,12 @@ export default function Home() {
       if (showLoading) setLoading(true);
       const params = new URLSearchParams({ year: String(year), month: String(month), today: todayStr });
       if (dept) params.set("dept", dept);
-      const data = await fetch(`/api/dashboard?${params}`, { cache: "no-store" }).then((r) => r.json());
+      const briefingTo = taipeiDateIso(new Date(Date.now() + 15 * 86400000));
+      const [data, briefings] = await Promise.all([
+        fetch(`/api/dashboard?${params}`, { cache: "no-store" }).then((r) => r.json()),
+        fetch(`/api/course-briefings?from=${todayStr}&to=${briefingTo}`, { cache: "no-store" })
+          .then((r) => r.ok ? r.json() : []),
+      ]);
       if (cancelled) return;
 
       setStats({
@@ -82,6 +104,8 @@ export default function Home() {
       });
       setPendingDetails(Array.isArray(data.pendingDetails) ? data.pendingDetails.slice(0, 5) : []);
       setEquipmentItems(Array.isArray(data.equipment?.items) ? data.equipment.items : []);
+      setBriefingItems(Array.isArray(briefings) ? briefings.filter((item: BriefingItem) => item.status === "pending").slice(0, 5) : []);
+      setAutomationHealth(Array.isArray(data.automationHealth) ? data.automationHealth : []);
       setSeeded(Number(data.teacherCount ?? 0) > 0);
       setLoading(false);
     }
@@ -119,6 +143,26 @@ export default function Home() {
     window.location.reload();
   };
 
+  const handleCourseReminder = async (dayOffset: 0 | 1) => {
+    const label = dayOffset === 1 ? "明日" : "今日";
+    if (!window.confirm(`確定要立即補發「${label}課程提醒」嗎？\n已收到的老師會自動略過。`)) return;
+    setCourseReminderSending(dayOffset);
+    try {
+      const response = await fetch("/api/line/course-reminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dayOffset }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "提醒傳送失敗");
+      alert(`「${label}課程提醒」處理完成\n成功：${data.sent ?? 0} 位\n已發送略過：${data.skippedAlreadySent ?? 0} 位\n未綁 LINE：${data.skippedNoLine ?? 0} 位${data.errors?.length ? `\n失敗：${data.errors.length} 位` : ""}`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "提醒傳送失敗");
+    } finally {
+      setCourseReminderSending(null);
+    }
+  };
+
   const cards = [
     { label: "今日課程", value: stats.todayCourseCount, href: "/schedule", tone: "blue" },
     { label: "今日代課", value: stats.todaySubstituteCount, href: "/substitutes", tone: "orange" },
@@ -137,6 +181,16 @@ export default function Home() {
     const [, month, day] = iso.slice(0, 10).split("-");
     return `${Number(month)}/${Number(day)}`;
   };
+  const tomorrowStr = taipeiDateIso(new Date(now.getTime() + 86400000));
+  const automationCards = [
+    { jobKey: "teacher-reminder:0", targetDate: todayStr, label: "今日老師提醒", time: "07:00" },
+    { jobKey: "teacher-reminder:1", targetDate: tomorrowStr, label: "明日老師提醒", time: "14:00" },
+    { jobKey: "operations-daily:0", targetDate: todayStr, label: "今日營運班表", time: "06:50" },
+    { jobKey: "operations-daily:1", targetDate: tomorrowStr, label: "明日營運班表", time: "14:50" },
+  ].map((card) => ({
+    ...card,
+    run: automationHealth.find((run) => run.jobKey === card.jobKey && run.targetDate.slice(0, 10) === card.targetDate),
+  }));
 
   return (
     <div>
@@ -159,9 +213,27 @@ export default function Home() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
-        <div className="mb-4">
-          <h2 className="font-semibold text-slate-800">今日概況</h2>
-          <p className="text-sm text-slate-500 mt-1">首頁只顯示必要數量與前 5 筆待處理明細。</p>
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-800">今日概況</h2>
+            <p className="text-sm text-slate-500 mt-1">自動提醒：今日 07:00、明日 14:00；需要時也可手動補發。</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleCourseReminder(0)}
+              disabled={courseReminderSending !== null}
+              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              {courseReminderSending === 0 ? "發送中…" : "發送今日提醒"}
+            </button>
+            <button
+              onClick={() => handleCourseReminder(1)}
+              disabled={courseReminderSending !== null}
+              className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {courseReminderSending === 1 ? "發送中…" : "發送明日提醒"}
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {cards.map((card) => (
@@ -174,6 +246,63 @@ export default function Home() {
             </Link>
           ))}
         </div>
+      </div>
+
+      <div className="mt-6 rounded-xl border border-emerald-100 bg-white shadow-sm">
+        <div className="border-b border-emerald-50 px-4 py-4">
+          <h2 className="font-semibold text-slate-800">自動排程健康狀態</h2>
+          <p className="mt-1 text-sm text-slate-500">可立即確認老師提醒與營運班表是否正常完成。</p>
+        </div>
+        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          {automationCards.map(({ jobKey, targetDate, label, time, run }) => {
+            const tone = !run
+              ? "border-slate-200 bg-slate-50 text-slate-600"
+              : run.status === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : run.status === "partial"
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-rose-200 bg-rose-50 text-rose-700";
+            const statusLabel = !run ? "尚未執行" : run.status === "success" ? "正常" : run.status === "partial" ? "部分失敗" : "執行失敗";
+            return (
+              <div key={`${jobKey}:${targetDate}`} className={`rounded-xl border p-3 ${tone}`} title={run?.details || ""}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold">{label}</span>
+                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold">{statusLabel}</span>
+                </div>
+                <div className="mt-2 text-xs opacity-80">預定 {time}</div>
+                {run && <div className="mt-1 text-xs font-semibold">成功 {run.success}／{run.total}{run.failed ? `・失敗 ${run.failed}` : ""}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-xl border border-indigo-100 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-indigo-50 px-4 py-4">
+          <div>
+            <h2 className="font-semibold text-slate-800">近期課程交辦</h2>
+            <p className="mt-1 text-sm text-slate-500">未來 15 天的課程提醒與老師確認狀況。</p>
+          </div>
+          <Link href="/course-briefings" className="text-sm font-semibold text-indigo-700">管理交辦</Link>
+        </div>
+        {briefingItems.length === 0 ? (
+          <div className="px-4 py-7 text-center text-sm text-slate-400">目前沒有待執行的課前交辦</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {briefingItems.map((item) => (
+              <Link key={item.id} href="/course-briefings" className="grid gap-2 px-4 py-4 hover:bg-indigo-50/40 md:grid-cols-[110px_1fr_auto] md:items-center">
+                <div className="font-bold text-indigo-700">{formatDate(item.targetDate)}</div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-800">{item.school}｜{item.courseType}｜{item.teacherName}</div>
+                  <div className="mt-1 truncate text-sm text-slate-500">{item.content}</div>
+                </div>
+                <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${item.ackAt ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                  {item.ackAt ? "老師已確認" : "尚未確認"}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {Object.values(stats.courseChanges).some((value) => value > 0) && (

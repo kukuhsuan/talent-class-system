@@ -30,7 +30,7 @@ type PreviewData = {
     message: string; skipped: string; ackButton?: boolean;
     flexPre?: string; flexPost?: string;
     flexBlocks?: Array<{ title: string; lines: string[]; color: string; bg: string }>;
-    linkButtons?: Array<{ label: string; url: string }>;
+    linkButtons?: Array<{ label: string; url: string; primary?: boolean }>;
   }>;
 };
 
@@ -604,7 +604,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                   {(previewRecipient?.ackButton || (previewRecipient?.linkButtons?.length ?? 0) > 0) && (
                     <div className="bg-[#F5F9FC] px-4 py-3 space-y-2">
                       {previewRecipient?.linkButtons?.map((btn, i) => (
-                        <div key={i} className="rounded-lg bg-slate-200 text-slate-700 text-sm text-center py-2">{btn.label}</div>
+                        <div key={i} className={`rounded-lg py-2 text-center text-sm ${btn.primary ? "bg-green-600 font-semibold text-white" : "bg-slate-200 text-slate-700"}`}>{btn.label}</div>
                       ))}
                       {previewRecipient?.ackButton && (
                         <div className="rounded-lg bg-green-600 text-white text-sm text-center py-2">✅ 確認收到</div>

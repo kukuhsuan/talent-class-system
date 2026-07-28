@@ -805,6 +805,7 @@ function AttendanceActions({ row, onEdit, onCopyRating, onDelete }: { row: Atten
     <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">操作 <span aria-hidden="true" className="text-slate-400">▾</span></summary>
     <div className="absolute right-0 z-30 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
       <button onClick={(event) => run(event, () => onEdit(row))} className={item}>編輯上課紀錄</button>
+      <Link href={`/course-briefings?courseId=${row.course.id}&teacherId=${row.actualTeacher.id}&date=${row.date.slice(0, 10)}`} className={`${item} font-semibold text-indigo-700`}>新增課前交辦</Link>
       <Link href={`/course-change-requests?attendanceId=${row.id}`} className={item}>申請課程異動</Link>
       <a href={`/attendance/sign-in-sheet?id=${row.id}`} target="_blank" rel="noreferrer" className={item}>開啟簽到表</a>
       {(row.course.department ?? "").includes("安親") && <button onClick={(event) => run(event, () => onCopyRating(row))} className={item}>複製評分連結</button>}

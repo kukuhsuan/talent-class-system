@@ -251,7 +251,7 @@ function buildAckFlex(label: string, r: BatchRecipientMessage) {
     bodyContents.push(flexBodyText(r.message));
   }
   const footerContents: object[] = (r.linkButtons ?? []).map((btn) => ({
-    type: "button", style: "secondary", height: "sm",
+    type: "button", style: btn.primary ? "primary" : "secondary", ...(btn.primary ? { color: "#16A34A" } : {}), height: "sm",
     action: { type: "uri", label: btn.label, uri: btn.url },
   }));
   if (r.ackToken) {

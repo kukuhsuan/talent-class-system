@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { courseLabel, normalizeDepartment } from "@/lib/courseMeta";
+import { courseLabel, normalizeCategory, normalizeDepartment } from "@/lib/courseMeta";
 import {
   canEditSubmittedConfirmation,
   confirmationHistory,
@@ -25,6 +25,7 @@ import { pushAdminAlert } from "@/lib/systemAlerts";
 import { ensureCourseRatingTables, normalizeRatingRow, openEligibleRatings, type CourseRatingRow } from "@/lib/courseRating";
 import { ensureSchoolInvoiceTables, invoiceMonthKey } from "@/lib/schoolInvoices";
 import { courseTermOverride } from "@/lib/courseTerm";
+import { listLessonTemplates } from "@/lib/lessonTemplates";
 
 function countOf(row: { studentCount: number | null; studentCountA?: number | null; studentCountB?: number | null }) {
   if (row.studentCountA != null || row.studentCountB != null) return (row.studentCountA ?? 0) + (row.studentCountB ?? 0);
@@ -208,6 +209,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     }) as unknown as Array<{
       id: number;
       courseType: string;
+      category: string;
       teacherId: number;
       assistantTeacherId: number | null;
       teacher: { id: number; name: string };
@@ -293,18 +295,41 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       certificateUrl: `/school-portal/${encodeURIComponent(token)}/certificate/${a.id}`,
     })));
 
-    const courseTypes = Array.from(new Set(records.map((r) => courseLabel(r.course.courseType)).filter(Boolean)));
-    const progressRows = courseTypes.length > 0
-      ? await prisma.courseProgress.findMany({
-          where: { courseType: { in: courseTypes } },
-          orderBy: [{ courseType: "asc" }, { lesson: "asc" }],
+    // 園所進度只看正式合作課程；Demo／體驗課不列入，也不受目前選取月份限制。
+    const formalCourses = activeCourses.filter((course) =>
+      normalizeCategory(course.category) !== "Demo"
+      && !/demo|體驗|試上/i.test(course.courseType),
+    );
+    const formalCourseTypes = Array.from(new Set(formalCourses.map((course) => courseLabel(course.courseType)).filter(Boolean)));
+    const supportedTemplates = formalCourseTypes.length > 0
+      ? (await listLessonTemplates(prisma)).filter((row) => formalCourseTypes.includes(courseLabel(row.courseType)))
+      : [];
+    const completedAttendances = formalCourses.length > 0
+      ? await prisma.attendance.findMany({
+          where: {
+            courseId: { in: formalCourses.map((course) => course.id) },
+            cancelled: false,
+            date: { lte: new Date() },
+          },
+          select: { courseId: true },
         })
       : [];
+    const completedByCourse = new Map<number, number>();
+    for (const attendance of completedAttendances) {
+      completedByCourse.set(attendance.courseId, (completedByCourse.get(attendance.courseId) ?? 0) + 1);
+    }
+    const completedByType = new Map<string, number>();
+    for (const course of formalCourses) {
+      const label = courseLabel(course.courseType);
+      completedByType.set(label, Math.max(completedByType.get(label) ?? 0, completedByCourse.get(course.id) ?? 0));
+    }
+    const courseTypes = formalCourseTypes.filter((type) => supportedTemplates.some((row) => courseLabel(row.courseType) === type));
     const curriculum = courseTypes.map((courseType) => ({
       courseType,
       courseName: courseLabel(courseType),
-      items: progressRows
-        .filter((row) => row.courseType === courseType)
+      completedLessons: completedByType.get(courseType) ?? 0,
+      items: supportedTemplates
+        .filter((row) => courseLabel(row.courseType) === courseType)
         .map((row) => ({ lesson: row.lesson, title: row.title })),
     })).filter((row) => row.items.length > 0);
 
