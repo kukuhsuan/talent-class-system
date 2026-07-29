@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
-import { pruneFutureUnreportedAttendanceDates, stampAttendanceTime, syncFutureUnreportedAttendanceAssistant, syncFutureUnreportedAttendanceCategory, syncFutureUnreportedAttendanceHours, syncFutureUnreportedAttendanceTime, syncUnreportedWaitingTeacherAttendance } from "@/lib/attendanceTime";
+import { pruneFutureUnreportedAttendanceDates, stampAttendanceTime, syncFutureUnreportedAttendanceAssistant, syncFutureUnreportedAttendanceCategory, syncFutureUnreportedAttendanceHours, syncFutureUnreportedAttendanceTeacher, syncFutureUnreportedAttendanceTime, syncUnreportedWaitingTeacherAttendance } from "@/lib/attendanceTime";
 import { expandIsoDateRange, expandWeeklyDates, parseCourseDateInput, weekdayOfIso } from "@/lib/courseDates";
 import { normalizeCategory, normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 import { coursePayrollHoursForAttendance, coursePayrollHoursMap, parsePayrollHours, setCoursePayrollHours } from "@/lib/payrollHours";
@@ -153,6 +153,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         console.warn("course waiting teacher attendance sync skipped", { courseId: course.id, message });
         warnings.push(`待排老師同步略過：${message}`);
       }
+    }
+    try {
+      // 每次儲存都順手修正未來、尚未回報且沒有正式代課紀錄的堂次。
+      // 可處理舊版曾留下「課程主檔已換老師、出勤仍是舊老師」的資料錯位。
+      await syncFutureUnreportedAttendanceTeacher(course.id, course.teacherId);
+    } catch (syncError) {
+      const message = (syncError as Error).message || "未來主教同步失敗";
+      console.warn("course attendance teacher sync skipped", { courseId: course.id, message });
+      warnings.push(`主教同步略過：${message}`);
     }
     if (assistantChanged) {
       try {

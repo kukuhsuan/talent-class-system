@@ -223,6 +223,28 @@ export async function syncUnreportedWaitingTeacherAttendance(
   });
 }
 
+export async function syncFutureUnreportedAttendanceTeacher(
+  courseId: number,
+  teacherId: number,
+  fromIso = taipeiDateIso(),
+) {
+  return prisma.attendance.updateMany({
+    where: {
+      courseId,
+      date: { gte: utcStartOfNextIsoDay(fromIso) },
+      cancelled: false,
+      isPayrollLocked: false,
+      reportContent: "",
+      reportSentAt: null,
+      studentCount: null,
+      studentCountA: null,
+      studentCountB: null,
+      substitutes: { none: {} },
+    },
+    data: { actualTeacherId: teacherId },
+  });
+}
+
 export async function syncFutureUnreportedAttendanceCategory(courseId: number, category: string, fromIso = taipeiDateIso(), department?: string) {
   if (department === "安親班") return;
   return prisma.attendance.updateMany({
