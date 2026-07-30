@@ -54,10 +54,6 @@ function isOwnerOnlyPath(path: string) {
     || path === "/admin/audit-logs"
     || path.startsWith("/admin/audit-logs/")
     || path === "/api/admin/audit-logs"
-    || path === "/admin/billing-import"
-    || path.startsWith("/admin/billing-import/")
-    || path === "/api/admin/billing-import"
-    || path.startsWith("/api/admin/billing-import/")
     || path === "/alerts"
     || path.startsWith("/alerts/")
     || path === "/api/alerts"
