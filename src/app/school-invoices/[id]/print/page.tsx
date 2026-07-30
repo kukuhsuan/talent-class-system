@@ -162,7 +162,8 @@ export default function SchoolInvoicePrintPage() {
         </header>
 
         <section className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/70 p-5 text-sm">
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex items-start justify-between gap-8">
+            <div className="text-xl font-black text-slate-900">{invoice.officialName || invoice.schoolName}</div>
             <div className="space-y-1 text-right font-semibold text-slate-700">
               <div>TEL：{invoice.phone || ""}</div>
               <div>FAX：{invoice.fax || ""}</div>
@@ -171,7 +172,7 @@ export default function SchoolInvoicePrintPage() {
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-blue-200 pt-4 text-slate-800">
             <div><span className="font-bold text-slate-500">請款日期：</span>{invoiceDate(invoice.invoiceDate)}</div>
             <div><span className="font-bold text-slate-500">請款月份：</span>{periodLabel(invoice.invoiceMonth)}</div>
-            <div><span className="font-bold text-slate-500">請款／發票抬頭：</span>{invoice.invoiceTitle || invoice.schoolName}　台照</div>
+            <div><span className="font-bold text-slate-500">台照／發票抬頭：</span>{invoice.invoiceTitle || invoice.schoolName}</div>
             <div><span className="font-bold text-slate-500">統一編號：</span>{invoice.taxId || "未提供"}</div>
           </div>
         </section>
