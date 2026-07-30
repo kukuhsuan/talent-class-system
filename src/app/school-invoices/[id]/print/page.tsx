@@ -59,8 +59,13 @@ function invoiceDate(date: string) {
 }
 
 function periodLabel(invoiceMonth: string) {
-  const [year, month] = invoiceMonth.split("-");
-  return `${year} 年 ${Number(month)} 月`;
+  const periods = invoiceMonth.split(",").map((value) => {
+    const [year, month] = value.split("-");
+    return { year, month: Number(month) };
+  });
+  const years = [...new Set(periods.map(({ year }) => year))];
+  if (years.length === 1) return `${years[0]} 年 ${periods.map(({ month }) => month).join("、")} 月`;
+  return periods.map(({ year, month }) => `${year} 年 ${month} 月`).join("、");
 }
 
 function billingTypeLabel(type: "perClass" | "perPerson") {
@@ -157,11 +162,7 @@ export default function SchoolInvoicePrintPage() {
         </header>
 
         <section className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/70 p-5 text-sm">
-          <div className="mb-4 flex items-start justify-between gap-8">
-            <div>
-              <div className="text-xs font-bold tracking-wider text-blue-600">請款對象</div>
-              <div className="mt-1 text-xl font-black text-slate-900">{invoice.officialName || invoice.schoolName}</div>
-            </div>
+          <div className="mb-4 flex justify-end">
             <div className="space-y-1 text-right font-semibold text-slate-700">
               <div>TEL：{invoice.phone || ""}</div>
               <div>FAX：{invoice.fax || ""}</div>

@@ -53,8 +53,13 @@ function shortDate(date: string) {
 }
 
 function invoicePeriodLabel(invoiceMonth: string) {
-  const [year, month] = invoiceMonth.split("-");
-  return `${year} 年 ${Number(month)} 月`;
+  const periods = invoiceMonth.split(",").map((value) => {
+    const [year, month] = value.split("-");
+    return { year, month: Number(month) };
+  });
+  const years = [...new Set(periods.map(({ year }) => year))];
+  if (years.length === 1) return `${years[0]} 年 ${periods.map(({ month }) => month).join("、")} 月`;
+  return periods.map(({ year, month }) => `${year} 年 ${month} 月`).join("、");
 }
 
 function billingTypeLabel(type: "perClass" | "perPerson") {
@@ -72,6 +77,7 @@ export default function SchoolInvoicesPage() {
   const [schoolPickerOpen, setSchoolPickerOpen] = useState(false);
   const [year, setYear] = useState(current.getFullYear());
   const [month, setMonth] = useState(current.getMonth() + 1);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([current.getMonth() + 1]);
   const [brandName, setBrandName] = useState("");
   const [notes, setNotes] = useState("");
   const [taxType, setTaxType] = useState("未稅");
@@ -122,6 +128,7 @@ export default function SchoolInvoicesPage() {
         schoolId: Number(schoolId),
         year,
         month,
+        months: selectedMonths,
         brandName,
         taxType,
         notes,
@@ -200,6 +207,7 @@ export default function SchoolInvoicesPage() {
           schoolId: Number(schoolId),
           year,
           month,
+          months: selectedMonths,
           brandName: brandName || preview.brandName,
           taxType,
           notes,
@@ -299,35 +307,65 @@ export default function SchoolInvoicesPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">年份</label>
-            <select value={year} onChange={(e) => { setYear(Number(e.target.value)); setPreview(null); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="school-invoices-f1">年份</label>
+            <select id="school-invoices-f1" value={year} onChange={(e) => { setYear(Number(e.target.value)); setPreview(null); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">月份</label>
-            <select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setPreview(null); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m} 月</option>)}
-            </select>
+            <div className="mb-1 text-sm font-medium text-slate-700">請款月份（可複選）</div>
+            <div className="grid grid-cols-4 gap-2">
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+                const selected = selectedMonths.includes(m);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      const next = selected
+                        ? selectedMonths.filter((value) => value !== m)
+                        : [...selectedMonths, m].sort((a, b) => a - b);
+                      if (!next.length) {
+                        setMessage("請至少保留一個請款月份");
+                        return;
+                      }
+                      setSelectedMonths(next);
+                      setMonth(next[0]);
+                      setPreview(null);
+                      setMessage("");
+                    }}
+                    className={`rounded-lg border px-2 py-2 text-sm font-semibold ${
+                      selected
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : "border-slate-300 bg-white text-slate-600 hover:border-blue-300"
+                    }`}
+                  >
+                    {m} 月
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">暑期課程可同時勾選 7 月與 8 月，合併為一張請款單。</p>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">品牌</label>
-            <select value={brandName} onChange={(e) => { setBrandName(e.target.value); setPreview(null); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="school-invoices-f3">品牌</label>
+            <select id="school-invoices-f3" value={brandName} onChange={(e) => { setBrandName(e.target.value); setPreview(null); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
               <option value="">系統預設</option>
               {SCHOOL_INVOICE_BRANDS.map((brand) => <option key={brand} value={brand}>{brand}</option>)}
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">稅別</label>
-            <select value={taxType} onChange={(e) => setTaxType(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="school-invoices-f4">稅別</label>
+            <select id="school-invoices-f4" value={taxType} onChange={(e) => setTaxType(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
               <option value="未稅">未稅</option>
               <option value="含稅">含稅</option>
             </select>
           </div>
         </div>
         <div className="mt-4">
-          <label className="mb-1 block text-sm font-medium text-slate-700">備註</label>
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="可留空" />
+          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="school-invoices-f5">備註</label>
+          <input id="school-invoices-f5" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="可留空" />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button onClick={() => loadPreview()} disabled={!schoolId || loadingPreview} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">

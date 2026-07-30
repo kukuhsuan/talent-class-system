@@ -149,6 +149,15 @@ function parseInvoiceMonth(month: string) {
   return { year: Number(yearRaw), month: Number(monthRaw) };
 }
 
+function invoiceMonthKeys(year: number, months: number[]) {
+  return months.map((month) => invoiceMonthKey(year, month));
+}
+
+function normalizeInvoiceMonths(month: number, months?: number[]) {
+  const values = Array.isArray(months) && months.length ? months : [month];
+  return [...new Set(values.map(Number).filter((value) => Number.isInteger(value) && value >= 1 && value <= 12))].sort((a, b) => a - b);
+}
+
 function monthBounds(year: number, month: number) {
   return {
     start: new Date(Date.UTC(year, month - 1, 1)),
@@ -321,6 +330,7 @@ export async function buildSchoolInvoicePreview(input: {
   schoolId: number;
   year: number;
   month: number;
+  months?: number[];
   brandName?: string;
   unitPrices?: unknown;
   billingTypes?: unknown;
@@ -331,10 +341,11 @@ export async function buildSchoolInvoicePreview(input: {
   const school = await prisma.school.findUnique({ where: { id: input.schoolId } });
   if (!school) throw new Error("找不到園所");
 
-  const { start, end } = monthBounds(input.year, input.month);
+  const months = normalizeInvoiceMonths(input.month, input.months);
+  const monthRanges = months.map((month) => monthBounds(input.year, month));
   const rawRows = await prisma.attendance.findMany({
     where: {
-      date: { gte: start, lt: end },
+      OR: monthRanges.map(({ start, end }) => ({ date: { gte: start, lt: end } })),
       cancelled: false,
       course: {
         OR: [
@@ -356,7 +367,7 @@ export async function buildSchoolInvoicePreview(input: {
   const billingTypes = normalizeBillingTypes(input.billingTypes);
   const minChargeCounts = normalizeMinChargeCounts(input.minChargeCounts);
   const groups = new Map<string, SchoolInvoiceItemSnapshot>();
-  const periodLabel = monthLabel(input.year, input.month);
+  const periodLabel = months.map((month) => monthLabel(input.year, month)).join("、");
 
   for (const row of rows) {
     const key = row.course.courseType || "未分類";
@@ -448,7 +459,7 @@ export async function buildSchoolInvoicePreview(input: {
     invoiceTitle: school.name,
     taxId: "",
     brandName: brand,
-    invoiceMonth: invoiceMonthKey(input.year, input.month),
+    invoiceMonth: invoiceMonthKeys(input.year, months).join(","),
     invoiceDate: new Date().toISOString(),
     status: "草稿",
     totalAmount,
@@ -463,6 +474,7 @@ export async function createSchoolInvoice(input: {
   schoolId: number;
   year: number;
   month: number;
+  months?: number[];
   brandName?: string;
   unitPrices?: unknown;
   billingTypes?: unknown;
@@ -475,9 +487,12 @@ export async function createSchoolInvoice(input: {
 
   // 月結鎖：該月薪資已結算鎖定 → 禁止再產生請款（避免月結後金額被改）
   const { getPayrollRun } = await import("@/lib/payrollRun");
-  const payrollRun = await getPayrollRun(input.year, input.month);
-  if (payrollRun) {
-    throw new Error(`${input.year}年${input.month}月已結算鎖定，如需補開請款請先解鎖該月`);
+  const months = normalizeInvoiceMonths(input.month, input.months);
+  for (const month of months) {
+    const payrollRun = await getPayrollRun(input.year, month);
+    if (payrollRun) {
+      throw new Error(`${input.year}年${month}月已結算鎖定，如需補開請款請先解鎖該月`);
+    }
   }
 
   const preview = await buildSchoolInvoicePreview(input);
@@ -489,11 +504,15 @@ export async function createSchoolInvoice(input: {
 
   return await prisma.$transaction(async (tx) => {
     // 防重複：同園所同月已有未作廢請款單 → 擋下（交易內檢查，避免並發重複）
-    const dupRows = await tx.$queryRawUnsafe<Array<{ id: number; status: string }>>(
+    const monthKeys = invoiceMonthKeys(input.year, months);
+    const dupRows = await tx.$queryRawUnsafe<Array<{ id: number; status: string; invoiceMonth: string }>>(
       `SELECT "id", "status" FROM "SchoolInvoice"
-       WHERE "schoolId" = ? AND "invoiceMonth" = ? AND "status" != '已作廢' LIMIT 1`,
+       WHERE "schoolId" = ?
+         AND "status" != '已作廢'
+         AND (${monthKeys.map(() => `(',' || "invoiceMonth" || ',') LIKE ?`).join(" OR ")})
+       LIMIT 1`,
       preview.schoolId,
-      preview.invoiceMonth,
+      ...monthKeys.map((key) => `%,${key},%`),
     );
     if (dupRows.length > 0) {
       throw new Error(`${preview.schoolName} ${preview.invoiceMonth} 已有請款單（#${dupRows[0].id}，${dupRows[0].status}），請先刪除或作廢舊單再重新產生`);
@@ -571,8 +590,8 @@ export async function listSchoolInvoices(options: { year?: number; month?: numbe
   const where: string[] = [];
   const args: unknown[] = [];
   if (options.year && options.month) {
-    where.push('"invoiceMonth" = ?');
-    args.push(invoiceMonthKey(options.year, options.month));
+    where.push(`(',' || "invoiceMonth" || ',') LIKE ?`);
+    args.push(`%,${invoiceMonthKey(options.year, options.month)},%`);
   }
   if (options.schoolId) {
     where.push('"schoolId" = ?');
@@ -679,8 +698,9 @@ export async function deleteSchoolInvoice(id: number) {
   if (!existing) return null;
 
   // 月結鎖：該月已結算鎖定 → 禁止刪除請款單
-  const [lockYear, lockMonth] = String(existing.invoiceMonth).split("-").map(Number);
-  if (lockYear && lockMonth) {
+  const lockMonths = String(existing.invoiceMonth).split(",").map(parseInvoiceMonth);
+  for (const { year: lockYear, month: lockMonth } of lockMonths) {
+    if (!lockYear || !lockMonth) continue;
     const { getPayrollRun } = await import("@/lib/payrollRun");
     const payrollRun = await getPayrollRun(lockYear, lockMonth);
     if (payrollRun) throw new Error(`${lockYear}年${lockMonth}月已結算鎖定，請先解鎖該月再刪除請款單`);
@@ -719,13 +739,16 @@ export function parseInvoiceRequest(body: Record<string, unknown>) {
   const schoolId = Number(body.schoolId);
   const year = Number(body.year);
   const month = Number(body.month);
+  const months = normalizeInvoiceMonths(month, Array.isArray(body.months) ? body.months.map(Number) : undefined);
   if (!Number.isFinite(schoolId) || schoolId <= 0) throw new Error("請選擇園所");
   if (!Number.isFinite(year) || year < 2024 || year > 2100) throw new Error("請選擇年份");
   if (!Number.isFinite(month) || month < 1 || month > 12) throw new Error("請選擇月份");
+  if (months.length === 0) throw new Error("請至少選擇一個月份");
   return {
     schoolId,
     year,
     month,
+    months,
     brandName: String(body.brandName ?? ""),
     unitPrices: body.unitPrices,
     billingTypes: body.billingTypes,
@@ -737,6 +760,9 @@ export function parseInvoiceRequest(body: Record<string, unknown>) {
 }
 
 export function invoicePeriodLabel(invoiceMonth: string) {
-  const { year, month } = parseInvoiceMonth(invoiceMonth);
-  return `${year} 年 ${month} 月`;
+  const periods = invoiceMonth.split(",").map(parseInvoiceMonth).filter(({ year, month }) => year && month);
+  if (!periods.length) return invoiceMonth;
+  const years = [...new Set(periods.map(({ year }) => year))];
+  if (years.length === 1) return `${years[0]} 年 ${periods.map(({ month }) => month).join("、")} 月`;
+  return periods.map(({ year, month }) => `${year} 年 ${month} 月`).join("、");
 }
