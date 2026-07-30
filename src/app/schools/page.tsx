@@ -43,7 +43,8 @@ const EMPTY_CONFIRMATION: CourseConfirmation = {
   classNotes: "",
   otherReminders: "",
 };
-const empty: Omit<School, "id" | "courseConfirmationSummary"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "", lineUserId: "", courseConfirmation: EMPTY_CONFIRMATION };
+const EMPTY_BILLING_PROFILE = { officialName: "", invoiceTitle: "", taxId: "", billingEmail: "", submittedAt: null };
+const empty: Omit<School, "id" | "courseConfirmationSummary"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "", lineUserId: "", billingProfile: EMPTY_BILLING_PROFILE, courseConfirmation: EMPTY_CONFIRMATION };
 const LOCATION_OPTIONS = ["教室", "禮堂 / 活動中心", "操場", "其他"];
 const TEACHING_STYLE_OPTIONS = ["活潑互動", "注重秩序", "依班級狀況調整"];
 
@@ -222,7 +223,18 @@ export default function SchoolsPage() {
   }
 
   function edit(s: School) {
-    setForm({ name: s.name, type: s.type ? normalizeDepartment(s.type) : "", region: normalizeRegion(s.region), address: s.address, phone: s.phone, contact: s.contact, notes: s.notes, lineUserId: s.lineUserId ?? "", courseConfirmation: { ...EMPTY_CONFIRMATION, ...(s.courseConfirmation ?? {}) } });
+    setForm({
+      name: s.name,
+      type: s.type ? normalizeDepartment(s.type) : "",
+      region: normalizeRegion(s.region),
+      address: s.address,
+      phone: s.phone,
+      contact: s.contact,
+      notes: s.notes,
+      lineUserId: s.lineUserId ?? "",
+      billingProfile: { ...EMPTY_BILLING_PROFILE, ...(s.billingProfile ?? {}) },
+      courseConfirmation: { ...EMPTY_CONFIRMATION, ...(s.courseConfirmation ?? {}) },
+    });
     setEditing(s.id);
     setShowForm(true);
     scrollToFormOnEdit();
@@ -248,44 +260,63 @@ export default function SchoolsPage() {
           <h2 className="font-semibold text-gray-700 mb-4">{editing != null ? "正在編輯園所" : "新增園所"}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">園所名稱 *</label>
-              <input ref={nameInputRef} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f1">園所名稱 *</label>
+              <input id="schools-f1" ref={nameInputRef} className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">地區</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })}>
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f2">地區</label>
+              <select id="schools-f2" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })}>
                 <option value="">選擇地區</option>
                 {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">園所類型</label>
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f3">園所類型</label>
+              <select id="schools-f3" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="">未分類</option>
                 {DEPARTMENT_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">地址</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f4">地址</label>
+              <input id="schools-f4" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">電話</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f5">電話</label>
+              <input id="schools-f5" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">聯絡人</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f6">聯絡人</label>
+              <input id="schools-f6" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">備註</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f7">備註</label>
+              <input id="schools-f7" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">LINE User ID（可手動貼上）</label>
-              <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.lineUserId ?? ""} onChange={(e) => setForm({ ...form, lineUserId: e.target.value })} placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+              <label className="text-xs text-gray-500 mb-1 block" htmlFor="schools-f8">LINE User ID（可手動貼上）</label>
+              <input id="schools-f8" className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.lineUserId ?? ""} onChange={(e) => setForm({ ...form, lineUserId: e.target.value })} placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
               <p className="mt-1 text-xs text-slate-400">若園所已用綁定碼綁定，這裡會自動帶入；你也可以直接貼既有 User ID。</p>
             </div>
+            {editing != null && (
+              <div className="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+                <div className="mb-3 font-bold text-slate-800">請款與發票資料</div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-xs text-slate-500">園所正式名稱
+                    <input className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800" value={form.billingProfile?.officialName ?? ""} onChange={(e) => setForm({ ...form, billingProfile: { ...EMPTY_BILLING_PROFILE, ...(form.billingProfile ?? {}), officialName: e.target.value } })} />
+                  </label>
+                  <label className="text-xs text-slate-500">請款／發票抬頭
+                    <input className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800" value={form.billingProfile?.invoiceTitle ?? ""} onChange={(e) => setForm({ ...form, billingProfile: { ...EMPTY_BILLING_PROFILE, ...(form.billingProfile ?? {}), invoiceTitle: e.target.value } })} />
+                  </label>
+                  <label className="text-xs text-slate-500">統一編號
+                    <input inputMode="numeric" maxLength={8} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800" value={form.billingProfile?.taxId ?? ""} onChange={(e) => setForm({ ...form, billingProfile: { ...EMPTY_BILLING_PROFILE, ...(form.billingProfile ?? {}), taxId: e.target.value.replace(/\D/g, "").slice(0, 8) } })} />
+                  </label>
+                  <label className="text-xs text-slate-500">收件信箱
+                    <input type="email" className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800" value={form.billingProfile?.billingEmail ?? ""} onChange={(e) => setForm({ ...form, billingProfile: { ...EMPTY_BILLING_PROFILE, ...(form.billingProfile ?? {}), billingEmail: e.target.value } })} />
+                  </label>
+                </div>
+              </div>
+            )}
             <div className="md:col-span-2">
               <SchoolConfirmationEditor
                 value={form.courseConfirmation ?? EMPTY_CONFIRMATION}

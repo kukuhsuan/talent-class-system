@@ -146,7 +146,6 @@ export default function SchoolInvoicePrintPage() {
         <header className="invoice-document-header mb-7 overflow-hidden rounded-3xl bg-[var(--invoice-primary)] px-8 py-7 text-white">
           <div className="flex items-center justify-between gap-5">
             <div>
-              <div className="mb-2 text-sm font-bold tracking-[0.2em] text-blue-100">{invoice.companyName}</div>
               <h1 className="text-3xl font-black tracking-wide">{invoice.brandName} 教學費用明細單</h1>
               <div className="mt-2 text-lg font-semibold text-blue-100">{periodLabel(invoice.invoiceMonth)}</div>
             </div>

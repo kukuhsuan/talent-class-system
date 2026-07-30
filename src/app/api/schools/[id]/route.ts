@@ -14,6 +14,7 @@ import {
   upsertSchoolStartConfirmation,
 } from "@/lib/courseConfirmation";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
+import { saveBillingProfile } from "@/lib/schoolBillingProfile";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -101,6 +102,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   let courseConfirmation = parseCourseConfirmation(data.courseConfirmation);
   if (data.courseConfirmation) {
     courseConfirmation = await upsertSchoolStartConfirmation(Number(id), term, data.courseConfirmation, { submit: false });
+  }
+  if (data.billingProfile && typeof data.billingProfile === "object") {
+    const billing = data.billingProfile as Record<string, unknown>;
+    await saveBillingProfile({
+      schoolId: Number(id),
+      officialName: String(billing.officialName ?? "").trim(),
+      invoiceTitle: String(billing.invoiceTitle ?? "").trim(),
+      taxId: /^\d{8}$/.test(String(billing.taxId ?? "").trim()) ? String(billing.taxId).trim() : "",
+      billingEmail: String(billing.billingEmail ?? "").trim(),
+    });
   }
   await writeAuditLog(req, {
     action: "update",
