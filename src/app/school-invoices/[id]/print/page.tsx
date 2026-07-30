@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 type Invoice = {
   id: number;
   schoolName: string;
+  officialName: string;
   invoiceTitle: string;
   taxId: string;
   brandName: string;
@@ -159,7 +160,7 @@ export default function SchoolInvoicePrintPage() {
           <div className="mb-4 flex items-start justify-between gap-8">
             <div>
               <div className="text-xs font-bold tracking-wider text-blue-600">請款對象</div>
-              <div className="mt-1 text-xl font-black text-slate-900">{invoice.schoolName}　台照</div>
+              <div className="mt-1 text-xl font-black text-slate-900">{invoice.officialName || invoice.schoolName}　台照</div>
             </div>
             <div className="space-y-1 text-right font-semibold text-slate-700">
               <div>TEL：{invoice.phone || ""}</div>

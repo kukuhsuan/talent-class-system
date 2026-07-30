@@ -48,6 +48,7 @@ export type SchoolInvoiceSnapshot = {
   id?: number;
   schoolId: number;
   schoolName: string;
+  officialName: string;
   invoiceTitle: string;
   taxId: string;
   brandName: SchoolInvoiceBrand;
@@ -443,6 +444,7 @@ export async function buildSchoolInvoicePreview(input: {
   return {
     schoolId: school.id,
     schoolName: school.name,
+    officialName: school.name,
     invoiceTitle: school.name,
     taxId: "",
     brandName: brand,
@@ -598,8 +600,9 @@ export async function readSchoolInvoice(id: number, client: Pick<typeof prisma, 
   );
   const invoice = invoiceRows[0];
   if (!invoice) return null;
-  const billingRows = await client.$queryRawUnsafe<Array<{ invoiceTitle: string; taxId: string }>>(
-    `SELECT COALESCE("invoiceTitle", '') AS "invoiceTitle",
+  const billingRows = await client.$queryRawUnsafe<Array<{ officialName: string; invoiceTitle: string; taxId: string }>>(
+    `SELECT COALESCE("officialName", '') AS "officialName",
+            COALESCE("invoiceTitle", '') AS "invoiceTitle",
             COALESCE("taxId", '') AS "taxId"
      FROM "SchoolBillingProfile"
      WHERE "schoolId" = ?
@@ -625,6 +628,7 @@ export async function readSchoolInvoice(id: number, client: Pick<typeof prisma, 
 
   return {
     ...invoice,
+    officialName: billing?.officialName || invoice.schoolName,
     invoiceTitle: billing?.invoiceTitle || invoice.schoolName,
     taxId: billing?.taxId || "",
     companyName: invoice.companyName || invoiceCompanyForBrand(invoice.brandName).companyName,
