@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
+const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
 
 const PRIMARY = [
   { href: "/", label: "今日概況" },
@@ -30,7 +31,7 @@ const GROUPS = [
   {
     title: "會計與人員",
     items: [
-      { href: "/accounting", label: "月底會計包" },
+      { href: "/accounting", label: "月底會計包", invoiceOnly: true },
       { href: "/salary", label: "薪資計算" },
       { href: "/teachers", label: "老師管理" },
       { href: "/teacher-resumes", label: "老師簡歷" },
@@ -42,7 +43,7 @@ const GROUPS = [
     items: [
       { href: "/schools", label: "園所管理" },
       { href: "/school-stats", label: "園所人數" },
-      { href: "/school-invoices", label: "園所請款單" },
+      { href: "/school-invoices", label: "園所請款單", invoiceOnly: true },
       { href: "/notify", label: "LINE 通知" },
       { href: "/ratings", label: "安親班評分" },
     ],
@@ -68,7 +69,7 @@ export default function NavBar() {
   const { dept, setDept } = useDepartment();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [isOwner, setIsOwner] = useState(false);
+  const [currentRole, setCurrentRole] = useState("");
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export default function NavBar() {
     fetch("/api/auth/me")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled) setIsOwner(OWNER_ROLES.has(String(data?.role ?? "")));
+        if (!cancelled) setCurrentRole(String(data?.role ?? ""));
       })
       .catch(() => undefined);
     return () => {
@@ -102,7 +103,11 @@ export default function NavBar() {
 
   const visibleGroups = GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !("ownerOnly" in item && item.ownerOnly) || isOwner),
+    items: group.items.filter((item) => {
+      if ("ownerOnly" in item && item.ownerOnly && !OWNER_ROLES.has(currentRole)) return false;
+      if ("invoiceOnly" in item && item.invoiceOnly && !INVOICE_ROLES.has(currentRole)) return false;
+      return true;
+    }),
   })).filter((group) => group.items.length > 0);
 
   if (

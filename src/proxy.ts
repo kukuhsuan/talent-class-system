@@ -33,6 +33,8 @@ const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/school-b
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff"]);
+// 園所請款資料只開放會計；最高權限保留維運與緊急處理能力。
+const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
 
 function isPublicPath(path: string) {
   return PUBLIC_EXACT.includes(path) || PUBLIC_PREFIX.some((prefix) => path.startsWith(prefix));
@@ -70,6 +72,17 @@ function isSalaryPath(path: string) {
     || path === "/api/salary-adjustments"
     || path.startsWith("/api/salary-adjustments/")
     || path === "/api/export/salary";
+}
+
+function isInvoicePath(path: string) {
+  return path === "/accounting"
+    || path.startsWith("/accounting/")
+    || path === "/api/accounting-month-end"
+    || path.startsWith("/api/accounting-month-end/")
+    || path === "/school-invoices"
+    || path.startsWith("/school-invoices/")
+    || path === "/api/school-invoices"
+    || path.startsWith("/api/school-invoices/");
 }
 
 function maintenanceSecret(req: NextRequest) {
@@ -167,6 +180,10 @@ export async function proxy(req: NextRequest) {
     }
     if (isOwnerOnlyPath(path) && !OWNER_ROLES.has(role)) {
       if (path.startsWith("/api/")) return NextResponse.json({ error: "權限不足" }, { status: 403 });
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+    if (isInvoicePath(path) && !INVOICE_ROLES.has(role)) {
+      if (path.startsWith("/api/")) return NextResponse.json({ error: "園所請款單僅限會計人員使用" }, { status: 403 });
       return NextResponse.redirect(new URL("/", req.url));
     }
     if (isSalaryPath(path) && !SALARY_ROLES.has(role)) {
