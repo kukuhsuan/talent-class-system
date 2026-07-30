@@ -33,7 +33,7 @@ export async function assignSubstitute(input: AssignmentInput) {
     if (attendance.isPayrollLocked) throw new Error(`${attendance.course.school} ${attendance.course.time} 已鎖定薪資，不能更換老師`);
 
     const originalTeacherId = input.role === "助教"
-      ? attendance.course.assistantTeacherId
+      ? attendance.assistantTeacherId ?? attendance.course.assistantTeacherId
       : attendance.course.teacherId;
     if (!originalTeacherId) throw new Error(`${attendance.course.school} ${attendance.course.time} 沒有原助教可供代課`);
     if (originalTeacherId === input.substituteTeacherId) {
@@ -111,9 +111,7 @@ export async function cancelSubstitute(id: number) {
   }
   if (record.attendance.isPayrollLocked) throw new Error("此課堂已鎖定薪資，不能取消代課");
 
-  const originalTeacherId = record.role === "助教"
-    ? record.attendance.course.assistantTeacherId
-    : record.attendance.course.teacherId;
+  const originalTeacherId = record.originalTeacherId;
   if (!originalTeacherId) throw new Error("找不到原老師，無法取消代課");
 
   await prisma.$transaction([
