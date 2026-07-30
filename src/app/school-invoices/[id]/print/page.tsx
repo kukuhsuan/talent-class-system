@@ -118,6 +118,8 @@ export default function SchoolInvoicePrintPage() {
   if (!invoice) return <div className="mx-auto max-w-3xl p-8 text-slate-500">載入請款單中...</div>;
 
   const visual = brandVisual(invoice.brandName);
+  const isAfterSchoolInvoice = invoice.brandName === "運動班長";
+  const displayPeriod = isAfterSchoolInvoice ? "暑假營隊" : periodLabel(invoice.invoiceMonth);
   const invoiceStyle = {
     "--invoice-primary": visual.primary,
     "--invoice-dark": visual.dark,
@@ -129,7 +131,7 @@ export default function SchoolInvoicePrintPage() {
   return (
     <div className="bg-slate-100 py-6 text-slate-950 print:bg-white print:py-0">
       <style jsx global>{`
-        @page { size: A4 portrait; margin: 16mm; }
+        @page { size: A4 portrait; margin: 10mm; }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @media print {
           header:not(.invoice-document-header), footer, .no-print { display: none !important; }
@@ -137,6 +139,8 @@ export default function SchoolInvoicePrintPage() {
           .invoice-sheet { box-shadow: none !important; margin: 0 !important; width: 100% !important; min-height: auto !important; padding: 0 !important; }
           .invoice-content { position: relative !important; z-index: 1 !important; }
           .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+          .invoice-sheet th, .invoice-sheet td { padding: 4px 6px !important; font-size: 11px !important; line-height: 1.25 !important; }
+          .invoice-detail-group { margin-bottom: 10px !important; }
         }
       `}</style>
 
@@ -147,38 +151,38 @@ export default function SchoolInvoicePrintPage() {
         </button>
       </div>
 
-      <article style={invoiceStyle} className="invoice-sheet relative mx-auto min-h-[297mm] w-[210mm] overflow-hidden bg-white p-[16mm] shadow-sm">
+      <article style={invoiceStyle} className="invoice-sheet relative mx-auto min-h-[297mm] w-[210mm] overflow-hidden bg-white p-[12mm] shadow-sm">
         <div className="invoice-content relative z-10">
-        <header className="invoice-document-header mb-7 overflow-hidden rounded-3xl bg-[var(--invoice-primary)] px-8 py-7 text-white">
+        <header className="invoice-document-header mb-4 overflow-hidden rounded-2xl bg-[var(--invoice-primary)] px-6 py-4 text-white">
           <div className="flex items-center justify-between gap-5">
             <div>
-              <h1 className="text-3xl font-black tracking-wide">{invoice.brandName} 教學費用明細單</h1>
-              <div className="mt-2 text-lg font-semibold text-blue-100">{periodLabel(invoice.invoiceMonth)}</div>
+              <h1 className="text-2xl font-black tracking-wide">{invoice.brandName} 教學費用明細單</h1>
+              <div className="mt-1 text-base font-semibold text-blue-100">{displayPeriod}</div>
             </div>
             <div className="rounded-2xl bg-white p-3 shadow-sm">
-              <img src={visual.logo} alt={invoice.brandName} className="h-16 w-16 object-contain" />
+              <img src={visual.logo} alt={invoice.brandName} className="h-12 w-12 object-contain" />
             </div>
           </div>
         </header>
 
-        <section className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/70 p-5 text-sm">
-          <div className="mb-4 flex items-start justify-between gap-8">
-            <div className="text-xl font-black text-slate-900">{invoice.officialName || invoice.schoolName}</div>
+        <section className="mb-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-sm">
+          <div className="mb-3 flex items-start justify-between gap-8">
+            <div className="text-lg font-black text-slate-900">{invoice.officialName || invoice.schoolName}</div>
             <div className="space-y-1 text-right font-semibold text-slate-700">
               <div>TEL：{invoice.phone || ""}</div>
               <div>FAX：{invoice.fax || ""}</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-blue-200 pt-4 text-slate-800">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-blue-200 pt-3 text-slate-800">
             <div><span className="font-bold text-slate-500">請款日期：</span>{invoiceDate(invoice.invoiceDate)}</div>
-            <div><span className="font-bold text-slate-500">請款月份：</span>{periodLabel(invoice.invoiceMonth)}</div>
-            <div><span className="font-bold text-slate-500">台照／發票抬頭：</span>{invoice.invoiceTitle || invoice.schoolName}</div>
+            <div><span className="font-bold text-slate-500">請款期間：</span>{displayPeriod}</div>
+            <div><span className="font-bold text-slate-500">發票抬頭：</span>{invoice.invoiceTitle || invoice.schoolName}　台照</div>
             <div><span className="font-bold text-slate-500">統一編號：</span>{invoice.taxId || "未提供"}</div>
           </div>
         </section>
 
-        <section className="mb-8">
-          <table className="w-full border-collapse text-sm">
+        <section className="mb-4">
+          <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="bg-blue-600 text-white">
                 <th className="border border-blue-600 px-3 py-2 text-left">項目</th>
@@ -194,7 +198,7 @@ export default function SchoolInvoicePrintPage() {
               {invoice.items.map((item) => (
                 <tr key={item.id ?? item.courseType}>
                   <td className="border border-slate-600 bg-white/70 px-3 py-2 font-semibold">{item.courseName}才藝</td>
-                  <td className="border border-slate-600 bg-white/70 px-3 py-2">{item.periodLabel}</td>
+                  <td className="border border-slate-600 bg-white/70 px-3 py-2">{isAfterSchoolInvoice ? "暑假營隊" : item.periodLabel}</td>
                   <td className="border border-slate-600 bg-white/70 px-3 py-2">{billingTypeLabel(item.billingType)}</td>
                   <td className="border border-slate-600 bg-white/70 px-3 py-2 text-right">{money(item.unitPrice)}</td>
                   <td className="border border-slate-600 bg-white/70 px-3 py-2 text-right">{item.quantity.toLocaleString("zh-TW")} {item.quantityLabel}</td>
@@ -215,11 +219,11 @@ export default function SchoolInvoicePrintPage() {
           </table>
         </section>
 
-        <section className="space-y-7">
+        <section className="space-y-3">
           {invoice.items.map((item) => (
-            <div key={`${item.id ?? item.courseType}-details`} className="avoid-break">
-              <h2 className="mb-2 border-b-2 border-[var(--invoice-primary)] pb-1 text-base font-bold text-slate-950">{item.courseName}課程細目</h2>
-              <table className="w-full border-collapse text-sm">
+            <div key={`${item.id ?? item.courseType}-details`} className="invoice-detail-group avoid-break">
+              <h2 className="mb-1 border-b-2 border-[var(--invoice-primary)] pb-1 text-sm font-bold text-slate-950">{item.courseName}課程細目</h2>
+              <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100 text-slate-950">
                     <th className="border border-slate-600 px-3 py-2 text-left">日期</th>
@@ -253,7 +257,7 @@ export default function SchoolInvoicePrintPage() {
                   ))}
                 </tbody>
               </table>
-              <div className="mt-2 bg-slate-50 px-3 py-2 text-right text-sm font-bold text-slate-950 ring-1 ring-slate-300">
+              <div className="mt-1 bg-slate-50 px-2 py-1 text-right text-xs font-bold text-slate-950 ring-1 ring-slate-300">
                 {item.billingType === "perPerson"
                   ? `總實到人次：${item.totalStudentCount.toLocaleString("zh-TW")} 人次｜總計費人次：${item.billableCount.toLocaleString("zh-TW")} 人次`
                   : `總堂數：${item.classCount} 堂｜總時數：${fmtHours(item.totalHours)} 小時`}
@@ -262,8 +266,8 @@ export default function SchoolInvoicePrintPage() {
           ))}
         </section>
 
-        <section className="avoid-break mt-10 border-t border-slate-500 pt-5 text-sm">
-          <div className="mb-2 font-bold text-slate-950">匯款帳戶資訊</div>
+        <section className="avoid-break mt-4 border-t border-slate-500 pt-3 text-xs">
+          <div className="mb-1 font-bold text-slate-950">匯款帳戶資訊</div>
           <div className="grid grid-cols-2 gap-y-1 text-slate-950">
             <div>銀行：{invoice.bankName}</div>
             <div>帳號：{invoice.bankAccount}</div>
