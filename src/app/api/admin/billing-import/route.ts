@@ -112,9 +112,10 @@ export async function POST(req: NextRequest) {
   }
 
   const uniqueMatched = [...new Map(matched.map((row) => [row.schoolId, row])).values()];
+  let applied = 0;
   if (apply) {
-    await prisma.$transaction(
-      uniqueMatched.map((row) => prisma.$executeRawUnsafe(
+    for (const row of uniqueMatched) {
+      await prisma.$executeRawUnsafe(
         `INSERT INTO "SchoolBillingProfile"
           ("schoolId", "officialName", "invoiceTitle", "taxId", "billingEmail", "submittedAt")
          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -130,12 +131,13 @@ export async function POST(req: NextRequest) {
         row.invoiceTitle,
         row.taxId,
         row.billingEmail,
-      )),
-    );
+      );
+      applied += 1;
+    }
   }
 
   return NextResponse.json({
-    applied: apply ? uniqueMatched.length : 0,
+    applied,
     matched: uniqueMatched,
     unmatched,
     ambiguous,
