@@ -8,6 +8,7 @@ import {
   normalizeInvoiceBrand,
   type SchoolInvoiceBrand,
 } from "@/lib/schoolInvoiceConfig";
+import { ensureSchoolBillingProfileTable } from "@/lib/schoolBillingProfile";
 
 const MONTH_LABELS = ["", "一月份", "二月份", "三月份", "四月份", "五月份", "六月份", "七月份", "八月份", "九月份", "十月份", "十一月份", "十二月份"];
 export const BILLING_TYPES = ["perClass", "perPerson"] as const;
@@ -47,6 +48,8 @@ export type SchoolInvoiceSnapshot = {
   id?: number;
   schoolId: number;
   schoolName: string;
+  invoiceTitle: string;
+  taxId: string;
   brandName: SchoolInvoiceBrand;
   invoiceMonth: string;
   invoiceDate: string;
@@ -440,6 +443,8 @@ export async function buildSchoolInvoicePreview(input: {
   return {
     schoolId: school.id,
     schoolName: school.name,
+    invoiceTitle: school.name,
+    taxId: "",
     brandName: brand,
     invoiceMonth: invoiceMonthKey(input.year, input.month),
     invoiceDate: new Date().toISOString(),
@@ -584,13 +589,24 @@ export async function listSchoolInvoices(options: { year?: number; month?: numbe
 }
 
 export async function readSchoolInvoice(id: number, client: Pick<typeof prisma, "$queryRawUnsafe"> = prisma, ensureTables = true) {
-  if (ensureTables) await ensureSchoolInvoiceTables();
+  if (ensureTables) {
+    await Promise.all([ensureSchoolInvoiceTables(), ensureSchoolBillingProfileTable()]);
+  }
   const invoiceRows = await client.$queryRawUnsafe<InvoiceRow[]>(
     'SELECT * FROM "SchoolInvoice" WHERE "id" = ? LIMIT 1',
     id,
   );
   const invoice = invoiceRows[0];
   if (!invoice) return null;
+  const billingRows = await client.$queryRawUnsafe<Array<{ invoiceTitle: string; taxId: string }>>(
+    `SELECT COALESCE("invoiceTitle", '') AS "invoiceTitle",
+            COALESCE("taxId", '') AS "taxId"
+     FROM "SchoolBillingProfile"
+     WHERE "schoolId" = ?
+     LIMIT 1`,
+    invoice.schoolId,
+  );
+  const billing = billingRows[0];
 
   const itemRows = await client.$queryRawUnsafe<InvoiceItemRow[]>(
     'SELECT * FROM "SchoolInvoiceItem" WHERE "invoiceId" = ? ORDER BY "id" ASC',
@@ -609,6 +625,8 @@ export async function readSchoolInvoice(id: number, client: Pick<typeof prisma, 
 
   return {
     ...invoice,
+    invoiceTitle: billing?.invoiceTitle || invoice.schoolName,
+    taxId: billing?.taxId || "",
     companyName: invoice.companyName || invoiceCompanyForBrand(invoice.brandName).companyName,
     phone: invoice.phone || invoiceCompanyForBrand(invoice.brandName).phone,
     fax: invoice.fax || invoiceCompanyForBrand(invoice.brandName).fax,
