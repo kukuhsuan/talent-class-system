@@ -6,6 +6,8 @@ type PublicTokenPayload = {
   attendanceId: number;
   campaignId?: number;
   teacherId?: number;
+  // 連結世代，目前只有 teacher_document 用；比對 Teacher.docLinkEpoch 做作廢
+  epoch?: number;
   exp: number;
 };
 
@@ -113,11 +115,13 @@ export function verifyTeacherResumeToken(token: string) {
 
 // 敏感文件（存摺／委任書）用獨立的 type，履歷連結不能拿來上傳存摺，反之亦然。
 // 效期比履歷短：存摺是金融資料，連結外流的風險成本高很多。
-export function signTeacherDocumentToken(teacherId: number, maxAgeDays = 30) {
+// epoch 來自 Teacher.docLinkEpoch，行政按「作廢舊連結」時 +1，舊權杖立刻失效。
+export function signTeacherDocumentToken(teacherId: number, epoch = 0, maxAgeDays = 30) {
   const payload: PublicTokenPayload = {
     type: "teacher_document",
     attendanceId: 0,
     teacherId,
+    epoch: Number(epoch) || 0,
     exp: Math.floor(Date.now() / 1000) + maxAgeDays * 24 * 60 * 60,
   };
   const encodedPayload = base64url(JSON.stringify(payload));
@@ -140,5 +144,7 @@ export function verifyTeacherDocumentToken(token: string) {
     throw new Error("Invalid token");
   }
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) throw new Error("Expired token");
-  return { teacherId: Number(payload.teacherId) };
+  // epoch 的比對要拿到 Teacher 資料才做得了，交給呼叫端；這裡只負責原樣帶出來。
+  // 舊權杖沒有 epoch 欄位，視為第 0 代。
+  return { teacherId: Number(payload.teacherId), epoch: Number(payload.epoch ?? 0) };
 }

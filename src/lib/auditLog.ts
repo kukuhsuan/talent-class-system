@@ -1,6 +1,23 @@
+import crypto from "node:crypto";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentSessionUser, requestIp } from "@/lib/permissions";
+import { requiredAuthSecret } from "@/lib/authSecret";
+
+// 銀行帳號不進稽核明碼。但「帳號變更提醒」要靠比對前後值，
+// 所以除了遮罩再附一段不可逆指紋：內容不同指紋就不同，指紋卻推不回帳號。
+const BANK_ACCOUNT_KEY = /bankAccountNumber$/i;
+
+function bankFingerprint(account: string) {
+  return crypto.createHmac("sha256", requiredAuthSecret()).update(account).digest("hex").slice(0, 8);
+}
+
+export function maskAuditBankAccount(value: unknown) {
+  const account = String(value ?? "").replace(/[\s-]/g, "");
+  if (!account) return "";
+  const masked = account.length <= 4 ? "*".repeat(account.length) : `******${account.slice(-4)}`;
+  return `${masked}#${bankFingerprint(account)}`;
+}
 
 const SECRET_PATTERNS = [
   /password/i,
@@ -114,6 +131,7 @@ export async function ensureAuditLogStorage() {
 function sanitizeValue(value: unknown, keyPath = ""): unknown {
   if (value == null) return value;
   if (SECRET_PATTERNS.some((pattern) => pattern.test(keyPath))) return "[REDACTED]";
+  if (BANK_ACCOUNT_KEY.test(keyPath)) return maskAuditBankAccount(value);
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map((item, index) => sanitizeValue(item, `${keyPath}.${index}`));
   if (typeof value === "object") {
@@ -148,22 +166,42 @@ function displayAuditValue(value: unknown) {
   return String(value);
 }
 
+// 敏感檔案的檢視紀錄不能「盡力而為」：稽核寫不進去就不該讓人看到檔案。
+// 這支寫失敗會往外丟，呼叫端自己決定要不要擋（見 teacher-documents/[id]/file）。
+export async function writeAuditLogStrict(req: NextRequest | null, input: AuditInput) {
+  await ensureAuditLogStorage();
+  const actor = await resolveActor(input);
+  await insertAuditLog(req, input, actor);
+}
+
+async function resolveActor(input: AuditInput) {
+  return input.actorName || input.actorRole || input.actorUserId !== undefined
+    ? {
+        userId: input.actorUserId ?? null,
+        name: input.actorName ?? "",
+        role: input.actorRole ?? "",
+      }
+    : await currentSessionUser();
+}
+
+async function insertAuditLog(
+  req: NextRequest | null,
+  input: AuditInput,
+  actor: { userId: number | null; name: string; role: string } | null | undefined,
+) {
+  await prisma.$executeRaw`
+    INSERT INTO "AuditLog"
+      ("actorUserId", "actorName", "actorRole", "action", "targetType", "targetId", "targetLabel", "beforeData", "afterData", "diffSummary", "ipAddress", "userAgent", "sensitive")
+    VALUES
+      (${actor?.userId ?? null}, ${actor?.name ?? ""}, ${actor?.role ?? ""}, ${input.action}, ${input.targetType}, ${String(input.targetId ?? "")}, ${input.targetLabel ?? ""}, ${stringifyAuditData(input.beforeData)}, ${stringifyAuditData(input.afterData)}, ${input.diffSummary ?? ""}, ${req ? requestIp(req) : ""}, ${req?.headers.get("user-agent") ?? ""}, ${Boolean(input.sensitive)})
+  `;
+}
+
 export async function writeAuditLog(req: NextRequest | null, input: AuditInput) {
   try {
     await ensureAuditLogStorage();
-    const actor = input.actorName || input.actorRole || input.actorUserId !== undefined
-      ? {
-          userId: input.actorUserId ?? null,
-          name: input.actorName ?? "",
-          role: input.actorRole ?? "",
-        }
-      : await currentSessionUser();
-    await prisma.$executeRaw`
-      INSERT INTO "AuditLog"
-        ("actorUserId", "actorName", "actorRole", "action", "targetType", "targetId", "targetLabel", "beforeData", "afterData", "diffSummary", "ipAddress", "userAgent", "sensitive")
-      VALUES
-        (${actor?.userId ?? null}, ${actor?.name ?? ""}, ${actor?.role ?? ""}, ${input.action}, ${input.targetType}, ${String(input.targetId ?? "")}, ${input.targetLabel ?? ""}, ${stringifyAuditData(input.beforeData)}, ${stringifyAuditData(input.afterData)}, ${input.diffSummary ?? ""}, ${req ? requestIp(req) : ""}, ${req?.headers.get("user-agent") ?? ""}, ${Boolean(input.sensitive)})
-    `;
+    const actor = await resolveActor(input);
+    await insertAuditLog(req, input, actor);
   } catch (error) {
     console.warn("audit log write failed", (error as Error).message);
   }
@@ -175,8 +213,9 @@ export function diffSummary(beforeData: Record<string, unknown> | null | undefin
   const changes: string[] = [];
   for (const key of Object.keys(after)) {
     if (SECRET_PATTERNS.some((pattern) => pattern.test(key))) continue;
-    const b = before[key];
-    const a = after[key];
+    const bank = BANK_ACCOUNT_KEY.test(key);
+    const b = bank ? maskAuditBankAccount(before[key]) : before[key];
+    const a = bank ? maskAuditBankAccount(after[key]) : after[key];
     if (JSON.stringify(b) !== JSON.stringify(a)) {
       changes.push(`${labels[key] ?? key}：${displayAuditValue(b)} → ${displayAuditValue(a)}`);
     }

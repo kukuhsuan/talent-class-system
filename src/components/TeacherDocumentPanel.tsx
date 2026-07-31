@@ -14,6 +14,7 @@ export type TeacherDocumentRow = {
   reviewedBy: string;
   reviewedAt: string;
   notes: string;
+  filePurgedAt: string;
 };
 
 export const DOC_LABELS: Record<string, string> = { bankbook: "存摺封面", mandate: "委任書" };
@@ -108,6 +109,22 @@ export default function TeacherDocumentPanel({
     });
   }
 
+  // 連結傳錯人、貼錯群組時的補救：把該老師手上所有舊連結一次作廢
+  function revokeLinks() {
+    if (!confirm(`確定作廢 ${teacherName} 目前所有的上傳連結？\n老師手上的舊連結會立刻失效，需要重新產生一條給他。`)) return;
+    return run("revoke", async () => {
+      const res = await fetch("/api/teacher-documents/revoke-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teacherId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "作廢失敗");
+      setUploadUrl("");
+      return "舊連結已全部失效，請重新產生連結給老師";
+    });
+  }
+
   function proxyUpload(docType: string, file: File) {
     return run(`upload-${docType}`, async () => {
       const fd = new FormData();
@@ -160,17 +177,29 @@ export default function TeacherDocumentPanel({
           {message && <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
 
           <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-3">
-            <button
-              onClick={makeLink}
-              disabled={!!busy}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-            >
-              {busy === "link" ? "產生中..." : "產生老師上傳連結"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={makeLink}
+                disabled={!!busy}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {busy === "link" ? "產生中..." : "產生老師上傳連結"}
+              </button>
+              <button
+                onClick={revokeLinks}
+                disabled={!!busy}
+                className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                {busy === "revoke" ? "作廢中..." : "作廢舊連結"}
+              </button>
+            </div>
             {uploadUrl && (
               <div className="mt-2 break-all rounded-lg bg-white px-3 py-2 text-xs text-slate-600">{uploadUrl}</div>
             )}
-            <p className="mt-2 text-xs text-slate-500">老師點連結不用登入就能自己上傳；也可以由行政用下方欄位代傳。</p>
+            <p className="mt-2 text-xs text-slate-500">
+              老師點連結不用登入就能自己上傳；也可以由行政用下方欄位代傳。
+              連結貼錯群組或傳錯人時，按「作廢舊連結」可讓他手上的連結立刻失效。
+            </p>
           </div>
 
           {loading && <div className="py-6 text-center text-sm text-slate-400">載入中...</div>}
@@ -195,7 +224,12 @@ export default function TeacherDocumentPanel({
                 )}
 
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  {row && canViewFile && (
+                  {row?.filePurgedAt && (
+                    <span className="text-xs text-slate-500">
+                      原檔已於 {formatDateTime(row.filePurgedAt)} 依保留期限刪除，審核紀錄保留
+                    </span>
+                  )}
+                  {row && !row.filePurgedAt && canViewFile && (
                     <a
                       href={`/api/teacher-documents/${row.id}/file`}
                       target="_blank"
@@ -205,7 +239,7 @@ export default function TeacherDocumentPanel({
                       檢視原檔
                     </a>
                   )}
-                  {row && !canViewFile && <span className="text-xs text-slate-400">原檔僅會計／管理者可檢視</span>}
+                  {row && !row.filePurgedAt && !canViewFile && <span className="text-xs text-slate-400">原檔僅會計／管理者可檢視</span>}
 
                   {row && docType === "mandate" && status === "待審核" && (
                     <button onClick={() => review(row, "行政已確認")} disabled={!!busy} className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:opacity-60">行政已確認</button>

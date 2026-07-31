@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { HR_DOCUMENT_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { isTeacherDocType, upsertTeacherDocument, TEACHER_DOC_LABELS } from "@/lib/teacherDocument";
-import { putSensitiveDocument, validateSensitiveFile } from "@/lib/sensitiveBlob";
+import { deleteSensitiveDocument, putSensitiveDocument, validateSensitiveFile } from "@/lib/sensitiveBlob";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (!isTeacherDocType(docType)) return NextResponse.json({ error: "文件類型不正確" }, { status: 400 });
   if (!(file instanceof File)) return NextResponse.json({ error: "請選擇檔案" }, { status: 400 });
 
-  const check = validateSensitiveFile(file);
+  const check = await validateSensitiveFile(file);
   if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
 
   const teacher = await prisma.teacher.findUnique({ where: { id: teacherId }, select: { id: true, name: true } });
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const stored = await putSensitiveDocument({ teacherId, docType, file, ext: check.ext });
-    const row = await upsertTeacherDocument({
+    const { row, previousFileUrl } = await upsertTeacherDocument({
       teacherId,
       docType,
       fileUrl: stored.pathname,
@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
       contentType: stored.contentType,
       uploadedBy: `行政代傳：${user?.name || user?.username || ""}`,
     });
+    // 被蓋掉的舊檔要真的刪掉，不然 blob 裡會留下沒有任何紀錄指向的存摺
+    if (previousFileUrl) await deleteSensitiveDocument(previousFileUrl);
     await writeAuditLog(req, {
       action: "create",
       targetType: "TeacherDocument",

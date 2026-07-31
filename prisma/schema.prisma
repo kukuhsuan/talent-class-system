@@ -194,6 +194,8 @@ model Teacher {
   salaryNotes          String                @default("")
   // 人工指定的授課項目（JSON 陣列字串）；未填時退回 teacherTeachingProfile 的出勤推斷
   teachingSubjects     String                @default("")
+  // 文件上傳連結世代：作廢舊連結時 +1，見 src/lib/publicAccessToken.ts
+  docLinkEpoch         Int                   @default(0)
   lineUserId           String?               @unique
   lineBindCode         String?               @unique
   lineRegion           String                @default("")

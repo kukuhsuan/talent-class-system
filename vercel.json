@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/pre-class-meeting?task=remind",
       "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/teacher-document-retention",
+      "schedule": "20 19 * * 0"
     }
   ]
 }

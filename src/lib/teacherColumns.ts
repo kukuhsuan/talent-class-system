@@ -13,6 +13,9 @@ const TEACHER_COLUMNS: Array<[column: string, ddl: string]> = [
   ["emergencyContact", 'ALTER TABLE "Teacher" ADD COLUMN "emergencyContact" TEXT NOT NULL DEFAULT \'\''],
   ["salaryNotes", 'ALTER TABLE "Teacher" ADD COLUMN "salaryNotes" TEXT NOT NULL DEFAULT \'\''],
   ["teachingSubjects", 'ALTER TABLE "Teacher" ADD COLUMN "teachingSubjects" TEXT NOT NULL DEFAULT \'\''],
+  // 文件上傳連結的世代編號：+1 就能讓該老師手上所有舊連結立刻失效。
+  // 不用改 AUTH_SECRET，那會一次打死報告、履歷、園所入口所有公開連結。
+  ["docLinkEpoch", 'ALTER TABLE "Teacher" ADD COLUMN "docLinkEpoch" INTEGER NOT NULL DEFAULT 0'],
 ];
 
 export async function ensureTeacherExtendedColumns() {

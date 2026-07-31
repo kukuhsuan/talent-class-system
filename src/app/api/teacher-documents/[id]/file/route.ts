@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SENSITIVE_FINANCE_ROLES, requireRole } from "@/lib/permissions";
 import { TEACHER_DOC_LABELS, getTeacherDocumentWithUrl } from "@/lib/teacherDocument";
 import { documentDownloadName, readSensitiveDocument } from "@/lib/sensitiveBlob";
-import { writeAuditLog } from "@/lib/auditLog";
+import { writeAuditLogStrict } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
 
@@ -16,22 +16,35 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 
   const { id } = await params;
   const document = await getTeacherDocumentWithUrl(Number(id));
-  if (!document || !document.fileUrl) return NextResponse.json({ error: "找不到檔案" }, { status: 404 });
+  if (!document) return NextResponse.json({ error: "找不到檔案" }, { status: 404 });
+  if (!document.fileUrl) {
+    // 到期清除過的檔案：審核紀錄還在，但原檔已依保留政策刪除
+    const purged = Boolean(document.filePurgedAt);
+    return NextResponse.json(
+      { error: purged ? "原檔已依保留期限刪除，僅保留審核紀錄" : "找不到檔案" },
+      { status: purged ? 410 : 404 },
+    );
+  }
 
   const teacher = await prisma.teacher.findUnique({
     where: { id: document.teacherId },
     select: { name: true },
   });
 
-  // 每一次檢視都留紀錄：誰、什麼時候、看了誰的哪份文件
-  await writeAuditLog(req, {
-    action: "export",
-    targetType: "TeacherDocument",
-    targetId: document.id,
-    targetLabel: `${teacher?.name ?? document.teacherId}－${TEACHER_DOC_LABELS[document.docType]}`,
-    diffSummary: `檢視${TEACHER_DOC_LABELS[document.docType]}原檔（${user?.name || user?.username || ""}）`,
-    sensitive: true,
-  });
+  // 每一次檢視都留紀錄：誰、什麼時候、看了誰的哪份文件。
+  // 這裡刻意用 strict 版：稽核寫不進去就不放行，否則就會出現「看得到但查不到誰看過」的檔案。
+  try {
+    await writeAuditLogStrict(req, {
+      action: "export",
+      targetType: "TeacherDocument",
+      targetId: document.id,
+      targetLabel: `${teacher?.name ?? document.teacherId}－${TEACHER_DOC_LABELS[document.docType]}`,
+      diffSummary: `檢視${TEACHER_DOC_LABELS[document.docType]}原檔（${user?.name || user?.username || ""}）`,
+      sensitive: true,
+    });
+  } catch {
+    return NextResponse.json({ error: "稽核紀錄寫入失敗，為保護個資暫不提供檔案，請稍後再試" }, { status: 503 });
+  }
 
   try {
     const result = await readSensitiveDocument(document.fileUrl);

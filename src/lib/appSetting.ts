@@ -5,12 +5,17 @@ import { prisma } from "@/lib/prisma";
 export const APP_SETTING_KEYS = {
   mandateTemplateUrl: "doc.template.mandate.url",
   bankbookHint: "doc.template.bankbook.hint",
+  documentRetentionDays: "doc.retention.days",
 } as const;
 
 export const APP_SETTING_LABELS: Record<string, string> = {
   [APP_SETTING_KEYS.mandateTemplateUrl]: "委任書格式下載連結",
   [APP_SETTING_KEYS.bankbookHint]: "存摺封面上傳說明",
+  [APP_SETTING_KEYS.documentRetentionDays]: "文件原檔保留天數（審核完成起算，0 = 不自動刪除）",
 };
+
+// 存摺是金融個資，審核完成後就沒有繼續留原檔的理由。預設一年。
+export const DEFAULT_RETENTION_DAYS = 365;
 
 let tableReady = false;
 
@@ -49,6 +54,15 @@ export async function getAppSetting(key: string) {
   return key.endsWith(".url") ? safeUrl(value) : value;
 }
 
+export async function documentRetentionDays() {
+  const raw = (await getAppSetting(APP_SETTING_KEYS.documentRetentionDays)).trim();
+  if (!raw) return DEFAULT_RETENTION_DAYS;
+  const days = Number(raw);
+  // 設定壞掉時退回預設，不要因為打錯字就變成永不刪除或立刻全刪
+  if (!Number.isInteger(days) || days < 0 || days > 3650) return DEFAULT_RETENTION_DAYS;
+  return days;
+}
+
 export async function listAppSettings() {
   await ensureAppSettingTable();
   const rows = await prisma.$queryRawUnsafe<Array<{ key: string; value: string; updatedBy: string; updatedAt: string }>>(
@@ -69,6 +83,12 @@ export async function setAppSetting(key: string, value: string, updatedBy: strin
   const stored = key.endsWith(".url") ? safeUrl(value) : value.trim();
   if (key.endsWith(".url") && value.trim() && !stored) {
     throw new Error("連結必須是 https 開頭的網址");
+  }
+  if (key.endsWith(".days") && stored) {
+    const days = Number(stored);
+    if (!Number.isInteger(days) || days < 0 || days > 3650) {
+      throw new Error("保留天數必須是 0 到 3650 之間的整數");
+    }
   }
   await prisma.$executeRawUnsafe(
     `INSERT INTO AppSetting (key, value, updatedBy, updatedAt)

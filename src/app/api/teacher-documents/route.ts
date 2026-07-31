@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { HR_DOCUMENT_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { listTeacherDocuments } from "@/lib/teacherDocument";
 import { signTeacherDocumentToken } from "@/lib/publicAccessToken";
+import { ensureTeacherExtendedColumns } from "@/lib/teacherColumns";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
@@ -29,10 +30,14 @@ export async function POST(req: NextRequest) {
   const data = await req.json().catch(() => ({}));
   const teacherId = Number(data?.teacherId);
   if (!Number.isFinite(teacherId)) return NextResponse.json({ error: "缺少老師 ID" }, { status: 400 });
-  const teacher = await prisma.teacher.findUnique({ where: { id: teacherId }, select: { id: true, name: true } });
+  await ensureTeacherExtendedColumns();
+  const teacher = await prisma.teacher.findUnique({
+    where: { id: teacherId },
+    select: { id: true, name: true, docLinkEpoch: true },
+  });
   if (!teacher) return NextResponse.json({ error: "找不到老師資料" }, { status: 404 });
 
-  const token = signTeacherDocumentToken(teacher.id);
+  const token = signTeacherDocumentToken(teacher.id, teacher.docLinkEpoch ?? 0);
   await writeAuditLog(req, {
     action: "create",
     targetType: "TeacherDocument",
