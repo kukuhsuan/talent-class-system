@@ -8,6 +8,7 @@ type MonthEnd = {
   salary: { teachers: number; total: number; hoursReviewCount: number; unreportedCount: number; locked: boolean };
   invoices: { count: number; total: number; missing: string[] };
   schools: Array<{ school: string; lessons: number; people: number; inSchoolHours: number; missingCount: number; missingReport: number; invoiceCreated: boolean; invoiceRequired: boolean }>;
+  payout: { block: number; warn: number; ok: number };
 };
 
 const now = new Date();
@@ -74,6 +75,25 @@ export default function AccountingPage() {
           <Metric label="預計向園所收款" value={data.invoices.count === 0 ? "尚未計算" : money(data.invoices.total)} note={data.invoices.count === 0 ? `等待建立請款單（還缺 ${data.invoices.missing.length} 間）` : `目前已建立 ${data.invoices.count} 張請款單${data.invoices.missing.length ? `，還缺 ${data.invoices.missing.length} 間` : ""}`} color="emerald" />
           <Metric label="預計支付老師薪資" value={money(data.salary.total)} note={`共 ${data.salary.teachers} 位老師`} color="violet" />
         </div>
+
+        {/* 匯款準備狀態刻意不併進上方的「還不能結帳」：結帳看的是數字對不對，
+            匯款看的是錢匯不匯得出去。混在一起會讓人以為補完人數就能匯款。 */}
+        {data.payout && (data.payout.block > 0 || data.payout.warn > 0) && (
+          <Link href={`/salary?year=${year}&month=${month}`}
+            className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 hover:brightness-[0.98] ${data.payout.block > 0 ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50"}`}>
+            <div>
+              <div className={`font-black ${data.payout.block > 0 ? "text-rose-800" : "text-amber-800"}`}>
+                匯款前提醒：{data.payout.block > 0 ? `${data.payout.block} 位老師的匯款資料不齊，現在匯不出去` : `${data.payout.warn} 位老師需要再核對一次`}
+              </div>
+              <p className="mt-1 text-sm text-slate-600">
+                本月有薪資的老師中，{data.payout.ok} 位可直接匯款
+                {data.payout.warn > 0 ? `、${data.payout.warn} 位需確認` : ""}
+                {data.payout.block > 0 ? `、${data.payout.block} 位被擋下` : ""}。
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-slate-600">去薪資頁處理 →</span>
+          </Link>
+        )}
 
         <div className="mb-5 grid gap-4 lg:grid-cols-[1fr_1.4fr]">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="font-black text-slate-900">先處理這些事情</h2><p className="mt-1 text-xs text-slate-500">點每一項就會前往處理頁面</p><div className="mt-3 space-y-2">{blockers.map((item,index)=><Link key={item.label} href={item.href} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-3 hover:bg-blue-50"><span className="text-sm font-semibold text-slate-700"><b className="mr-2 text-blue-600">{index + 1}.</b>{item.label}</span><span className={`rounded-full px-2.5 py-1 text-xs font-black ${item.count ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{item.count ? `還有 ${item.count} 筆 →` : "✓ 已完成"}</span></Link>)}</div></section>

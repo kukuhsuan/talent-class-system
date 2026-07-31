@@ -54,6 +54,11 @@ function isOwnerOnlyPath(path: string) {
     || path === "/admin/audit-logs"
     || path.startsWith("/admin/audit-logs/")
     || path === "/api/admin/audit-logs"
+    // 系統設定會決定原檔什麼時候被刪、老師端看到什麼連結，只開放最高權限
+    || path === "/admin/settings"
+    || path.startsWith("/admin/settings/")
+    || path === "/api/settings"
+    || path.startsWith("/api/settings/")
     || path === "/alerts"
     || path.startsWith("/alerts/")
     || path === "/api/alerts"

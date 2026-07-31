@@ -13,6 +13,8 @@ type Teacher = {
   bankName: string; bankCode: string; bankBranch: string; bankAccountName: string; bankAccountMasked: string; bankRemitNotes: string;
   isCollegeStudent: boolean; emergencyContact: string; salaryNotes: string; teachingSubjects: string[];
   firstPaidMonth: string; lastPaidMonth: string;
+  // 「匯款資料在會計端」註記：有值代表這位老師的帳號與存摺本來就不在系統，不算待補件
+  bankHeldOfflineAt: string | null;
   teachingProfile?: {
     primaryRegionLabel: string;
     primarySpecialtyLabel: string;
@@ -22,7 +24,8 @@ type Teacher = {
   };
 };
 
-type TeacherForm = Omit<Teacher, "id" | "bankAccountMasked" | "firstPaidMonth" | "lastPaidMonth" | "teachingProfile"> & { bankAccountNumber: string };
+// 匯款事實欄位（firstPaidMonth/lastPaidMonth）與會計端註記都不能從教師表單改，所以排除在表單型別外
+type TeacherForm = Omit<Teacher, "id" | "bankAccountMasked" | "firstPaidMonth" | "lastPaidMonth" | "teachingProfile" | "bankHeldOfflineAt"> & { bankAccountNumber: string };
 
 type CourseOption = { code: string; label: string };
 
@@ -44,6 +47,9 @@ const EMPTY: TeacherForm = {
   isCollegeStudent: false, emergencyContact: "", salaryNotes: "", teachingSubjects: [],
 };
 
+// 與後端 /api/teachers 的 SALARY_ROLES 對齊：其他角色拿到的銀行欄位一律是空字串
+const BANK_VISIBLE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff"]);
+
 const LINE_REGIONS = [
   { value: "north", label: "北部" },
   { value: "south", label: "南部" },
@@ -55,6 +61,7 @@ export default function TeachersPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
+  const [docFilter, setDocFilter] = useState("");
   const [saving, setSaving] = useState(false);
   const { toast, showToast } = useToast();
   const formRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +73,7 @@ export default function TeachersPage() {
   const [documents, setDocuments] = useState<TeacherDocumentRow[]>([]);
   const [docPanel, setDocPanel] = useState<{ id: number; name: string } | null>(null);
   const [role, setRole] = useState("");
+  const canSeeBank = BANK_VISIBLE_ROLES.has(role);
 
   const load = () => fetch("/api/teachers").then((r) => r.json()).then((list: Teacher[]) => {
     setTeachers(list);
@@ -166,14 +174,39 @@ export default function TeachersPage() {
     }
   };
 
-  const filtered = teachers.filter((t) => t.name.includes(search));
-
   // 文件只回狀態不回檔案，列表直接顯示存摺／委任書進度，行政不用逐一點開
   const docStatusOf = (teacherId: number, docType: string) =>
     documents.find((d) => d.teacherId === teacherId && d.docType === docType)?.reviewStatus || "未上傳";
 
+  // 待補件判斷刻意與 teacherPayoutReadiness 對齊：已註記「匯款資料在會計端」的人
+  // 資料本來就不在系統，列進待補件只會讓行政每個月追一輪追不到的人。
+  const heldOffline = (t: Teacher) => Boolean(t.bankHeldOfflineAt);
+  const missingBank = (t: Teacher) =>
+    !heldOffline(t) && !(t.bankName?.trim() && t.bankAccountMasked?.trim() && t.bankAccountName?.trim());
+  const missingBankbook = (t: Teacher) => !heldOffline(t) && docStatusOf(t.id, "bankbook") !== "已完成";
+  const missingMandate = (t: Teacher) => docStatusOf(t.id, "mandate") !== "已完成";
+
+  const DOC_FILTERS: { value: string; label: string; match: (t: Teacher) => boolean }[] = [
+    { value: "", label: "全部老師", match: () => true },
+    { value: "todo", label: "待補件（缺帳號或存摺）", match: (t) => missingBank(t) || missingBankbook(t) },
+    { value: "bank", label: "缺銀行帳號", match: missingBank },
+    { value: "bankbook", label: "存摺未完成", match: missingBankbook },
+    { value: "mandate", label: "委任書未完成", match: missingMandate },
+    { value: "held", label: "匯款資料在會計端", match: heldOffline },
+  ];
+  // 看不到銀行欄位的角色（例如客服）拿到的 bankName 一律是空字串，
+  // 這時「缺銀行帳號」會把所有人都篩出來，等於給了一個必定說謊的答案，所以直接不提供。
+  const docFilterOptions = canSeeBank ? DOC_FILTERS : DOC_FILTERS.filter((item) => !["todo", "bank", "held"].includes(item.value));
+  const activeDocFilter = docFilterOptions.find((item) => item.value === docFilter) ?? DOC_FILTERS[0];
+
+  const filtered = teachers.filter((t) => t.name.includes(search) && activeDocFilter.match(t));
+
   const DocBadges = ({ teacherId }: { teacherId: number }) => (
     <div className="flex flex-wrap gap-1">
+      {/* 註記過的老師要標出來，否則行政看到「存摺：未上傳」還是會去追一個永遠追不到的東西 */}
+      {teachers.find((t) => t.id === teacherId)?.bankHeldOfflineAt && (
+        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">匯款資料在會計端</span>
+      )}
       {([["bankbook", "存摺"], ["mandate", "委任"]] as const).map(([docType, short]) => {
         const status = docStatusOf(teacherId, docType);
         return (
@@ -342,8 +375,15 @@ export default function TeachersPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100">
+        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜尋老師姓名..." className="max-w-xs" />
+          <select value={docFilter} onChange={(e) => setDocFilter(e.target.value)} className="max-w-xs" aria-label="文件狀態篩選">
+            {docFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <span className="text-xs text-slate-500">
+            顯示 {filtered.length} / {teachers.length} 位
+            {canSeeBank && docFilter === "" && ` · 待補件 ${teachers.filter((t) => missingBank(t) || missingBankbook(t)).length} 位`}
+          </span>
         </div>
         <div className="md:hidden divide-y divide-slate-100">
           {filtered.map((t) => (
