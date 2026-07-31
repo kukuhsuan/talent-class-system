@@ -10,6 +10,7 @@ import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 export type NotifyTargetType = "teacher" | "school";
 export type NotifyTemplateKey =
   | "new_term"
+  | "term_kickoff_meeting"
   | "class_notes"
   | "coach_rules"
   | "typhoon"
@@ -48,6 +49,38 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "{課程摘要}",
       "",
       "若資訊有誤或需調整，請與行政聯繫，謝謝！",
+    ].join("\n"),
+  },
+  {
+    key: "term_kickoff_meeting",
+    label: "新學期開課會議通知",
+    target: "teacher",
+    editable: true,
+    needsAck: true,
+    description: "通知教練新學期開課會議的時間、地點與會議重點。內文中【】的部分請於發送前改成當次實際資訊，以卡片發送並附「確認收到」按鈕",
+    defaultBody: [
+      "{姓名} 教練您好：",
+      "",
+      "新學期即將開始，為讓大家對本學期的課程安排、教學重點與行政流程有一致的認識，將召開開課會議，敬請務必出席。",
+      "",
+      "📅 日期：【請填寫，例如 8/20（週三）】",
+      "🕐 時間：【請填寫，例如 14:00-16:00】",
+      "📍 地點：【請填寫，例如 桃園總部 3F 會議室】",
+      "🗺️ 地址：【請填寫】",
+      "",
+      "📋 會議重點",
+      "1️⃣ 本學期課程安排與班級分配",
+      "2️⃣ 教學進度與各課程重點說明",
+      "3️⃣ 器材領取、場地與安全注意事項",
+      "4️⃣ 課程回報、點名與請假流程",
+      "5️⃣ Q&A 與問題交流",
+      "",
+      "🔔 出席提醒",
+      "・請提前 10 分鐘到場報到",
+      "・請攜帶紙筆，方便記錄各班注意事項",
+      "・若確定無法出席，請提前告知行政，另行安排補說明",
+      "",
+      "✅ 請點選下方「確認收到」按鈕，回覆您已收到本次會議通知。",
     ].join("\n"),
   },
   {
