@@ -16,6 +16,11 @@ const TEACHER_COLUMNS: Array<[column: string, ddl: string]> = [
   // 文件上傳連結的世代編號：+1 就能讓該老師手上所有舊連結立刻失效。
   // 不用改 AUTH_SECRET，那會一次打死報告、履歷、園所入口所有公開連結。
   ["docLinkEpoch", 'ALTER TABLE "Teacher" ADD COLUMN "docLinkEpoch" INTEGER NOT NULL DEFAULT 0'],
+  // 「匯款資料在會計手上，系統沒有存」的註記。系統上線前就已經在匯款的老師屬於這一類，
+  // 不該被當成首次匯款每個月提醒一次。標記等於會計簽名負責，所以連人帶時間帶來源一起記。
+  ["bankHeldOfflineAt", 'ALTER TABLE "Teacher" ADD COLUMN "bankHeldOfflineAt" DATETIME'],
+  ["bankHeldOfflineBy", 'ALTER TABLE "Teacher" ADD COLUMN "bankHeldOfflineBy" TEXT NOT NULL DEFAULT \'\''],
+  ["bankHeldOfflineNote", 'ALTER TABLE "Teacher" ADD COLUMN "bankHeldOfflineNote" TEXT NOT NULL DEFAULT \'\''],
 ];
 
 export async function ensureTeacherExtendedColumns() {

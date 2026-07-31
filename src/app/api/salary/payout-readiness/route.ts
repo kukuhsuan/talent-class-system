@@ -26,6 +26,7 @@ export async function GET() {
       id: true, name: true,
       bankName: true, bankCode: true, bankBranch: true, bankAccountName: true, bankAccountNumber: true,
       bankRemitNotes: true, firstPaidMonth: true, lastPaidMonth: true, lastPaidAt: true,
+      bankHeldOfflineAt: true, bankHeldOfflineBy: true, bankHeldOfflineNote: true,
     },
     orderBy: { id: "asc" },
   });
@@ -47,6 +48,9 @@ export async function GET() {
       bankbookStatus,
       bankChangedAt: changedMap.get(teacher.id) ?? null,
       lastPaidAt: teacher.lastPaidAt ?? null,
+      bankHeldOfflineAt: teacher.bankHeldOfflineAt ?? null,
+      bankHeldOfflineBy: teacher.bankHeldOfflineBy ?? "",
+      bankHeldOfflineNote: teacher.bankHeldOfflineNote ?? "",
     });
     return {
       teacherId: teacher.id,
@@ -91,7 +95,7 @@ export async function POST(req: NextRequest) {
     where: { id: { in: teacherIds } },
     select: {
       id: true, name: true, bankName: true, bankAccountName: true, bankAccountNumber: true,
-      firstPaidMonth: true, lastPaidMonth: true,
+      firstPaidMonth: true, lastPaidMonth: true, bankHeldOfflineAt: true,
     },
   });
   if (teachers.length === 0) return NextResponse.json({ error: "找不到老師資料" }, { status: 404 });
@@ -99,6 +103,8 @@ export async function POST(req: NextRequest) {
   // 存摺沒審過或帳號不齊就不該標記已匯款，否則提醒機制自己就先失效了
   const documents = await listTeacherDocuments(teachers.map((teacher) => teacher.id)).catch(() => []);
   const blocked = teachers.filter((teacher) => {
+    // 已註記「匯款資料在會計端」的老師，資料本來就不在系統，照樣可以記錄匯款事實
+    if (teacher.bankHeldOfflineAt) return false;
     const missingBank = !teacher.bankName?.trim() || !teacher.bankAccountNumber?.trim() || !teacher.bankAccountName?.trim();
     return missingBank || bankbookStatusOf(documents, teacher.id) !== DOC_STATUS.done;
   });

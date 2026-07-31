@@ -196,6 +196,10 @@ model Teacher {
   teachingSubjects     String                @default("")
   // 文件上傳連結世代：作廢舊連結時 +1，見 src/lib/publicAccessToken.ts
   docLinkEpoch         Int                   @default(0)
+  // 匯款資料由會計線下持有（系統不存帳號與存摺），見 src/lib/teacherPayoutReadiness.ts
+  bankHeldOfflineAt    DateTime?
+  bankHeldOfflineBy    String                @default("")
+  bankHeldOfflineNote  String                @default("")
   lineUserId           String?               @unique
   lineBindCode         String?               @unique
   lineRegion           String                @default("")

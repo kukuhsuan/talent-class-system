@@ -3,7 +3,13 @@ import { DOC_STATUS } from "@/lib/teacherDocument";
 
 // 發薪前提醒的唯一判斷來源。/salary、/accounting-center、Excel 匯出三處都呼叫這一支，
 // 不要各自寫一份，否則畫面說可以匯、匯出檔說不能匯。
-export type PayoutReadinessCode = "paid" | "first_time" | "bank_changed" | "missing_bank" | "missing_bankbook";
+export type PayoutReadinessCode =
+  | "paid"
+  | "first_time"
+  | "bank_changed"
+  | "missing_bank"
+  | "missing_bankbook"
+  | "held_offline";
 
 export type PayoutReadiness = {
   level: "ok" | "warn" | "block";
@@ -21,12 +27,36 @@ export type PayoutReadinessInput = {
   bankbookStatus: string;
   bankChangedAt: Date | null;
   lastPaidAt: Date | null;
+  // 會計線下已持有這位老師的匯款資料（系統上線前就在匯款的老師）
+  bankHeldOfflineAt?: Date | null;
+  bankHeldOfflineBy?: string;
+  bankHeldOfflineNote?: string;
 };
+
+function formatDate(value: Date) {
+  return value.toLocaleDateString("zh-TW");
+}
 
 export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadiness {
   const bankName = String(input.bankName ?? "").trim();
   const accountNumber = String(input.bankAccountNumber ?? "").trim();
   const accountName = String(input.bankAccountName ?? "").trim();
+  const heldAt = input.bankHeldOfflineAt ? new Date(input.bankHeldOfflineAt) : null;
+  const heldOffline = Boolean(heldAt && !Number.isNaN(heldAt.getTime()));
+
+  // 0. 系統上線前就在匯款的老師：帳號與存摺都在會計手上，系統沒有也不需要有。
+  //    這種人不是「資料缺漏」而是「資料不在系統」，每個月拿 ❌ 提醒他只會讓人習慣忽略紅字。
+  //    但也不能當成完全沒事——標記者與時間要一直掛在畫面上，才追得回是誰說可以匯的。
+  if (heldOffline && (!bankName || !accountNumber || !accountName || String(input.bankbookStatus ?? "") !== DOC_STATUS.done)) {
+    const by = String(input.bankHeldOfflineBy ?? "").trim();
+    const note = String(input.bankHeldOfflineNote ?? "").trim();
+    return {
+      level: "ok",
+      code: "held_offline",
+      label: "✓ 匯款資料在會計端",
+      detail: `${by || "會計"}於 ${formatDate(heldAt as Date)} 確認已持有此老師的匯款資料${note ? `（${note}）` : ""}；系統未保存帳號與存摺，如需改由系統控管請補齊資料後取消此註記。`,
+    };
+  }
 
   // 1. 先擋「填一填就能解決」的問題，會計看到才知道要做什麼
   if (!bankName || !accountNumber || !accountName) {
