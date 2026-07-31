@@ -67,8 +67,11 @@ export function hasAttendanceCount(attendance: ReportAttendanceLike) {
   return attendance.studentCount != null || attendance.studentCountA != null || attendance.studentCountB != null;
 }
 
-export function isAttendanceReportComplete(attendance: ReportAttendanceLike) {
+export function isAttendanceReportComplete(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
   if (attendance.cancelled) return true;
+  // 課還沒下課就不可能「出課完成」。未來課程上先填的人數（含 0）屬排課作業，
+  // 不是實際到課紀錄；若當成已完成，這堂課會從待回報名單消失，老師也收不到回報提醒。
+  if (now < courseEndAt(attendance, timeText)) return false;
   const reportText = (attendance.reportContent ?? "").trim();
   // 「正常上課」只是出勤狀態，不是課程進度。
   const hasReport = Boolean(reportText && reportText !== "正常上課");
@@ -78,7 +81,7 @@ export function isAttendanceReportComplete(attendance: ReportAttendanceLike) {
 }
 
 export function attendanceReportWindow(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
-  const complete = isAttendanceReportComplete(attendance);
+  const complete = isAttendanceReportComplete(attendance, timeText, now);
   const endedAt = courseEndAt(attendance, timeText);
   const expiresAt = reportExpiresAt(attendance, timeText);
   const expired = now > expiresAt;

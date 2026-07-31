@@ -21,7 +21,7 @@ type Attendance = {
   studentCount: number | null; cancelled: boolean; cancelReason: string; makeupDate: string | null; makeupDone: boolean;
   category: string; hours: number; notes: string; scheduledTime?: string; reportContent?: string;
   substitutes?: Array<{ role: string }>;
-  reportFillable?: boolean; reportExpired?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
+  reportFillable?: boolean; reportExpired?: boolean; reportEnded?: boolean; reportFillStatus?: string; missingItems?: string[]; pendingReport?: boolean; hoursNeedsReview?: boolean; hoursReviewReason?: string;
   equipment?: (EquipmentReminderData & { attendanceId: number }) | null;
   expectedStudentCount?: number | null;
   schoolVerifierName?: string;
@@ -272,9 +272,15 @@ export default function AttendancePage() {
   };
   const WAITING_TEACHER = "待排老師";
   const isCountRequired = (r: Attendance) => requiresStudentCount(r.category);
-  const countDisplay = (r: Attendance) => r.studentCount ?? (isCountRequired(r) ? (r.pendingReport ? "待回報" : "未上課") : "免填");
+  // 出席人數是「實際到課」；課還沒上完就先顯示待上課，不要把預先填的數字（含 0）當成到課人數
+  const isBeforeClassEnd = (r: Attendance) => r.reportEnded === false && !r.cancelled;
+  const countDisplay = (r: Attendance) => isBeforeClassEnd(r)
+    ? (isCountRequired(r) ? "待上課" : "免填")
+    : r.studentCount ?? (isCountRequired(r) ? (r.pendingReport ? "待回報" : "未上課") : "免填");
   const isReportComplete = (r: Attendance) => {
     if (r.cancelled) return true;
+    // 還沒下課就不算完成，避免預先填的人數（含 0）讓未來的課顯示已出課
+    if (r.reportEnded === false) return false;
     const hasReport = Boolean(r.reportContent?.trim());
     if (!isCountRequired(r)) return hasReport;
     // 課後課 / 營隊：人數 + 課程進度兩者都需要
@@ -743,9 +749,11 @@ export default function AttendancePage() {
                                 {!isUnassigned(r) && substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                               </td>
                               <td className="px-4 py-4 text-center">
-                                {r.studentCount ?? (isCountRequired(r)
-                                  ? <span className={r.pendingReport ? "text-amber-600" : "text-slate-400"}>{r.pendingReport ? "待回報" : "未上課"}</span>
-                                  : <span className="text-slate-500">免填</span>)}
+                                {isBeforeClassEnd(r)
+                                  ? <span className="text-slate-400">{isCountRequired(r) ? "待上課" : "免填"}</span>
+                                  : r.studentCount ?? (isCountRequired(r)
+                                    ? <span className={r.pendingReport ? "text-amber-600" : "text-slate-400"}>{r.pendingReport ? "待回報" : "未上課"}</span>
+                                    : <span className="text-slate-500">免填</span>)}
                                 {r.expectedStudentCount != null && <div className="mt-0.5 text-xs text-blue-500">預計 {r.expectedStudentCount}</div>}
                               </td>
                               <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{normalizeCategory(r.category)}</span></td>

@@ -175,6 +175,7 @@ export async function GET(req: NextRequest) {
       hoursReviewReason: payrollHours.reason,
       reportFillable: reportWindow.fillable,
       reportExpired: reportWindow.expired,
+      reportEnded: reportWindow.ended,
       reportFillStatus: reportWindow.status,
       reportExpiresAt: reportWindow.expiresAt.toISOString(),
       missingItems,
