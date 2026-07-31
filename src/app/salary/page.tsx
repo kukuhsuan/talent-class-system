@@ -381,22 +381,22 @@ export default function SalaryPage() {
               </div>
             </div>
 
-            <div className="divide-y divide-slate-100">
+            <div className="space-y-3 bg-slate-50/70 p-4">
               {displayed.map((r) => (
-                <div key={r.teacher.id} className={!r.hasActivity ? "opacity-40" : ""}>
-                  <div className="grid grid-cols-1 gap-3 px-5 py-4 transition-colors hover:bg-slate-50/80 lg:grid-cols-[minmax(160px,0.8fr)_minmax(360px,2fr)_110px_210px] lg:items-center cursor-pointer"
+                <div key={r.teacher.id} className={`overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md ${!r.hasActivity ? "opacity-40" : ""}`}>
+                  <div className="grid cursor-pointer grid-cols-1 gap-4 px-5 py-4 lg:grid-cols-[220px_minmax(320px,1fr)_130px_180px] lg:items-center"
                     onClick={() => r.hasActivity && toggleExpand(r.teacher.id)}>
                     <div className="min-w-0">
                       <div className="truncate text-base font-bold text-slate-900">{r.teacher.name}</div>
                       {payout[r.teacher.id] && (
-                        <span title={payout[r.teacher.id].readiness.detail} className={`mt-1.5 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${READINESS_STYLE[payout[r.teacher.id].readiness.level]}`}>
+                        <span title={payout[r.teacher.id].readiness.detail} className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${READINESS_STYLE[payout[r.teacher.id].readiness.level]}`}>
                           {payout[r.teacher.id].readiness.label}
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                      {(r.regularHours + r.demoHours) > 0 && <span><span className="text-slate-400">主教</span> <strong className="font-semibold text-slate-700">{fmtHours(r.regularHours + r.demoHours)}h</strong></span>}
-                      {(r.regularPay + r.demoPay) > 0 && <span><span className="text-slate-400">薪資</span> <strong className="font-semibold text-slate-700">${fmt(r.regularPay + r.demoPay)}</strong></span>}
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      {(r.regularHours + r.demoHours) > 0 && <span className="rounded-lg bg-slate-100 px-3 py-1.5"><span className="text-slate-500">主教</span> <strong className="ml-1 font-semibold text-slate-800">{fmtHours(r.regularHours + r.demoHours)}h</strong></span>}
+                      {(r.regularPay + r.demoPay) > 0 && <span className="rounded-lg bg-slate-100 px-3 py-1.5"><span className="text-slate-500">薪資</span> <strong className="ml-1 font-semibold text-slate-800">${fmt(r.regularPay + r.demoPay)}</strong></span>}
                       {r.subHours > 0 && <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-600">代課 {fmtHours(r.subHours)}h</span>}
                       {(r.assistantHours ?? 0) > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">助教時數 {fmtHours(r.assistantHours ?? 0)}h</span>}
                       {r.travelPay > 0 && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">車費 ${fmt(r.travelPay)}</span>}
@@ -404,22 +404,22 @@ export default function SalaryPage() {
                       {(r.hoursReviewCount ?? 0) > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">需人工確認 {r.hoursReviewCount} 筆</span>}
                       {(r.unreportedCount ?? 0) > 0 && <span title={(r.unreportedItems ?? []).join("\n")} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">未回報仍計薪 {r.unreportedCount} 筆</span>}
                     </div>
-                    <div className="text-left lg:text-right">
-                      <div className="text-xs font-medium text-slate-400">本月應付</div>
+                    <div className="rounded-lg bg-blue-50 px-3 py-2 text-left lg:text-right">
+                      <div className="text-xs font-medium text-blue-500">本月應付</div>
                       <div className="mt-0.5 text-xl font-bold text-blue-700">{r.total > 0 ? `$${fmt(r.total)}` : "—"}</div>
                     </div>
                     <div className="flex items-center gap-2 lg:justify-end" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => emailSalary(r.teacher.id, r.teacher.name)}
                         disabled={emailing === r.teacher.id || !r.hasActivity}
-                        className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-40 whitespace-nowrap"
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-300 hover:text-blue-700 disabled:opacity-40 whitespace-nowrap"
                       >
                         {emailing === r.teacher.id ? "寄送中..." : "Email"}
                       </button>
                       <button
                         onClick={() => sendSalary(r.teacher.id, r.teacher.name)}
                         disabled={sending === r.teacher.id || !r.hasActivity}
-                        className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40 whitespace-nowrap"
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-40 whitespace-nowrap"
                       >
                         {sending === r.teacher.id ? "傳送中..." : "LINE"}
                       </button>
@@ -432,7 +432,7 @@ export default function SalaryPage() {
                   </div>
 
                   {r.hasActivity && payout[r.teacher.id] && (
-                    <div className="mx-5 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 bg-slate-50/70 px-5 py-3 text-xs text-slate-500">
                       <span className="font-medium text-slate-700">{payout[r.teacher.id].bankLine || "未填銀行"}</span>
                       <span className="font-mono">
                         {revealed[r.teacher.id] || payout[r.teacher.id].bankAccountMasked || "未填帳號"}
