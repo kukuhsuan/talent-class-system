@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 
@@ -58,10 +57,6 @@ export default function SalaryPage() {
   const [adjustment, setAdjustment] = useState({ teacherId: 0, targetMonth: "", type: "補發", amount: "", reason: "", notes: "" });
   const [payout, setPayout] = useState<Record<number, PayoutRow>>({});
   const [revealed, setRevealed] = useState<Record<number, string>>({});
-  const [picked, setPicked] = useState<Set<number>>(new Set());
-  const [marking, setMarking] = useState(false);
-
-  const payoutMonth = `${year}-${String(month).padStart(2, "0")}`;
 
   const loadPayout = useCallback(async () => {
     const res = await fetch("/api/salary/payout-readiness", { cache: "no-store" });
@@ -84,35 +79,6 @@ export default function SalaryPage() {
     if (!json.bankAccountNumber) return alert("此角色無法檢視帳號明碼");
     setRevealed((current) => ({ ...current, [teacherId]: String(json.bankAccountNumber) }));
   };
-
-  const markPaid = async (teacherIds: number[]) => {
-    if (teacherIds.length === 0) return alert("請先勾選要標記的老師");
-    if (!confirm(`確定將 ${teacherIds.length} 位老師標記為「${payoutMonth} 已匯款」？`)) return;
-    setMarking(true);
-    try {
-      const res = await fetch("/api/salary/payout-readiness", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payoutMonth, teacherIds }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "標記失敗");
-      setSentMsg(`已標記 ${json.updatedCount} 位老師為 ${payoutMonth} 已匯款`);
-      setTimeout(() => setSentMsg(""), 4000);
-      setPicked(new Set());
-      await loadPayout();
-    } catch (error) {
-      alert((error as Error).message);
-    } finally {
-      setMarking(false);
-    }
-  };
-
-  const togglePick = (teacherId: number) => setPicked((current) => {
-    const next = new Set(current);
-    if (next.has(teacherId)) next.delete(teacherId); else next.add(teacherId);
-    return next;
-  });
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -282,7 +248,6 @@ export default function SalaryPage() {
   const activePayout = active.map((r) => payout[r.teacher.id]).filter(Boolean) as PayoutRow[];
   const blockCount = activePayout.filter((p) => p.readiness.level === "block").length;
   const warnCount = activePayout.filter((p) => p.readiness.level === "warn").length;
-  const pickable = activePayout.filter((p) => p.readiness.level !== "block" && p.lastPaidMonth !== payoutMonth).map((p) => p.teacherId);
   const fmt = (n: number) => n.toLocaleString("zh-TW");
   const fmtHours = (n: number) => n.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
   const fmtDate = (d: string) => {
@@ -365,67 +330,35 @@ export default function SalaryPage() {
       )}
 
       {data && (blockCount + warnCount) > 0 && (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <div className="text-sm font-semibold text-amber-900">
-            ⚠️ 本月 {blockCount + warnCount} 位老師需先確認匯款資料（❌ {blockCount} 位 / ⚠️ {warnCount} 位）
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
+        <details className="group mb-5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-amber-900">
+            <span>有 {blockCount + warnCount} 位老師的匯款資料需要確認</span>
+            <span className="text-xs font-medium text-amber-700 group-open:hidden">查看名單</span>
+          </summary>
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-amber-200/70 pt-3">
             {activePayout.filter((p) => p.readiness.level !== "ok").map((p) => (
               <span key={p.teacherId} title={p.readiness.detail} className={`rounded-full px-2.5 py-1 text-xs font-medium ${READINESS_STYLE[p.readiness.level]}`}>
-                {p.name}：{p.readiness.label}
+                {p.name}・{p.readiness.label}
               </span>
             ))}
           </div>
-        </div>
-      )}
-
-      {data && activePayout.length > 0 && (
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-semibold text-slate-700">匯款標記</span>
-            <span className="text-xs text-slate-500">已勾選 {picked.size} 位｜本月尚未標記 {pickable.length} 位</span>
-            <button onClick={() => setPicked(new Set(pickable))} disabled={pickable.length === 0}
-              className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50">全選可標記</button>
-            <button onClick={() => setPicked(new Set())} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">清除</button>
-            <button onClick={() => markPaid([...picked])} disabled={marking || picked.size === 0}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-              {marking ? "標記中..." : `批次標記已匯款（${payoutMonth}）`}
-            </button>
-          </div>
-          {/* 按鈕變灰卻不說原因，使用者只會以為系統壞了。這裡把「為什麼不能按」講清楚，
-              並區分三種情況：全部被擋、全部標記完、有人可選但還沒勾。 */}
-          {pickable.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">
-              {blockCount === activePayout.length
-                ? <>本月 {activePayout.length} 位有課老師的匯款資料都還沒齊，因此沒有可標記的對象。匯款資料若已在會計手上，可到 <Link href="/setup/payout-baseline-backfill" className="font-medium text-blue-600 underline">匯款基準線回填</Link> 貼上名單一次註記。</>
-                : <>本月有課的老師都已標記為 {payoutMonth} 已匯款，或匯款資料尚未齊全，沒有待標記的對象。</>}
-            </p>
-          ) : picked.size === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">還沒勾選任何人，所以「批次標記已匯款」不能按。可按「全選可標記」一次勾選 {pickable.length} 位。</p>
-          ) : null}
-        </div>
+        </details>
       )}
 
       {data && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
-              <p className="text-sm text-blue-600 font-medium">有課老師</p>
-              <p className="text-2xl font-bold text-blue-800">{active.length} 位</p>
+          <div className="mb-5 grid grid-cols-1 divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="px-5 py-4">
+              <p className="text-xs font-medium text-slate-500">有課老師</p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{active.length} 位</p>
             </div>
-            <div className="bg-green-50 rounded-xl border border-green-200 p-4">
-              <p className="text-sm text-green-600 font-medium">本月總時數</p>
-              <p className="text-2xl font-bold text-green-800">
-                {fmtHours(active.reduce((s, r) => s + r.regularHours + r.demoHours + (r.assistantHours ?? 0), 0))} h
-              </p>
+            <div className="px-5 py-4">
+              <p className="text-xs font-medium text-slate-500">本月總時數</p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{fmtHours(active.reduce((s, r) => s + r.regularHours + r.demoHours + (r.assistantHours ?? 0), 0))} h</p>
             </div>
-            <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
-              <p className="text-sm text-orange-600 font-medium">代課時數</p>
-              <p className="text-2xl font-bold text-orange-800">{fmtHours(active.reduce((s, r) => s + r.subHours, 0))} h</p>
-            </div>
-            <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-              <p className="text-sm text-purple-600 font-medium">本月薪資總計</p>
-              <p className="text-2xl font-bold text-purple-800">${fmt(grandTotal)}</p>
+            <div className="px-5 py-4">
+              <p className="text-xs font-medium text-slate-500">本月薪資總計</p>
+              <p className="mt-1 text-xl font-bold text-blue-700">${fmt(grandTotal)}</p>
             </div>
           </div>
 
@@ -451,61 +384,56 @@ export default function SalaryPage() {
             <div className="divide-y divide-slate-100">
               {displayed.map((r) => (
                 <div key={r.teacher.id} className={!r.hasActivity ? "opacity-40" : ""}>
-                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer"
+                  <div className="grid grid-cols-1 gap-3 px-5 py-4 transition-colors hover:bg-slate-50/80 lg:grid-cols-[minmax(160px,0.8fr)_minmax(360px,2fr)_110px_210px] lg:items-center cursor-pointer"
                     onClick={() => r.hasActivity && toggleExpand(r.teacher.id)}>
-                    {r.hasActivity && payout[r.teacher.id] && (
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 shrink-0"
-                        checked={picked.has(r.teacher.id)}
-                        disabled={payout[r.teacher.id].readiness.level === "block"}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={() => togglePick(r.teacher.id)}
-                      />
-                    )}
-                    <div className="flex-1 flex items-center gap-4 flex-wrap">
-                      <span className="font-semibold text-slate-800 w-20">{r.teacher.name}</span>
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-bold text-slate-900">{r.teacher.name}</div>
                       {payout[r.teacher.id] && (
-                        <span title={payout[r.teacher.id].readiness.detail}
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${READINESS_STYLE[payout[r.teacher.id].readiness.level]}`}>
+                        <span title={payout[r.teacher.id].readiness.detail} className={`mt-1.5 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${READINESS_STYLE[payout[r.teacher.id].readiness.level]}`}>
                           {payout[r.teacher.id].readiness.label}
                         </span>
                       )}
-                      {(r.regularHours + r.demoHours) > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">主教時數 {fmtHours(r.regularHours + r.demoHours)}h</span>}
-                      {(r.regularPay + r.demoPay) > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">主教薪資 ${fmt(r.regularPay + r.demoPay)}</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                      {(r.regularHours + r.demoHours) > 0 && <span><span className="text-slate-400">主教</span> <strong className="font-semibold text-slate-700">{fmtHours(r.regularHours + r.demoHours)}h</strong></span>}
+                      {(r.regularPay + r.demoPay) > 0 && <span><span className="text-slate-400">薪資</span> <strong className="font-semibold text-slate-700">${fmt(r.regularPay + r.demoPay)}</strong></span>}
                       {r.subHours > 0 && <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-600">代課 {fmtHours(r.subHours)}h</span>}
                       {(r.assistantHours ?? 0) > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">助教時數 {fmtHours(r.assistantHours ?? 0)}h</span>}
-                      {(r.assistantPay ?? 0) > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">助教薪資 ${fmt(r.assistantPay ?? 0)}</span>}
                       {r.travelPay > 0 && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">車費 ${fmt(r.travelPay)}</span>}
                       {r.adjustmentTotal !== 0 && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${r.adjustmentTotal > 0 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>調整 {r.adjustmentTotal > 0 ? "+" : ""}${fmt(r.adjustmentTotal)}</span>}
                       {(r.hoursReviewCount ?? 0) > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">需人工確認 {r.hoursReviewCount} 筆</span>}
                       {(r.unreportedCount ?? 0) > 0 && <span title={(r.unreportedItems ?? []).join("\n")} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">未回報仍計薪 {r.unreportedCount} 筆</span>}
-                      <span className="font-bold text-blue-700 ml-auto">{r.total > 0 ? `$${fmt(r.total)}` : "—"}</span>
                     </div>
-                    <div className="flex items-center gap-2 ml-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="text-left lg:text-right">
+                      <div className="text-xs font-medium text-slate-400">本月應付</div>
+                      <div className="mt-0.5 text-xl font-bold text-blue-700">{r.total > 0 ? `$${fmt(r.total)}` : "—"}</div>
+                    </div>
+                    <div className="flex items-center gap-2 lg:justify-end" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => emailSalary(r.teacher.id, r.teacher.name)}
                         disabled={emailing === r.teacher.id || !r.hasActivity}
-                        className="bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 whitespace-nowrap"
+                        className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-40 whitespace-nowrap"
                       >
-                        {emailing === r.teacher.id ? "寄送中..." : "寄 Email"}
+                        {emailing === r.teacher.id ? "寄送中..." : "Email"}
                       </button>
                       <button
                         onClick={() => sendSalary(r.teacher.id, r.teacher.name)}
                         disabled={sending === r.teacher.id || !r.hasActivity}
-                        className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 whitespace-nowrap"
+                        className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40 whitespace-nowrap"
                       >
-                        {sending === r.teacher.id ? "傳送中..." : "傳 LINE"}
+                        {sending === r.teacher.id ? "傳送中..." : "LINE"}
                       </button>
                       {r.hasActivity && (
-                        <span className="text-slate-400 text-sm w-4 text-center">{detailLoading === r.teacher.id ? "…" : expanded.has(r.teacher.id) ? "▲" : "▼"}</span>
+                        <button onClick={() => toggleExpand(r.teacher.id)} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100" aria-label={expanded.has(r.teacher.id) ? "收合明細" : "展開明細"}>
+                          {detailLoading === r.teacher.id ? "…" : expanded.has(r.teacher.id) ? "▲" : "▼"}
+                        </button>
                       )}
                     </div>
                   </div>
 
                   {r.hasActivity && payout[r.teacher.id] && (
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-dashed border-slate-100 px-4 pb-3 text-xs text-slate-500">
-                      <span>{payout[r.teacher.id].bankLine || "未填銀行"}</span>
+                    <div className="mx-5 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+                      <span className="font-medium text-slate-700">{payout[r.teacher.id].bankLine || "未填銀行"}</span>
                       <span className="font-mono">
                         {revealed[r.teacher.id] || payout[r.teacher.id].bankAccountMasked || "未填帳號"}
                       </span>
@@ -514,20 +442,10 @@ export default function SalaryPage() {
                       )}
                       <span>戶名：{payout[r.teacher.id].bankAccountName || "—"}</span>
                       <span>存摺：{payout[r.teacher.id].bankbookStatus}</span>
-                      <span>上次匯款：{payout[r.teacher.id].lastPaidMonth || "無紀錄"}</span>
                       {payout[r.teacher.id].bankRemitNotes && (
                         <span className="text-amber-700">備註：{payout[r.teacher.id].bankRemitNotes}</span>
                       )}
-                      <a href={`/teachers?teacherId=${r.teacher.id}`} className="font-medium text-slate-600 hover:text-slate-800">查看教師匯款資料</a>
-                      {payout[r.teacher.id].readiness.level !== "block" && payout[r.teacher.id].lastPaidMonth !== payoutMonth && (
-                        <button onClick={() => markPaid([r.teacher.id])} disabled={marking}
-                          className="ml-auto rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-                          標記已匯款
-                        </button>
-                      )}
-                      {payout[r.teacher.id].lastPaidMonth === payoutMonth && (
-                        <span className="ml-auto rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">本月已標記匯款</span>
-                      )}
+                      <a href={`/teachers?teacherId=${r.teacher.id}`} className="ml-auto font-semibold text-blue-600 hover:text-blue-800">查看匯款資料 →</a>
                     </div>
                   )}
 
