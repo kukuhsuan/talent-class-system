@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { HR_DOCUMENT_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { isTeacherDocType, upsertTeacherDocument, TEACHER_DOC_LABELS } from "@/lib/teacherDocument";
-import { deleteSensitiveDocument, putSensitiveDocument, validateSensitiveFile } from "@/lib/sensitiveBlob";
+import { putSensitiveDocument, validateSensitiveFile } from "@/lib/sensitiveBlob";
+import { deleteSensitiveDocumentOrQueue } from "@/lib/sensitiveBlobDeletionQueue";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
       uploadedBy: `行政代傳：${user?.name || user?.username || ""}`,
     });
     // 被蓋掉的舊檔要真的刪掉，不然 blob 裡會留下沒有任何紀錄指向的存摺
-    if (previousFileUrl) await deleteSensitiveDocument(previousFileUrl);
+    if (previousFileUrl) await deleteSensitiveDocumentOrQueue(previousFileUrl, "administrative_reupload");
     await writeAuditLog(req, {
       action: "create",
       targetType: "TeacherDocument",
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(row);
   } catch (error) {
-    return NextResponse.json({ error: (error as Error).message || "檔案上傳失敗" }, { status: 500 });
+    console.error("administrative teacher document upload failed", (error as Error).message);
+    return NextResponse.json({ error: "檔案上傳失敗，請稍後再試" }, { status: 500 });
   }
 }

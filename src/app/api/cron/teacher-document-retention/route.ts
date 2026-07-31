@@ -4,6 +4,8 @@ import { documentRetentionDays } from "@/lib/appSetting";
 import { TEACHER_DOC_LABELS, listDocumentsToPurge, markDocumentPurged, type TeacherDocType } from "@/lib/teacherDocument";
 import { deleteSensitiveDocument } from "@/lib/sensitiveBlob";
 import { writeAuditLog } from "@/lib/auditLog";
+import { processSensitiveBlobDeletionQueue } from "@/lib/sensitiveBlobDeletionQueue";
+import { raiseSystemAlert } from "@/lib/systemAlerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,18 +15,15 @@ export const dynamic = "force-dynamic";
 // 刪掉整列會讓發薪判斷退回「未上傳」，等於把已經審過的老師重新擋住。
 async function purge(req: NextRequest | null) {
   const retentionDays = await documentRetentionDays();
-  if (retentionDays === 0) {
-    return { skipped: true, retentionDays, purged: 0, failed: 0, note: "保留天數設為 0，不自動刪除" };
-  }
-
-  const targets = await listDocumentsToPurge(retentionDays);
+  // 即使管理者把定期清除設為 0，先前已排入的刪除失敗工作仍必須重試。
+  const targets = retentionDays === 0 ? [] : await listDocumentsToPurge(retentionDays);
   let purged = 0;
   let failed = 0;
   const labels: string[] = [];
 
   for (const target of targets) {
-    const ok = await deleteSensitiveDocument(target.fileUrl);
-    if (!ok) {
+    const deletion = await deleteSensitiveDocument(target.fileUrl);
+    if (!deletion.ok) {
       failed += 1;
       continue;
     }
@@ -63,7 +62,37 @@ async function purge(req: NextRequest | null) {
     });
   }
 
-  return { skipped: false, retentionDays, purged, failed, candidates: targets.length };
+  const retry = await processSensitiveBlobDeletionQueue();
+  if (retry.completed.length > 0 || retry.failed.length > 0) {
+    await writeAuditLog(req, {
+      action: "delete",
+      actorName: "系統",
+      actorRole: "cron",
+      targetType: "SensitiveBlobDeletionQueue",
+      targetLabel: "敏感文件刪除重試",
+      diffSummary: `重試 ${retry.processed} 份；成功 ${retry.completed.length} 份；失敗 ${retry.failed.length} 份`,
+      sensitive: true,
+    });
+  }
+  for (const item of retry.failed.filter((row) => row.attempts >= 5)) {
+    await raiseSystemAlert({
+      level: "P1",
+      category: "敏感文件",
+      title: "敏感原檔持續刪除失敗",
+      detail: `刪除工作編號 ${item.id} 已失敗 ${item.attempts} 次，請管理員檢查 Vercel Blob 設定。`,
+      dedupeKey: `sensitive-blob-delete-${item.id}`,
+    });
+  }
+
+  return {
+    skipped: retentionDays === 0,
+    retentionDays,
+    purged,
+    failed,
+    candidates: targets.length,
+    deletionRetry: { processed: retry.processed, completed: retry.completed.length, failed: retry.failed.length },
+    ...(retentionDays === 0 ? { note: "保留天數設為 0，未執行到期清除；刪除重試仍有執行" } : {}),
+  };
 }
 
 function authorized(req: NextRequest) {

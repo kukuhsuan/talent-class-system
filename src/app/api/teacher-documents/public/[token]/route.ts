@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyTeacherDocumentToken } from "@/lib/publicAccessToken";
+import { signTeacherResumeToken, verifyTeacherDocumentToken } from "@/lib/publicAccessToken";
 import {
   DOC_STATUS,
   TEACHER_DOC_LABELS,
@@ -9,10 +9,12 @@ import {
   listTeacherDocuments,
   upsertTeacherDocument,
 } from "@/lib/teacherDocument";
-import { deleteSensitiveDocument, putSensitiveDocument, validateSensitiveFile } from "@/lib/sensitiveBlob";
+import { putSensitiveDocument, validateSensitiveFile } from "@/lib/sensitiveBlob";
+import { deleteSensitiveDocumentOrQueue } from "@/lib/sensitiveBlobDeletionQueue";
 import { ensureTeacherExtendedColumns } from "@/lib/teacherColumns";
 import { writeAuditLog } from "@/lib/auditLog";
 import { getAppSetting } from "@/lib/appSetting";
+import { getTeacherResume } from "@/lib/teacherResume";
 
 export const runtime = "nodejs";
 
@@ -64,7 +66,10 @@ class LinkDeadError extends Error {}
 export async function GET(_req: NextRequest, { params }: { params: Params }) {
   try {
     const teacher = await teacherFromToken(params);
-    const documents = await listTeacherDocuments([teacher.id]);
+    const [documents, resume] = await Promise.all([
+      listTeacherDocuments([teacher.id]),
+      getTeacherResume(teacher.id),
+    ]);
     const mandateTemplateUrl = await getAppSetting("doc.template.mandate.url");
     const bankbookHint = await getAppSetting("doc.template.bankbook.hint");
     return NextResponse.json({
@@ -82,6 +87,12 @@ export async function GET(_req: NextRequest, { params }: { params: Params }) {
       }),
       mandateTemplateUrl,
       bankbookHint,
+      resume: resume?.status === "已送出"
+        ? { status: resume.status, collectUrl: "" }
+        : {
+            status: resume?.status || "未填寫",
+            collectUrl: `${(process.env.NEXT_PUBLIC_APP_URL || "https://talent-class-system.vercel.app").replace(/\/$/, "")}/teacher-resume/${encodeURIComponent(signTeacherResumeToken(teacher.id))}`,
+          },
     });
   } catch (error) {
     return NextResponse.json(
@@ -119,7 +130,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       contentType: stored.contentType,
       uploadedBy: `老師自傳：${teacher.name}`,
     });
-    if (previousFileUrl) await deleteSensitiveDocument(previousFileUrl);
+    if (previousFileUrl) await deleteSensitiveDocumentOrQueue(previousFileUrl, "teacher_public_reupload");
     await writeAuditLog(req, {
       action: "create",
       actorName: teacher.name,
@@ -133,8 +144,9 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     return NextResponse.json({ ok: true, reviewStatus: row?.reviewStatus || DOC_STATUS.pending });
   } catch (error) {
     const dead = error instanceof LinkDeadError;
+    if (!dead) console.error("teacher document upload failed", (error as Error).message);
     return NextResponse.json(
-      { error: (error as Error).message || "上傳失敗" },
+      { error: dead ? (error as Error).message : "檔案上傳失敗，請稍後再試或聯繫行政" },
       { status: dead ? 403 : 500 },
     );
   }

@@ -14,7 +14,7 @@ const ALLOWED_TYPES = new Map([
 ]);
 
 export function blobToken() {
-  return process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_READ_WRITE_TOKEN ?? "";
+  return process.env.SENSITIVE_READ_WRITE_TOKEN ?? "";
 }
 
 // 副檔名與 Content-Type 都是上傳端說了算，不能只信這兩個。
@@ -73,15 +73,17 @@ export async function readSensitiveDocument(pathname: string) {
 
 // 重新上傳或到期清除時把舊檔真的刪掉，避免 blob 裡留下沒人管的孤兒存摺。
 // 刪不掉不該讓整個上傳失敗，所以只回成功與否讓呼叫端記錄。
-export async function deleteSensitiveDocument(pathname: string) {
+export async function deleteSensitiveDocument(pathname: string): Promise<{ ok: boolean; error: string }> {
   const token = blobToken();
-  if (!token || !pathname) return false;
+  if (!pathname) return { ok: true, error: "" };
+  if (!token) return { ok: false, error: "SENSITIVE_READ_WRITE_TOKEN is not configured" };
   try {
     await del(pathname, { token });
-    return true;
+    return { ok: true, error: "" };
   } catch (error) {
-    console.warn("blob delete failed", pathname, (error as Error).message);
-    return false;
+    // Blob pathname 不可出現在一般平台 log；完整路徑只進專用重試佇列。
+    console.warn("sensitive blob delete failed", (error as Error).message);
+    return { ok: false, error: (error as Error).message || "Blob deletion failed" };
   }
 }
 

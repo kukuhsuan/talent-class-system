@@ -14,8 +14,8 @@ export const APP_SETTING_LABELS: Record<string, string> = {
   [APP_SETTING_KEYS.documentRetentionDays]: "文件原檔保留天數（審核完成起算，0 = 不自動刪除）",
 };
 
-// 存摺是金融個資，審核完成後就沒有繼續留原檔的理由。預設一年。
-export const DEFAULT_RETENTION_DAYS = 365;
+// 存摺是金融個資，只保留完成會計核對所需的合理期間。
+export const DEFAULT_RETENTION_DAYS = 90;
 
 let tableReady = false;
 
@@ -57,6 +57,9 @@ export async function getAppSetting(key: string) {
 export async function documentRetentionDays() {
   const raw = (await getAppSetting(APP_SETTING_KEYS.documentRetentionDays)).trim();
   if (!raw) return DEFAULT_RETENTION_DAYS;
+  // 2026-07 安全政策由一年縮短為 90 天；舊環境即使曾明確存過 365，
+  // 也不能繼續蓋過新的公司政策。
+  if (raw === "365") return DEFAULT_RETENTION_DAYS;
   const days = Number(raw);
   // 設定壞掉時退回預設，不要因為打錯字就變成永不刪除或立刻全刪
   if (!Number.isInteger(days) || days < 0 || days > 3650) return DEFAULT_RETENTION_DAYS;

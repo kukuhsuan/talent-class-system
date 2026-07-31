@@ -17,6 +17,7 @@ type Context = {
   documents: DocRow[];
   mandateTemplateUrl: string;
   bankbookHint: string;
+  resume?: { status: string; collectUrl: string };
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -95,13 +96,25 @@ export default function TeacherDocumentUploadPage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="text-sm font-semibold text-blue-700">WaysLeader AI 薪資文件</div>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">{context.teacherName} 老師</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          為了順利匯款，請上傳以下文件。檔案只有公司會計看得到，不會出現在任何公開頁面。
-        </p>
+        <p className="mt-2 text-sm leading-6 text-slate-500">檔案只有公司會計可檢視，不會出現在公開頁面。</p>
       </section>
 
       {error && <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</div>}
       {message && <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm text-green-700">{message}</div>}
+
+      {context.resume?.collectUrl && (
+        <section className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">新進老師簡歷</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">照片、學歷、教學經歷與專長可在同一處補齊。</p>
+            </div>
+            <a href={context.resume.collectUrl} className="shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-center text-sm font-bold text-white hover:bg-blue-700">
+              填寫簡歷資料
+            </a>
+          </div>
+        </section>
+      )}
 
       {context.documents.map((doc) => {
         const uploading = busy === doc.docType;
