@@ -59,7 +59,7 @@ async function teacherFromToken(params: Params) {
 }
 
 // 連結本身不能用（過期、簽章壞掉、被作廢）一律回 403。
-// 不用關鍵字猜測——BLOB_READ_WRITE_TOKEN 沒設定的錯誤訊息也含 token，猜錯會把系統故障說成連結失效。
+// 不用關鍵字猜測——SENSITIVE_READ_WRITE_TOKEN 沒設定的錯誤訊息也含 token，猜錯會把系統故障說成連結失效。
 class LinkDeadError extends Error {}
 
 // 老師端頁面用：只回自己的文件狀態與範本連結，不回檔案內容也不回其他老師的資料
@@ -95,9 +95,15 @@ export async function GET(_req: NextRequest, { params }: { params: Params }) {
           },
     });
   } catch (error) {
+    // 這支是公開端點，錯誤原文會直接顯示在老師畫面上。
+    // 只有「連結失效」這類對方能自行處理的訊息可以照實回；其餘（DB、Blob 設定等）
+    // 一律回制式訊息、細節只進 server log，免得把平台錯誤字串與環境變數名稱
+    // 送給任何拿到連結的人。POST 已經這樣處理，GET 補齊。
+    const dead = error instanceof LinkDeadError;
+    if (!dead) console.error("teacher document page load failed", (error as Error).message);
     return NextResponse.json(
-      { error: (error as Error).message || "連結已失效" },
-      { status: error instanceof LinkDeadError ? 403 : 500 },
+      { error: dead ? (error as Error).message : "系統忙碌中，請稍後再試或聯繫行政" },
+      { status: dead ? 403 : 500 },
     );
   }
 }

@@ -53,7 +53,10 @@ export async function putSensitiveDocument(input: {
   ext: string;
 }) {
   const token = blobToken();
-  if (!token) throw new Error("尚未設定檔案儲存空間，請聯繫系統管理員設定 BLOB_READ_WRITE_TOKEN。");
+  // 變數名一定要寫對：貼成一般 BLOB_READ_WRITE_TOKEN 會指到公開儲存桶，
+  // 屆時 put 會直接失敗（private access on a public store），
+  // 而把 access 改成 "public" 來「修好」等於讓每張存摺變成知道網址就看得到。
+  if (!token) throw new Error("尚未設定檔案儲存空間，請聯繫系統管理員設定 SENSITIVE_READ_WRITE_TOKEN（必須是 private Blob store）。");
   // 路徑帶隨機值，避免有人靠 teacherId 猜出 pathname
   const pathname = `teacher-documents/${input.docType}/${input.teacherId}-${crypto.randomUUID()}.${input.ext}`;
   const blob = await put(pathname, input.file, {
