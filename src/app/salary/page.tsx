@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 
@@ -379,15 +380,29 @@ export default function SalaryPage() {
       )}
 
       {data && activePayout.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <span className="text-sm font-semibold text-slate-700">匯款標記</span>
-          <span className="text-xs text-slate-500">已勾選 {picked.size} 位｜本月尚未標記 {pickable.length} 位</span>
-          <button onClick={() => setPicked(new Set(pickable))} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">全選可標記</button>
-          <button onClick={() => setPicked(new Set())} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">清除</button>
-          <button onClick={() => markPaid([...picked])} disabled={marking || picked.size === 0}
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-            {marking ? "標記中..." : `批次標記已匯款（${payoutMonth}）`}
-          </button>
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-semibold text-slate-700">匯款標記</span>
+            <span className="text-xs text-slate-500">已勾選 {picked.size} 位｜本月尚未標記 {pickable.length} 位</span>
+            <button onClick={() => setPicked(new Set(pickable))} disabled={pickable.length === 0}
+              className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50">全選可標記</button>
+            <button onClick={() => setPicked(new Set())} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">清除</button>
+            <button onClick={() => markPaid([...picked])} disabled={marking || picked.size === 0}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+              {marking ? "標記中..." : `批次標記已匯款（${payoutMonth}）`}
+            </button>
+          </div>
+          {/* 按鈕變灰卻不說原因，使用者只會以為系統壞了。這裡把「為什麼不能按」講清楚，
+              並區分三種情況：全部被擋、全部標記完、有人可選但還沒勾。 */}
+          {pickable.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {blockCount === activePayout.length
+                ? <>本月 {activePayout.length} 位有課老師的匯款資料都還沒齊，因此沒有可標記的對象。匯款資料若已在會計手上，可到 <Link href="/setup/payout-baseline-backfill" className="font-medium text-blue-600 underline">匯款基準線回填</Link> 貼上名單一次註記。</>
+                : <>本月有課的老師都已標記為 {payoutMonth} 已匯款，或匯款資料尚未齊全，沒有待標記的對象。</>}
+            </p>
+          ) : picked.size === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">還沒勾選任何人，所以「批次標記已匯款」不能按。可按「全選可標記」一次勾選 {pickable.length} 位。</p>
+          ) : null}
         </div>
       )}
 
