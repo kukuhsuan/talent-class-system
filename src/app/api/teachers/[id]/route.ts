@@ -1,23 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
+import { ADMIN_ROLES, BACKOFFICE_ROLES, SALARY_ROLES, SENSITIVE_FINANCE_ROLES, hasRole, requireRole, sameOriginOk } from "@/lib/permissions";
+import { maskBankAccount } from "@/lib/bankMask";
+import { ensureTeacherExtendedColumns, parseTeachingSubjects, serializeTeachingSubjects } from "@/lib/teacherColumns";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+const TEACHER_WRITE_ROLES = [...ADMIN_ROLES, "staff"] as const;
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // 這支以前完全沒有權限檢查，等於任何人都能撈到銀行帳號明碼。
+  const { user, response } = await requireRole(BACKOFFICE_ROLES);
+  if (response) return response;
+  const role = user?.role ?? "";
   const { id } = await params;
+  await ensureTeacherExtendedColumns();
   const teacher = await prisma.teacher.findUnique({ where: { id: Number(id) } });
   if (!teacher) return NextResponse.json({ error: "找不到老師資料" }, { status: 404 });
-  return NextResponse.json(teacher);
+
+  const canSeeBank = hasRole(role, SALARY_ROLES);
+  const canReveal = hasRole(role, SENSITIVE_FINANCE_ROLES);
+  // ?reveal=1 才回明碼，且限 SENSITIVE_FINANCE_ROLES，每次都寫稽核（誰在何時看了誰的帳號）
+  const reveal = req.nextUrl.searchParams.get("reveal") === "1" && canReveal;
+  if (reveal) {
+    await writeAuditLog(req, {
+      action: "export",
+      targetType: "Teacher",
+      targetId: teacher.id,
+      targetLabel: `老師：${teacher.name}`,
+      diffSummary: `檢視銀行帳號明碼：${teacher.name}`,
+      sensitive: true,
+    });
+  }
+
+  return NextResponse.json({
+    ...teacher,
+    bankName: canSeeBank ? teacher.bankName : "",
+    bankCode: canSeeBank ? teacher.bankCode : "",
+    bankBranch: canSeeBank ? teacher.bankBranch : "",
+    bankAccountName: canSeeBank ? teacher.bankAccountName : "",
+    bankAccountNumber: reveal ? teacher.bankAccountNumber : "",
+    bankAccountMasked: canSeeBank ? maskBankAccount(teacher.bankCode, teacher.bankAccountNumber) : "",
+    bankRemitNotes: canSeeBank ? teacher.bankRemitNotes : "",
+    teachingSubjects: parseTeachingSubjects(teacher.teachingSubjects),
+    canRevealBankAccount: canReveal,
+  });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { response } = await requireRole(TEACHER_WRITE_ROLES);
+  if (response) return response;
+  if (!sameOriginOk(req)) return NextResponse.json({ error: "來源不合法" }, { status: 403 });
   const { id } = await params;
   const data = await req.json();
+  await ensureTeacherExtendedColumns();
   const before = await prisma.teacher.findUnique({ where: { id: Number(id) } });
   if (!before) return NextResponse.json({ error: "找不到老師資料" }, { status: 404 });
+  // 明列欄位而非 spread：firstPaidMonth / lastPaidMonth / lastPaidAt 是匯款事實，
+  // 只能由「標記已匯款」與基準線回填工具寫入，不可從教師表單改掉。
   const teacher = await prisma.teacher.update({
     where: { id: Number(id) },
     data: {
-      ...data,
+      name: String(data.name ?? before.name).trim() || before.name,
+      email: String(data.email ?? "").trim(),
+      phone: String(data.phone ?? "").trim(),
+      notes: String(data.notes ?? "").trim(),
+      rateAfterSchool: Number(data.rateAfterSchool) || 0,
+      rateInSchool: Number(data.rateInSchool) || 0,
+      rateDemo: Number(data.rateDemo) || 0,
+      travelFee: Number(data.travelFee) || 0,
       lineUserId: data.lineUserId?.trim() || null,
       lineRegion: data.lineRegion || "",
       isAssistant: Boolean(data.isAssistant),
@@ -26,7 +76,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       bankCode: data.bankCode?.trim() || "",
       bankBranch: data.bankBranch?.trim() || "",
       bankAccountName: data.bankAccountName?.trim() || data.name?.trim() || "",
-      bankAccountNumber: data.bankAccountNumber?.replace(/\s+/g, "") || "",
+      bankAccountNumber: data.bankAccountNumber?.replace(/[\s-]/g, "") || "",
+      bankRemitNotes: String(data.bankRemitNotes ?? "").trim(),
+      isCollegeStudent: Boolean(data.isCollegeStudent),
+      emergencyContact: String(data.emergencyContact ?? "").trim(),
+      salaryNotes: String(data.salaryNotes ?? "").trim(),
+      teachingSubjects: serializeTeachingSubjects(data.teachingSubjects),
     },
   });
   await writeAuditLog(req, {
@@ -42,7 +97,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       rateAfterSchool: "課後薪資",
       rateInSchool: "課內薪資",
       travelFee: "車馬費",
+      bankName: "銀行名稱",
+      bankCode: "銀行代碼",
+      bankBranch: "分行",
+      bankAccountName: "匯款戶名",
       bankAccountNumber: "銀行帳號",
+      isCollegeStudent: "是否大學生",
+      teachingSubjects: "授課項目",
     }) || `修改老師：${teacher.name}`,
     sensitive: true,
   });
@@ -50,6 +111,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { response } = await requireRole(TEACHER_WRITE_ROLES);
+  if (response) return response;
+  if (!sameOriginOk(req)) return NextResponse.json({ error: "來源不合法" }, { status: 403 });
   const { id } = await params;
   const teacherId = Number(id);
   const before = await prisma.teacher.findUnique({ where: { id: teacherId } });

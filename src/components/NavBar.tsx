@@ -117,6 +117,7 @@ export default function NavBar() {
     || pathname.startsWith("/school-billing")
     || pathname.startsWith("/recruitment/")
     || pathname.startsWith("/teacher-resume/")
+    || pathname.startsWith("/teacher-documents/")
     || pathname.startsWith("/teacher-card/")
     || pathname.startsWith("/course-briefing-ack/")
     || pathname.startsWith("/rating/")

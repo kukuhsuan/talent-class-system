@@ -184,6 +184,16 @@ model Teacher {
   bankBranch           String                @default("")
   bankAccountName      String                @default("")
   bankAccountNumber    String                @default("")
+  bankRemitNotes       String                @default("")
+  // 匯款事實紀錄：""=從未匯過款。發薪前提醒的判斷依據，見 docs/teacher-accounting-codex-brief.md
+  firstPaidMonth       String                @default("")
+  lastPaidMonth        String                @default("")
+  lastPaidAt           DateTime?
+  isCollegeStudent     Boolean               @default(false)
+  emergencyContact     String                @default("")
+  salaryNotes          String                @default("")
+  // 人工指定的授課項目（JSON 陣列字串）；未填時退回 teacherTeachingProfile 的出勤推斷
+  teachingSubjects     String                @default("")
   lineUserId           String?               @unique
   lineBindCode         String?               @unique
   lineRegion           String                @default("")

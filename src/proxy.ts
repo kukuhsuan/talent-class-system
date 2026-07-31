@@ -28,7 +28,7 @@ const PUBLIC_EXACT = [
   "/sports-leader-icon-512.png",
   "/sports-monitor-logo.png",
 ];
-const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/school-billing/", "/recruitment/", "/teacher-resume/", "/teacher-card/", "/course-briefing-ack/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/school-billing/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/api/course-briefing-ack/", "/rating/", "/api/rating/", "/notify-ack/", "/api/notify-ack/"];
+const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/school-billing/", "/recruitment/", "/teacher-resume/", "/teacher-documents/", "/teacher-card/", "/course-briefing-ack/", "/images/", "/skill-cards/", "/api/auth", "/api/cron", "/api/report/", "/api/assessment/", "/api/school-portal/", "/api/school-billing/", "/api/recruitment/public/", "/api/teacher-resumes/public/", "/api/teacher-resumes/card/", "/api/teacher-documents/public/", "/api/course-briefing-ack/", "/rating/", "/api/rating/", "/notify-ack/", "/api/notify-ack/"];
 // customer_service：客服角色，可用一般後台與通知功能；薪資/帳號管理/稽核仍被下方清單擋下
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);

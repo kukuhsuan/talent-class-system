@@ -9,6 +9,10 @@ export const BACKOFFICE_ROLES = ["owner", "super_admin", "developer", "admin", "
 export const SALARY_ROLES = ["owner", "super_admin", "developer", "admin", "accountant", "staff"] as const;
 // 可發送 LINE 通知的角色：accountant/viewer 預設不可大量發送
 export const NOTIFY_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff"] as const;
+// 可看「銀行帳號明碼」與「存摺／委任書原檔」。行政（admin/staff）只看得到遮罩後的帳號。
+export const SENSITIVE_FINANCE_ROLES = ["owner", "super_admin", "developer", "accountant"] as const;
+// 可看教師文件「狀態」（不含檔案內容）、可產生上傳連結、可審核文件
+export const HR_DOCUMENT_ROLES = ["owner", "super_admin", "developer", "admin", "staff", "accountant"] as const;
 
 export type AppRole = (typeof BACKOFFICE_ROLES)[number];
 

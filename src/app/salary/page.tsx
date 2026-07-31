@@ -16,8 +16,28 @@ type SalaryRow = {
   adjustments: Array<{ id: number; targetMonth: string; payoutMonth: string; type: string; amount: number; reason: string; notes: string; isPaid: boolean }>;
 };
 
+type Readiness = { level: "ok" | "warn" | "block"; code: string; label: string; detail: string };
+type PayoutRow = {
+  teacherId: number;
+  name: string;
+  bankLine: string;
+  bankAccountMasked: string;
+  bankAccountName: string;
+  bankRemitNotes: string;
+  bankbookStatus: string;
+  firstPaidMonth: string;
+  lastPaidMonth: string;
+  readiness: Readiness;
+};
+
 const catColor: Record<string, string> = {
   課後: "text-blue-600", 課內: "text-green-600", Demo: "text-orange-500", 營隊: "text-purple-600",
+};
+
+const READINESS_STYLE: Record<string, string> = {
+  block: "bg-red-50 text-red-700",
+  warn: "bg-amber-50 text-amber-700",
+  ok: "bg-emerald-50 text-emerald-700",
 };
 
 export default function SalaryPage() {
@@ -35,6 +55,63 @@ export default function SalaryPage() {
   const [detailLoading, setDetailLoading] = useState<number | null>(null);
   const [showAdjustment, setShowAdjustment] = useState(false);
   const [adjustment, setAdjustment] = useState({ teacherId: 0, targetMonth: "", type: "補發", amount: "", reason: "", notes: "" });
+  const [payout, setPayout] = useState<Record<number, PayoutRow>>({});
+  const [revealed, setRevealed] = useState<Record<number, string>>({});
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [marking, setMarking] = useState(false);
+
+  const payoutMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+  const loadPayout = useCallback(async () => {
+    const res = await fetch("/api/salary/payout-readiness", { cache: "no-store" });
+    if (!res.ok) return;
+    const json = await res.json() as { rows: PayoutRow[] };
+    const map: Record<number, PayoutRow> = {};
+    for (const row of json.rows ?? []) map[row.teacherId] = row;
+    setPayout(map);
+    setRevealed({});
+  }, []);
+
+  useEffect(() => { void loadPayout(); }, [loadPayout]);
+
+  // 明碼一次只解一列，後端會寫稽核紀錄。不做整頁明碼。
+  const revealBank = async (teacherId: number) => {
+    if (revealed[teacherId]) return;
+    const res = await fetch(`/api/teachers/${teacherId}?reveal=1`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(json.error ?? "無法顯示帳號");
+    if (!json.bankAccountNumber) return alert("此角色無法檢視帳號明碼");
+    setRevealed((current) => ({ ...current, [teacherId]: String(json.bankAccountNumber) }));
+  };
+
+  const markPaid = async (teacherIds: number[]) => {
+    if (teacherIds.length === 0) return alert("請先勾選要標記的老師");
+    if (!confirm(`確定將 ${teacherIds.length} 位老師標記為「${payoutMonth} 已匯款」？`)) return;
+    setMarking(true);
+    try {
+      const res = await fetch("/api/salary/payout-readiness", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payoutMonth, teacherIds }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "標記失敗");
+      setSentMsg(`已標記 ${json.updatedCount} 位老師為 ${payoutMonth} 已匯款`);
+      setTimeout(() => setSentMsg(""), 4000);
+      setPicked(new Set());
+      await loadPayout();
+    } catch (error) {
+      alert((error as Error).message);
+    } finally {
+      setMarking(false);
+    }
+  };
+
+  const togglePick = (teacherId: number) => setPicked((current) => {
+    const next = new Set(current);
+    if (next.has(teacherId)) next.delete(teacherId); else next.add(teacherId);
+    return next;
+  });
 
   const load = useCallback(async () => {
     await Promise.resolve();
@@ -200,6 +277,11 @@ export default function SalaryPage() {
   const active = data?.results.filter((r) => r.hasActivity) ?? [];
   const displayed = showAll ? (data?.results ?? []) : active;
   const grandTotal = active.reduce((s, r) => s + r.total, 0);
+  // 只看本月有課的老師，沒課的人不需要在發薪前提醒裡佔版面
+  const activePayout = active.map((r) => payout[r.teacher.id]).filter(Boolean) as PayoutRow[];
+  const blockCount = activePayout.filter((p) => p.readiness.level === "block").length;
+  const warnCount = activePayout.filter((p) => p.readiness.level === "warn").length;
+  const pickable = activePayout.filter((p) => p.readiness.level !== "block" && p.lastPaidMonth !== payoutMonth).map((p) => p.teacherId);
   const fmt = (n: number) => n.toLocaleString("zh-TW");
   const fmtHours = (n: number) => n.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
   const fmtDate = (d: string) => {
@@ -219,14 +301,14 @@ export default function SalaryPage() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
         <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">年份</label>
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-24">
+            <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="salary-f1">年份</label>
+            <select id="salary-f1" value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-24">
               {[2024, 2025, 2026, 2027].map((y) => <option key={y}>{y}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">月份</label>
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-20">
+            <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="salary-f2">月份</label>
+            <select id="salary-f2" value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-20">
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>{m}月</option>
               ))}
@@ -281,6 +363,34 @@ export default function SalaryPage() {
         </div>
       )}
 
+      {data && (blockCount + warnCount) > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-sm font-semibold text-amber-900">
+            ⚠️ 本月 {blockCount + warnCount} 位老師需先確認匯款資料（❌ {blockCount} 位 / ⚠️ {warnCount} 位）
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {activePayout.filter((p) => p.readiness.level !== "ok").map((p) => (
+              <span key={p.teacherId} title={p.readiness.detail} className={`rounded-full px-2.5 py-1 text-xs font-medium ${READINESS_STYLE[p.readiness.level]}`}>
+                {p.name}：{p.readiness.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data && activePayout.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <span className="text-sm font-semibold text-slate-700">匯款標記</span>
+          <span className="text-xs text-slate-500">已勾選 {picked.size} 位｜本月尚未標記 {pickable.length} 位</span>
+          <button onClick={() => setPicked(new Set(pickable))} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">全選可標記</button>
+          <button onClick={() => setPicked(new Set())} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">清除</button>
+          <button onClick={() => markPaid([...picked])} disabled={marking || picked.size === 0}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+            {marking ? "標記中..." : `批次標記已匯款（${payoutMonth}）`}
+          </button>
+        </div>
+      )}
+
       {data && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -328,8 +438,24 @@ export default function SalaryPage() {
                 <div key={r.teacher.id} className={!r.hasActivity ? "opacity-40" : ""}>
                   <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer"
                     onClick={() => r.hasActivity && toggleExpand(r.teacher.id)}>
+                    {r.hasActivity && payout[r.teacher.id] && (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 shrink-0"
+                        checked={picked.has(r.teacher.id)}
+                        disabled={payout[r.teacher.id].readiness.level === "block"}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => togglePick(r.teacher.id)}
+                      />
+                    )}
                     <div className="flex-1 flex items-center gap-4 flex-wrap">
                       <span className="font-semibold text-slate-800 w-20">{r.teacher.name}</span>
+                      {payout[r.teacher.id] && (
+                        <span title={payout[r.teacher.id].readiness.detail}
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${READINESS_STYLE[payout[r.teacher.id].readiness.level]}`}>
+                          {payout[r.teacher.id].readiness.label}
+                        </span>
+                      )}
                       {(r.regularHours + r.demoHours) > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">主教時數 {fmtHours(r.regularHours + r.demoHours)}h</span>}
                       {(r.regularPay + r.demoPay) > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">主教薪資 ${fmt(r.regularPay + r.demoPay)}</span>}
                       {r.subHours > 0 && <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-600">代課 {fmtHours(r.subHours)}h</span>}
@@ -361,6 +487,34 @@ export default function SalaryPage() {
                       )}
                     </div>
                   </div>
+
+                  {r.hasActivity && payout[r.teacher.id] && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-dashed border-slate-100 px-4 pb-3 text-xs text-slate-500">
+                      <span>{payout[r.teacher.id].bankLine || "未填銀行"}</span>
+                      <span className="font-mono">
+                        {revealed[r.teacher.id] || payout[r.teacher.id].bankAccountMasked || "未填帳號"}
+                      </span>
+                      {payout[r.teacher.id].bankAccountMasked && !revealed[r.teacher.id] && (
+                        <button onClick={() => revealBank(r.teacher.id)} className="font-medium text-blue-600 hover:text-blue-800">顯示</button>
+                      )}
+                      <span>戶名：{payout[r.teacher.id].bankAccountName || "—"}</span>
+                      <span>存摺：{payout[r.teacher.id].bankbookStatus}</span>
+                      <span>上次匯款：{payout[r.teacher.id].lastPaidMonth || "無紀錄"}</span>
+                      {payout[r.teacher.id].bankRemitNotes && (
+                        <span className="text-amber-700">備註：{payout[r.teacher.id].bankRemitNotes}</span>
+                      )}
+                      <a href={`/teachers?teacherId=${r.teacher.id}`} className="font-medium text-slate-600 hover:text-slate-800">查看教師匯款資料</a>
+                      {payout[r.teacher.id].readiness.level !== "block" && payout[r.teacher.id].lastPaidMonth !== payoutMonth && (
+                        <button onClick={() => markPaid([r.teacher.id])} disabled={marking}
+                          className="ml-auto rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                          標記已匯款
+                        </button>
+                      )}
+                      {payout[r.teacher.id].lastPaidMonth === payoutMonth && (
+                        <span className="ml-auto rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">本月已標記匯款</span>
+                      )}
+                    </div>
+                  )}
 
                   {expanded.has(r.teacher.id) && ((r.details?.length ?? 0) > 0 || r.adjustments.length > 0) && (
                     <div className="bg-slate-50 px-4 pb-4">
