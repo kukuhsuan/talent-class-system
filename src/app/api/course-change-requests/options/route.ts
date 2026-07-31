@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
-import { attendanceHasCompletionData } from "@/lib/courseChangeRequests";
+import { attendanceCompletionReason, attendanceHasCompletionData, payrollLockLabel } from "@/lib/courseChangeRequests";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { withDatabaseRetry } from "@/lib/databaseRetry";
 
@@ -38,6 +38,9 @@ export async function GET() {
       teacherName: item.actualTeacher.name,
       isPayrollLocked: item.isPayrollLocked,
       completed: attendanceHasCompletionData(item),
+      blockReason: item.isPayrollLocked
+        ? payrollLockLabel(item.date)
+        : attendanceCompletionReason(item),
     })),
     schools: schools.map((school) => ({ id: school.id, name: school.name, region: school.region, address: school.address, type: school.type })),
   });

@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseAttendanceDay } from "@/lib/attendanceBatch";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
+import { taipeiDateIso } from "@/lib/courseDates";
 import { withDatabaseRetry } from "@/lib/databaseRetry";
 
 export const COURSE_CHANGE_STATUS = {
@@ -63,20 +64,49 @@ export function timeRange(start: unknown, end: unknown) {
   return from && to ? `${from}-${to}` : "";
 }
 
-export function attendanceHasCompletionData(attendance: {
+type AttendanceCompletionInput = {
+  date?: Date | string | null;
   reportContent?: string | null;
   reportSentAt?: Date | null;
   schoolNotifiedAt?: Date | null;
   studentCount?: number | null;
   studentCountA?: number | null;
   studentCountB?: number | null;
-}) {
-  return Boolean(String(attendance.reportContent ?? "").trim())
-    || Boolean(attendance.reportSentAt)
-    || Boolean(attendance.schoolNotifiedAt)
-    || attendance.studentCount != null
+};
+
+function attendanceDateIso(value: Date | string | null | undefined) {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+/**
+ * 回傳「這堂課已完成」的具體原因；沒有就回 null。
+ * 人數欄位比較特別：未來的課先填預估人數是正常排課作業，不能當成已完成，
+ * 只有課程日期已過（表示是實際到課人數）才算。
+ */
+export function attendanceCompletionReason(attendance: AttendanceCompletionInput): string | null {
+  if (String(attendance.reportContent ?? "").trim()) return "老師已填寫課程回報";
+  if (attendance.reportSentAt) return "課程回報已送出";
+  if (attendance.schoolNotifiedAt) return "課程回報已通知園所";
+  const hasStudentCount = attendance.studentCount != null
     || attendance.studentCountA != null
     || attendance.studentCountB != null;
+  const dateIso = attendanceDateIso(attendance.date);
+  if (hasStudentCount && dateIso && dateIso < taipeiDateIso()) return "已登記實際上課人數";
+  return null;
+}
+
+export function attendanceHasCompletionData(attendance: AttendanceCompletionInput) {
+  return attendanceCompletionReason(attendance) !== null;
+}
+
+/** 鎖薪提示文字，附上是哪個月份結算造成的，方便行政知道要解鎖哪一期。 */
+export function payrollLockLabel(date: Date | string | null | undefined) {
+  const iso = attendanceDateIso(date);
+  if (!iso) return "此堂已鎖薪";
+  const [year, month] = iso.split("-");
+  return `此堂已鎖薪（${year}年${Number(month)}月薪資已結算）`;
 }
 
 function currentSchedule(attendance: {
@@ -178,8 +208,9 @@ export async function createCourseChangeRequest(input: CreateCourseChangeInput) 
   if (courseIds.size !== 1) throw new Error("指定日期必須屬於同一門課程");
   for (const attendance of attendances) {
     if (attendance.cancelled) throw new Error("已停課的課程不可申請異動");
-    if (attendance.isPayrollLocked) throw new Error("已鎖定薪資的課程不可申請異動");
-    if (attendanceHasCompletionData(attendance)) throw new Error("已完成或已回報的課程不可申請異動");
+    if (attendance.isPayrollLocked) throw new Error(`${payrollLockLabel(attendance.date)}，不可申請異動`);
+    const completionReason = attendanceCompletionReason(attendance);
+    if (completionReason) throw new Error(`${completionReason}，不可申請異動`);
   }
 
   const first = attendances[0];
@@ -311,8 +342,9 @@ export async function applyCourseChangeRequest(requestId: number, actor: { userI
     for (const target of request.targets) {
       const attendance = target.attendance;
       if (attendance.cancelled) throw new Error("課程已停課，不能套用異動");
-      if (attendance.isPayrollLocked) throw new Error("課程已鎖定薪資，不能套用異動");
-      if (attendanceHasCompletionData(attendance)) throw new Error("課程已完成或已回報，不能套用異動");
+      if (attendance.isPayrollLocked) throw new Error(`${payrollLockLabel(attendance.date)}，不能套用異動`);
+      const applyBlockReason = attendanceCompletionReason(attendance);
+      if (applyBlockReason) throw new Error(`${applyBlockReason}，不能套用異動`);
       const current = currentSchedule(attendance);
       if (current.date.toISOString().slice(0, 10) !== target.originalDate.toISOString().slice(0, 10)
         || current.time !== target.originalTime
