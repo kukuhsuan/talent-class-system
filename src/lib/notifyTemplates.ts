@@ -57,16 +57,16 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsAck: true,
-    description: "通知教練新學期開課會議的時間、地點與會議重點。內文中【】的部分請於發送前改成當次實際資訊，以卡片發送並附「確認收到」按鈕",
+    description: "通知教練新學期開課會議的時間與會議重點。內文中的日期、時間與會議連結請於發送前改成當次資訊；網址會自動變成卡片上可點的按鈕，並附「確認收到」按鈕",
     defaultBody: [
       "{姓名} 教練您好：",
       "",
       "新學期即將開始，為讓大家對本學期的課程安排、教學重點與行政流程有一致的認識，將召開開課會議，敬請務必出席。",
       "",
-      "📅 日期：【請填寫，例如 8/20（週三）】",
-      "🕐 時間：【請填寫，例如 14:00-16:00】",
-      "📍 地點：【請填寫，例如 桃園總部 3F 會議室】",
-      "🗺️ 地址：【請填寫】",
+      "📅 日期：8/12",
+      "🕐 時間：12:20-13:10",
+      "💻 形式：線上會議（Google Meet）",
+      "線上會議連結：https://meet.google.com/rbo-waxx-nqv",
       "",
       "📋 會議重點",
       "1️⃣ 本學期課程安排與班級分配",
@@ -76,8 +76,9 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "5️⃣ Q&A 與問題交流",
       "",
       "🔔 出席提醒",
-      "・請提前 10 分鐘到場報到",
-      "・請攜帶紙筆，方便記錄各班注意事項",
+      "・請於會議開始前 5 分鐘進入線上會議室",
+      "・入會後請將顯示名稱改為本名，方便點名",
+      "・請準備紙筆，方便記錄各班注意事項",
       "・若確定無法出席，請提前告知行政，另行安排補說明",
       "",
       "✅ 請點選下方「確認收到」按鈕，回覆您已收到本次會議通知。",
@@ -325,6 +326,37 @@ function buildFlexParts(body: string, vars: Record<string, string>, opts?: { str
   };
 }
 
+// Flex 卡片內的文字網址不能點，所以把內文裡的連結抽出來改成卡片按鈕。
+// 按鈕文字取網址前面那段說明（例如「線上會議連結：https://…」→ 按鈕「🔗 線上會議連結」），
+// 整行從內文移除，避免卡片同時出現一段點不了的網址。
+const INLINE_URL = /https?:\/\/[^\s，。、）)】」]+/;
+const MAX_LINK_BUTTONS = 3;
+const LINE_BUTTON_LABEL_MAX = 20; // LINE button label 上限
+
+const MAX_LABEL_SOURCE = 14; // 說明文字太長就不拿來當按鈕文字
+
+export function extractLinkButtons(body: string): { body: string; buttons: FlexLinkButton[] } {
+  const buttons: FlexLinkButton[] = [];
+  const kept: string[] = [];
+  for (const line of body.split("\n")) {
+    const match = line.match(INLINE_URL);
+    if (!match || match.index === undefined || buttons.length >= MAX_LINK_BUTTONS) {
+      kept.push(line);
+      continue;
+    }
+    const url = match[0];
+    const prefix = line.slice(0, match.index).replace(/[：:\-–—\s]+$/, "").replace(/^🔗\s*/, "").trim();
+    const label = prefix && prefix.length <= MAX_LABEL_SOURCE ? prefix : "開啟連結";
+    buttons.push({ label: `🔗 ${label}`.slice(0, LINE_BUTTON_LABEL_MAX), url, primary: buttons.length === 0 });
+    // 說明文字已成為按鈕文字；網址後面若還有話要說就保留，否則整行移除
+    const suffix = line.slice(match.index + url.length).replace(/^[。，、）)\s]+/, "").trim();
+    if (suffix) kept.push(suffix);
+    // 網址單獨成行時，上一行的引導句（結尾為冒號）也一併移除，避免卡片留下「請點：」
+    else while (kept.length && /[：:]\s*$/.test(kept[kept.length - 1])) kept.pop();
+  }
+  return { body: kept.join("\n"), buttons };
+}
+
 type BuildOptions = {
   templateKey: NotifyTemplateKey;
   targetType: NotifyTargetType;
@@ -430,12 +462,18 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const ackToken = template.needsAck ? crypto.randomBytes(16).toString("hex") : undefined;
       const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
       if (ackUrl) vars.確認連結 = ackUrl;
+      // 會以 Flex 卡片送出時，內文網址點不了 → 抽成卡片按鈕
+      const asCard = Boolean(template.needsAck) || items.length > 0;
+      const { body: teacherBody, buttons: linkButtons } = asCard
+        ? extractLinkButtons(body)
+        : { body, buttons: [] as FlexLinkButton[] };
       // 課程色塊：卡片內每堂課一塊、依課程配色
-      const flexParts = items.length > 0 ? buildFlexParts(body, vars) : null;
+      const flexParts = items.length > 0 ? buildFlexParts(teacherBody, vars) : null;
       return {
         id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north",
-        message: finalizeMessage(body, vars), ackToken, ackUrl,
+        message: finalizeMessage(teacherBody, vars), ackToken, ackUrl,
         ...(flexParts ? { ...flexParts, flexBlocks: items.map((i) => i.block) } : {}),
+        ...(linkButtons.length > 0 ? { linkButtons } : {}),
       };
     });
   }
