@@ -6,7 +6,6 @@ import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/cou
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceMissingItems, isPendingReport } from "@/lib/reportWindow";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
-import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
 import { automationRunsForDates } from "@/lib/automationHealth";
 
@@ -30,7 +29,9 @@ export async function GET(req: NextRequest) {
   const deptFilter = dept ? { department: { in: departmentQueryValues(dept) } } : {};
   const todayCourseWindow = courseDateWindowWhere(todayIso);
 
-  const [courses, todayAttendance, pendingCandidates, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups] = await Promise.all([
+  // 首頁所有獨立資料一次平行讀取，避免先等主要資料、再依序等器材與排程健康度，
+  // 冷啟動時可少掉兩段資料庫往返。
+  const [courses, todayAttendance, pendingCandidates, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups, automationRuns] = await Promise.all([
     prisma.course.findMany({
       where: { isActive: true, ...todayCourseWindow, ...deptFilter },
       select: {
@@ -49,6 +50,21 @@ export async function GET(req: NextRequest) {
         course: { select: { id: true, teacherId: true, startDate: true, endDate: true, school: true, courseType: true, time: true } },
         actualTeacherId: true,
         actualTeacher: { select: { name: true } },
+        equipment: {
+          select: {
+            attendanceId: true,
+            isFirstClass: true,
+            needsAssembly: true,
+            equipmentNote: true,
+            needsTransferAfterClass: true,
+            nextSchoolName: true,
+            nextClassDate: true,
+            nextCourseType: true,
+            nextAddress: true,
+            transferNote: true,
+            status: true,
+          },
+        },
       },
     }),
     prisma.attendance.findMany({
@@ -82,6 +98,7 @@ export async function GET(req: NextRequest) {
       where: { status: { in: ["待行政審核", "待老師回覆", "老師無法配合", "需要討論", "老師可配合"] } },
       _count: { _all: true },
     }),
+    automationRunsForDates([todayIso, tomorrowIso]).catch(() => []),
   ]);
 
   const validTodayAttendance = todayAttendance.filter((item) => courseOccursOnIso(item.course, todayIso));
@@ -134,11 +151,10 @@ export async function GET(req: NextRequest) {
   const unnotifiedCount = validTodayAttendance.filter((a) => !a.cancelled && !a.reportSentAt).length;
 
   // 今日器材提醒：只列今日有器材設定的課
-  const equipmentMap = await equipmentByAttendanceIds(validTodayAttendance.map((a) => a.id));
   const equipmentItems = validTodayAttendance
-    .filter((a) => !a.cancelled && equipmentMap.has(a.id))
+    .filter((a) => !a.cancelled && a.equipment)
     .map((a) => {
-      const row = equipmentMap.get(a.id)!;
+      const row = a.equipment!;
       return {
         id: a.id,
         time: usableScheduledTime(a.scheduledTime) || a.course.time || "",
@@ -157,7 +173,6 @@ export async function GET(req: NextRequest) {
     cannotHelpCount: equipmentItems.filter((item) => item.status === "無法協助").length,
     items: equipmentItems,
   };
-  const automationRuns = await automationRunsForDates([todayIso, tomorrowIso]).catch(() => []);
   const automationHealth = automationRuns.map((run) => ({
     jobKey: run.jobKey,
     targetDate: run.targetDate,

@@ -80,8 +80,59 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   };
 
   const [teachersRaw, rowsRaw, adjustmentsRaw] = await Promise.all([
-    prisma.teacher.findMany({ where: teacherWhere, orderBy: { name: "asc" } }),
-    prisma.attendance.findMany({ where: attendanceWhere, include: { course: true }, orderBy: { date: "asc" } }),
+    // 薪資頁只需要這些欄位。避免把履歷、聯絡資料、銀行資料等大型且敏感的
+    // Teacher 欄位一起從 Turso 拉回，資料量會隨老師人數明顯放大。
+    prisma.teacher.findMany({
+      where: teacherWhere,
+      select: {
+        id: true,
+        name: true,
+        rateAfterSchool: true,
+        rateInSchool: true,
+        rateDemo: true,
+        travelFee: true,
+        isAssistant: true,
+        assistantFee: true,
+        email: true,
+        lineUserId: true,
+        lineRegion: true,
+      },
+      orderBy: { name: "asc" },
+    }),
+    // 同理，計薪只讀會參與公式的出勤與課程欄位；不要載入課程備註、地址、
+    // 開課確認等與薪資無關的內容。
+    prisma.attendance.findMany({
+      where: attendanceWhere,
+      select: {
+        id: true,
+        date: true,
+        actualTeacherId: true,
+        assistantTeacherId: true,
+        category: true,
+        hours: true,
+        notes: true,
+        isPayrollLocked: true,
+        reportContent: true,
+        reportSentAt: true,
+        studentCount: true,
+        studentCountA: true,
+        studentCountB: true,
+        scheduledTime: true,
+        course: {
+          select: {
+            id: true,
+            school: true,
+            courseType: true,
+            teacherId: true,
+            category: true,
+            department: true,
+            time: true,
+            payrollHours: true,
+          },
+        },
+      },
+      orderBy: { date: "asc" },
+    }),
     prisma.salaryAdjustment.findMany({
       where: { payoutMonth, ...(options.teacherId ? { teacherId: options.teacherId } : {}) },
       orderBy: [{ teacherId: "asc" }, { createdAt: "asc" }],
