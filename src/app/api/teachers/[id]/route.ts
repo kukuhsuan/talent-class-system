@@ -72,11 +72,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       lineRegion: data.lineRegion || "",
       isAssistant: Boolean(data.isAssistant),
       assistantFee: Number(data.assistantFee) || 0,
-      bankName: data.bankName?.trim() || "",
-      bankCode: data.bankCode?.trim() || "",
-      bankBranch: data.bankBranch?.trim() || "",
-      bankAccountName: data.bankAccountName?.trim() || data.name?.trim() || "",
-      bankAccountNumber: data.bankAccountNumber?.replace(/[\s-]/g, "") || "",
+      // 非財務角色拿不到帳號明碼，編輯姓名或課程資料時送回的銀行欄位會是空字串。
+      // 空字串不得清掉已確認資料；如需換帳戶，財務可填入新值覆蓋。
+      bankName: data.bankName?.trim() || before.bankName,
+      bankCode: data.bankCode?.trim() || before.bankCode,
+      bankBranch: data.bankBranch?.trim() || before.bankBranch,
+      bankAccountName: data.bankAccountName?.trim() || before.bankAccountName || data.name?.trim() || before.name,
+      bankAccountNumber: data.bankAccountNumber?.replace(/[\s-]/g, "") || before.bankAccountNumber,
       bankRemitNotes: String(data.bankRemitNotes ?? "").trim(),
       isCollegeStudent: Boolean(data.isCollegeStudent),
       emergencyContact: String(data.emergencyContact ?? "").trim(),

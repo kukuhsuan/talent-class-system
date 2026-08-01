@@ -43,6 +43,9 @@ export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadi
   const accountName = String(input.bankAccountName ?? "").trim();
   const heldAt = input.bankHeldOfflineAt ? new Date(input.bankHeldOfflineAt) : null;
   const heldOffline = Boolean(heldAt && !Number.isNaN(heldAt.getTime()));
+  const hasPaymentHistory = Boolean(String(input.firstPaidMonth ?? "").trim());
+  const changedAt = input.bankChangedAt ? new Date(input.bankChangedAt) : null;
+  const paidAt = input.lastPaidAt ? new Date(input.lastPaidAt) : null;
 
   // 0. 系統上線前就在匯款的老師：帳號與存摺都在會計手上，系統沒有也不需要有。
   //    這種人不是「資料缺漏」而是「資料不在系統」，每個月拿 ❌ 提醒他只會讓人習慣忽略紅字。
@@ -58,7 +61,26 @@ export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadi
     };
   }
 
-  // 1. 先擋「填一填就能解決」的問題，會計看到才知道要做什麼
+  // 1. 已經匯款成功過，就代表會計曾確認過這份資料；這是老師層級的永久狀態，
+  //    不應隨查詢月份重設。只有「上次匯款後銀行資料又被修改」才重新提醒核對。
+  if (hasPaymentHistory) {
+    if (changedAt && (!paidAt || changedAt.getTime() > paidAt.getTime())) {
+      return {
+        level: "warn",
+        code: "bank_changed",
+        label: "⚠️ 銀行資料已變更，請重新確認",
+        detail: `上次匯款（${input.lastPaidMonth || input.firstPaidMonth}）之後銀行資料曾於 ${changedAt.toLocaleDateString("zh-TW")} 異動，請重新核對。`,
+      };
+    }
+    return {
+      level: "ok",
+      code: "paid",
+      label: "✓ 匯款資料已確認",
+      detail: `自 ${input.firstPaidMonth} 起沿用；只有帳戶資料變更時才需要重新確認。`,
+    };
+  }
+
+  // 2. 新進老師才需要檢查「填一填就能解決」的問題
   if (!bankName || !accountNumber || !accountName) {
     const missing = [!bankName && "銀行名稱", !accountNumber && "帳號", !accountName && "戶名"].filter(Boolean).join("、");
     return {
@@ -69,7 +91,7 @@ export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadi
     };
   }
 
-  // 2. 存摺沒審過就等於帳號沒人核對過，不能只靠打字的那一份
+  // 3. 存摺沒審過就等於帳號沒人核對過，不能只靠打字的那一份
   if (String(input.bankbookStatus ?? "") !== DOC_STATUS.done) {
     const status = String(input.bankbookStatus ?? "") || DOC_STATUS.none;
     return {
@@ -80,33 +102,12 @@ export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadi
     };
   }
 
-  // 3. 從沒匯過款 → 這就是整套功能要解的主要問題
-  if (!String(input.firstPaidMonth ?? "").trim()) {
-    return {
-      level: "warn",
-      code: "first_time",
-      label: "⚠️ 首次匯款，請確認資料",
-      detail: "系統沒有這位老師的匯款紀錄，請在匯款前再核對一次存摺與帳號。",
-    };
-  }
-
-  // 4. 上次匯款之後又動過銀行資料 → 有可能是換帳號，也有可能是被改錯
-  const changedAt = input.bankChangedAt ? new Date(input.bankChangedAt) : null;
-  const paidAt = input.lastPaidAt ? new Date(input.lastPaidAt) : null;
-  if (changedAt && (!paidAt || changedAt.getTime() > paidAt.getTime())) {
-    return {
-      level: "warn",
-      code: "bank_changed",
-      label: "⚠️ 銀行資料已變更，請重新確認",
-      detail: `上次匯款（${input.lastPaidMonth || "—"}）之後銀行資料曾於 ${changedAt.toLocaleDateString("zh-TW")} 異動，請重新核對。`,
-    };
-  }
-
+  // 4. 資料齊全但從未匯過款，第一次仍提醒會計確認。
   return {
-    level: "ok",
-    code: "paid",
-    label: "✓ 已有匯款紀錄",
-    detail: `上次匯款月份：${input.lastPaidMonth || input.firstPaidMonth}`,
+    level: "warn",
+    code: "first_time",
+    label: "⚠️ 首次匯款，請確認資料",
+    detail: "系統沒有這位老師的匯款紀錄，請在匯款前再核對一次存摺與帳號。",
   };
 }
 
