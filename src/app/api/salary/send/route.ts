@@ -10,45 +10,52 @@ type DetailRow = {
   rate: number; travelFee: number; amount: number; isSub: boolean; role?: string;
 };
 
-function buildTeachingFeeMessage(teacherName: string, year: number, month: number, details: DetailRow[], total: number): object {
+function buildTeachingFeeMessages(teacherName: string, year: number, month: number, details: DetailRow[], total: number): object[] {
   const fmt = (n: number) => n.toLocaleString("zh-TW");
   const fmtDate = (d: string) => {
     const dt = new Date(d);
     return `${dt.getMonth() + 1}/${dt.getDate()}`;
   };
+  // LINE 每次 push 最多 5 則訊息；每頁控制 15 筆，避免單一 Flex JSON 過大。
+  // 超過一頁時由呼叫端分批推送，但不省略任何課程。
+  const pageSize = 15;
+  const pages: DetailRow[][] = details.length > 0
+    ? Array.from({ length: Math.ceil(details.length / pageSize) }, (_, index) => details.slice(index * pageSize, (index + 1) * pageSize))
+    : [[]];
 
-  const rows = details.slice(0, 20).map((r) => ({
-    type: "box",
-    layout: "vertical",
-    spacing: "xs",
-    backgroundColor: "#FFFFFF",
-    cornerRadius: "10px",
-    paddingAll: "12px",
-    margin: "sm",
-    contents: [
-      {
-        type: "text",
-        text: `${fmtDate(r.date)} ${r.school}｜${courseLabel(r.courseType)}${r.isSub ? "（代課）" : ""}${r.role === "助教" ? "（助教）" : ""}`,
-        size: "sm",
-        color: "#102A43",
-        weight: "bold",
-        wrap: true,
-      },
-      {
-        type: "text",
-        text: r.hoursNeedsReview
-          ? `${r.category}｜${r.time || r.hoursReviewReason}｜時數需人工確認`
-          : `${r.category} ${r.hours}h × $${fmt(r.rate)}${r.travelFee > 0 ? ` + 車馬 $${fmt(r.travelFee)}` : ""} = $${fmt(r.amount)}`,
-        size: "xs",
-        color: r.hoursNeedsReview ? "#C05621" : "#486581",
-        wrap: true,
-      },
-    ],
-  }));
+  return pages.map((page, pageIndex) => {
+    const rows = page.map((r) => ({
+      type: "box",
+      layout: "vertical",
+      spacing: "xs",
+      backgroundColor: "#FFFFFF",
+      cornerRadius: "10px",
+      paddingAll: "12px",
+      margin: "sm",
+      contents: [
+        {
+          type: "text",
+          text: `${fmtDate(r.date)} ${r.school}｜${courseLabel(r.courseType)}${r.isSub ? "（代課）" : ""}${r.role === "助教" ? "（助教）" : ""}`,
+          size: "sm",
+          color: "#102A43",
+          weight: "bold",
+          wrap: true,
+        },
+        {
+          type: "text",
+          text: r.hoursNeedsReview
+            ? `${r.category}｜${r.time || r.hoursReviewReason}｜時數需人工確認`
+            : `${r.category} ${r.hours}h × $${fmt(r.rate)}${r.travelFee > 0 ? ` + 車馬 $${fmt(r.travelFee)}` : ""} = $${fmt(r.amount)}`,
+          size: "xs",
+          color: r.hoursNeedsReview ? "#C05621" : "#486581",
+          wrap: true,
+        },
+      ],
+    }));
 
-  return {
+    return {
     type: "flex",
-    altText: `【${teacherName}】${year}年${month}月教學費用明細`,
+    altText: `【${teacherName}】${year}年${month}月教學費用明細${pages.length > 1 ? `（${pageIndex + 1}/${pages.length}）` : ""}`,
     contents: {
       type: "bubble",
       header: {
@@ -58,7 +65,7 @@ function buildTeachingFeeMessage(teacherName: string, year: number, month: numbe
         paddingAll: "18px",
         contents: [
           { type: "text", text: "教學費用明細", color: "#FFFFFF", weight: "bold", size: "xl" },
-          { type: "text", text: `${teacherName} 老師｜${year} 年 ${month} 月`, color: "#DCEEFF", size: "sm", margin: "sm" },
+          { type: "text", text: `${teacherName} 老師｜${year} 年 ${month} 月${pages.length > 1 ? `｜第 ${pageIndex + 1}/${pages.length} 頁` : ""}`, color: "#DCEEFF", size: "sm", margin: "sm" },
         ],
       },
       body: {
@@ -88,11 +95,12 @@ function buildTeachingFeeMessage(teacherName: string, year: number, month: numbe
         contents: [
           { type: "text", text: "本月教學費用合計", size: "xs", color: "#486581", align: "end" as const },
           { type: "text", text: `$${fmt(total)}`, size: "xxl", weight: "bold", color: "#1769AA", align: "end" as const, margin: "xs" },
-          ...(details.length > 20 ? [{ type: "text", text: `另有 ${details.length - 20} 筆，請至系統查看完整明細`, size: "xxs", color: "#6B7C93", align: "end" as const, margin: "sm" }] : []),
+          ...(pages.length > 1 ? [{ type: "text", text: `本頁 ${page.length} 筆｜全部共 ${details.length} 筆`, size: "xxs", color: "#6B7C93", align: "end" as const, margin: "sm" }] : []),
         ],
       },
     },
-  };
+    };
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -119,12 +127,15 @@ export async function POST(req: NextRequest) {
     })),
   ];
   const total = result?.total ?? 0;
-  const message = buildTeachingFeeMessage(teacher.name, Number(year), Number(month), details, total);
+  const messages = buildTeachingFeeMessages(teacher.name, Number(year), Number(month), details, total);
 
   const region = teacher.lineRegion || "north";
   const token = region === "south" ? process.env.LINE_SOUTH_TOKEN! : process.env.LINE_NORTH_TOKEN!;
 
-  await pushMessage(teacher.lineUserId, [message], token);
+  // LINE 單次最多接受 5 則訊息；分批送出，確保所有課程明細都會傳到。
+  for (let index = 0; index < messages.length; index += 5) {
+    await pushMessage(teacher.lineUserId, messages.slice(index, index + 5), token);
+  }
 
-  return NextResponse.json({ ok: true, sent: teacher.name });
+  return NextResponse.json({ ok: true, sent: teacher.name, detailCount: details.length, messageCount: messages.length });
 }
