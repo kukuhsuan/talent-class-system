@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calculateSalaryMonth, type SalaryResult } from "@/lib/salaryCalculation";
 import { getPayrollRun } from "@/lib/payrollRun";
+import { requireRole, SALARY_ROLES } from "@/lib/permissions";
 
 export async function GET(req: NextRequest) {
+  // proxy 已限制一次，API 再檢查一次，避免未來路由設定變動造成薪資外洩。
+  const { response } = await requireRole(SALARY_ROLES);
+  if (response) return response;
+
   const { searchParams } = new URL(req.url);
   const year = Number(searchParams.get("year") ?? new Date().getFullYear());
   const month = Number(searchParams.get("month") ?? new Date().getMonth() + 1);

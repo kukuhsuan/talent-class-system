@@ -6,6 +6,7 @@ import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
+const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
 
 const PRIMARY = [
   { href: "/", label: "今日概況" },
@@ -32,7 +33,7 @@ const GROUPS = [
     title: "會計與人員",
     items: [
       { href: "/accounting", label: "月底會計包", invoiceOnly: true },
-      { href: "/salary", label: "薪資計算" },
+      { href: "/salary", label: "薪資計算", salaryOnly: true },
       { href: "/teachers", label: "老師管理" },
       { href: "/teacher-resumes", label: "老師簡歷" },
       { href: "/recruitment", label: "全民招募" },
@@ -107,6 +108,7 @@ export default function NavBar() {
     items: group.items.filter((item) => {
       if ("ownerOnly" in item && item.ownerOnly && !OWNER_ROLES.has(currentRole)) return false;
       if ("invoiceOnly" in item && item.invoiceOnly && !INVOICE_ROLES.has(currentRole)) return false;
+      if ("salaryOnly" in item && item.salaryOnly && !SALARY_ROLES.has(currentRole)) return false;
       return true;
     }),
   })).filter((group) => group.items.length > 0);
