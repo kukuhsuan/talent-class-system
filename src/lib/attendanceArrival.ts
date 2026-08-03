@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { createAttendancesForUniqueDays } from "@/lib/attendanceBatch";
-import { stampAttendanceTime } from "@/lib/attendanceTime";
+import { stampAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { courseDateWindowWhere, courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 
@@ -34,6 +34,7 @@ type ArrivalRow = {
   id: number;
   date: Date;
   cancelled: boolean;
+  scheduledTime?: string | null;
   course: {
     id: number;
     school: string;
@@ -154,6 +155,12 @@ function responsibleTeacher(row: ArrivalRow): TeacherLite {
   return row.actualTeacher;
 }
 
+// 已建立的出勤紀錄可能有當天專屬時間（例如補課或行政調整），
+// 打卡必須優先採用該筆紀錄，不能只看之後可能已被修改的課程主檔。
+function arrivalTime(row: ArrivalRow) {
+  return usableScheduledTime(row.scheduledTime) || row.course.time;
+}
+
 async function arrivalColumnMap(ids: number[]) {
   await ensureArrivalColumns();
   if (ids.length === 0) return new Map<number, ArrivalColumns>();
@@ -210,7 +217,9 @@ async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; 
       cancelled: false,
       date: { gte: start, lt: end },
       ...attendanceTeacherFilter,
-      course: { isActive: true, ...courseWindow, ...deptFilter },
+      // 當天出勤紀錄一旦明確建立，就應視為實際排課依據。
+      // 課程主檔後來結束、停用或起訖日不含該天，都不應讓老師無法打卡。
+      ...(Object.keys(deptFilter).length > 0 ? { course: deptFilter } : {}),
     },
     include: {
       course: { include: { schoolRel: true } },
@@ -229,9 +238,10 @@ export async function arrivalDetailsForDate(input: { dateIso?: string; teacherId
 
   return rows
     .map((row): ArrivalDetail | null => {
-      const startMinutes = parseCourseStartMinutes(row.course.time);
+      const time = arrivalTime(row);
+      const startMinutes = parseCourseStartMinutes(time);
       if (startMinutes === null) return null;
-      const endMinutes = parseCourseEndMinutes(row.course.time) ?? startMinutes + 90;
+      const endMinutes = parseCourseEndMinutes(time) ?? startMinutes + 90;
       const expectedMinutes = startMinutes - ARRIVAL_GRACE_MINUTES;
       const columns = columnMap.get(row.id);
       const teacher = responsibleTeacher(row);
@@ -261,7 +271,7 @@ export async function arrivalDetailsForDate(input: { dateIso?: string; teacherId
         date: dateIso,
         school: row.course.school,
         courseType: row.course.courseType,
-        time: row.course.time,
+        time,
         teacherName: teacher.name,
         teacherLineUserId: teacher.lineUserId,
         teacherLineRegion: teacher.lineRegion,
@@ -296,8 +306,9 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
   const columnMap = await arrivalColumnMap(rows.map((row) => row.id));
   const candidates = rows
     .map((row) => {
-      const start = parseCourseStartMinutes(row.course.time);
-      const end = parseCourseEndMinutes(row.course.time) ?? (start === null ? null : start + 90);
+      const time = arrivalTime(row);
+      const start = parseCourseStartMinutes(time);
+      const end = parseCourseEndMinutes(time) ?? (start === null ? null : start + 90);
       return { row, start, end };
     })
     .filter((item) => {
@@ -314,7 +325,7 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
   }
 
   const existing = columnMap.get(selected.id)?.teacherArrivedAt ?? null;
-  const startMinutes = parseCourseStartMinutes(selected.course.time) ?? nowParts.minutes;
+  const startMinutes = parseCourseStartMinutes(arrivalTime(selected)) ?? nowParts.minutes;
   const expectedMinutes = startMinutes - ARRIVAL_GRACE_MINUTES;
   const arrivedMinutes = existing ? localMinutesOfDate(existing) ?? nowParts.minutes : nowParts.minutes;
   const lateMinutes = Math.max(0, arrivedMinutes - startMinutes);
