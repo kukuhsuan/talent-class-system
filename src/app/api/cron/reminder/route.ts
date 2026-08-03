@@ -76,7 +76,6 @@ export async function GET(req: NextRequest) {
       where: {
         cancelled: false,
         date: { gte: dayStart, lt: dayEnd },
-        course: { isActive: true, ...targetCourseWindow },
       },
       include: { course: { include: { schoolRel: true } }, actualTeacher: true, assistantTeacher: true },
     }),
