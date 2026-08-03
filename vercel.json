@@ -37,12 +37,8 @@
       "schedule": "0 1 * * *"
     },
     {
-      "path": "/api/cron/check-teacher-arrival-reminders?slot=am",
-      "schedule": "45 1 * * *"
-    },
-    {
-      "path": "/api/cron/check-teacher-arrival-reminders?slot=pm",
-      "schedule": "45 6 * * *"
+      "path": "/api/cron/check-teacher-arrival-reminders",
+      "schedule": "*/5 0-13 * * *"
     },
     {
       "path": "/api/cron/pre-class-meeting?task=generate",
