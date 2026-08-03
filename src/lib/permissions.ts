@@ -6,8 +6,8 @@ export const OWNER_ROLES = ["owner", "super_admin", "developer"] as const;
 // 一般員工可執行所有日常營運操作；系統管理三項由 OWNER_ROLES 另行限制。
 export const ADMIN_ROLES = ["owner", "super_admin", "developer", "admin", "staff"] as const;
 export const BACKOFFICE_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"] as const;
-// 全體薪資屬高度敏感資料：只開放會計與最高權限角色。
-export const SALARY_ROLES = ["owner", "super_admin", "developer", "accountant"] as const;
+// 薪資計算供營運人員核對；唯讀帳號不開放。
+export const SALARY_ROLES = ["owner", "super_admin", "developer", "admin", "accountant", "staff", "customer_service"] as const;
 // 可發送 LINE 通知的角色：accountant/viewer 預設不可大量發送
 export const NOTIFY_ROLES = ["owner", "super_admin", "developer", "admin", "customer_service", "staff"] as const;
 // 可看「銀行帳號明碼」與「存摺／委任書原檔」。行政（admin/staff）只看得到遮罩後的帳號。

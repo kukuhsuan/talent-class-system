@@ -6,7 +6,7 @@ import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
-const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
+const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff", "customer_service"]);
 
 const PRIMARY = [
   { href: "/", label: "今日概況" },

@@ -32,8 +32,8 @@ const PUBLIC_PREFIX = ["/report/", "/assessment/", "/school-portal/", "/school-b
 // customer_service：客服角色，可用一般後台與通知功能；薪資/帳號管理/稽核仍被下方清單擋下
 const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", "customer_service", "staff", "accountant", "viewer"]);
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
-// 全體薪資明細只開放會計與最高權限角色，避免一般行政看見所有人的薪資。
-const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
+// 薪資計算供營運人員核對；唯讀帳號不開放。
+const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff", "customer_service"]);
 // 園所請款資料只開放會計；最高權限保留維運與緊急處理能力。
 const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
 
