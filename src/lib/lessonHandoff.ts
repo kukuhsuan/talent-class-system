@@ -193,7 +193,8 @@ export function buildLessonRecapFlex(recap: LessonRecap, opts: { sameTeacher: bo
       contents: [
         {
           type: "text",
-          text: opts.sameTeacher ? "你自己留下的提醒" : `${recap.teacherName}老師留給你的提醒`,
+          // 這張卡主要給接手／代課的老師看，文案一律站在「接下來要上這堂課的人」的角度
+          text: opts.sameTeacher ? "上次你留下的交接事項" : `${recap.teacherName}老師的交接事項`,
           size: "xs",
           weight: "bold",
           color: "#B0722B",
@@ -249,7 +250,7 @@ export function buildLessonRecapFlex(recap: LessonRecap, opts: { sameTeacher: bo
         contents: [
           {
             type: "text",
-            text: "接續上一堂的進度開課；如與實際情況不符，請於課後回報更正。",
+            text: "請接續上面的進度上課。現場狀況若和這裡不一樣，課後回報時填實際情形就好。",
             size: "xxs",
             color: "#8391A3",
             wrap: true,
