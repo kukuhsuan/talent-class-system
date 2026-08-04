@@ -72,7 +72,7 @@ export default function LessonPlanPage() {
           <div className="text-xs font-semibold tracking-widest opacity-80">WAYSLEADER AI｜教學課表</div>
           <h1 className="mt-1 text-2xl font-black sm:text-3xl">{course || "課程"}課程大綱</h1>
           <p className="mt-2 text-sm leading-6 opacity-90">
-            本學期共 {rows.length} 堂，依序上課即可。每堂的重點與能力培養，都會對應課後回報內容。
+            本學期預計 {rows.length} 堂，實際堂數與進度依園所安排。每堂的重點與能力培養，都會對應課後回報內容。
           </p>
         </div>
 

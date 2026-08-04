@@ -620,7 +620,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                   <div key={plan.courseName} className="rounded-2xl border shadow-sm overflow-hidden max-w-sm bg-white">
                     <div className="px-4 py-3 text-white" style={{ backgroundColor: plan.color }}>
                       <div className="text-sm font-bold">{plan.courseName}教學課表</div>
-                      <div className="text-xs opacity-90">本學期共 {plan.items.length} 堂　每堂重點與能力培養</div>
+                      <div className="text-xs opacity-90">本學期預計 {plan.items.length} 堂，實際堂數依園所安排</div>
                     </div>
                     <div className="max-h-72 space-y-2 overflow-y-auto p-3">
                       {plan.items.map((row) => (

@@ -300,7 +300,7 @@ function buildLessonPlanFlex(card: LessonPlanCard) {
       type: "box", layout: "vertical", backgroundColor: card.color, paddingAll: "18px", spacing: "sm",
       contents: [
         { type: "text", text: `${card.courseName}教學課表`, color: "#FFFFFF", weight: "bold", size: "xl", wrap: true },
-        { type: "text", text: `本學期共 ${total} 堂　每堂重點與能力培養`, color: "#EAF2FF", size: "sm", wrap: true },
+        { type: "text", text: `本學期預計 ${total} 堂，實際堂數依園所安排`, color: "#EAF2FF", size: "sm", wrap: true },
       ],
     },
     body: {
@@ -334,14 +334,14 @@ function buildLessonPlanFlex(card: LessonPlanCard) {
     footer: {
       type: "box", layout: "horizontal", backgroundColor: "#FAFBFC", paddingAll: "12px",
       contents: [
-        { type: "text", text: "課表如需調整請聯繫行政", size: "xxs", color: "#8391A3", flex: 8, wrap: true },
+        { type: "text", text: "實際進度依園所安排，如需調整請聯繫行政", size: "xxs", color: "#8391A3", flex: 8, wrap: true },
         { type: "text", text: `${pageIndex + 1}/${shown.length}`, size: "xxs", color: "#8391A3", align: "end", flex: 2 },
       ],
     },
   }));
   return {
     type: "flex",
-    altText: `${card.courseName}教學課表（共 ${total} 堂）`,
+    altText: `${card.courseName}教學課表（預計 ${total} 堂）`,
     contents: bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles },
   };
 }
