@@ -53,6 +53,7 @@ talent-class-system-backup-*.json
 
 # scripts/handoff-preview.mjs 產生的離線預覽，隨時可重跑
 handoff-preview.html
+handoff-preview.png
 
 # macOS 複製產生的重複檔案與暫存
 /.next 2/
