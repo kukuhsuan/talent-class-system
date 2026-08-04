@@ -22,6 +22,10 @@ type TeacherComboboxProps = {
   excludeTeacherId?: number | null;
   displayName?: (teacher: TeacherComboboxTeacher) => string;
   className?: string;
+  /** 供 <label htmlFor> 關聯用 */
+  id?: string;
+  /** 沒有可見標籤時給螢幕閱讀器的名稱 */
+  ariaLabel?: string;
 };
 
 export function TeacherCombobox({
@@ -34,6 +38,8 @@ export function TeacherCombobox({
   excludeTeacherId = null,
   displayName = (teacher) => teacher.name,
   className = "",
+  id,
+  ariaLabel,
 }: TeacherComboboxProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -84,6 +90,8 @@ export function TeacherCombobox({
     <div ref={rootRef} className={`relative ${className}`}>
       <input
         ref={inputRef}
+        id={id}
+        aria-label={ariaLabel}
         role="combobox"
         aria-controls={listId}
         aria-expanded={open}

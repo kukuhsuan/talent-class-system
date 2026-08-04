@@ -137,13 +137,13 @@ export default function SummerCampImportPage() {
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-4 md:grid-cols-[1fr_160px_auto_auto] md:items-end">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Excel 檔案（.xlsx）</label>
-            <input type="file" accept=".xlsx" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="courses-summer-import-f1">Excel 檔案（.xlsx）</label>
+            <input id="courses-summer-import-f1" type="file" accept=".xlsx" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">日期年度</label>
-            <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value) || new Date().getFullYear())}
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="courses-summer-import-f2">日期年度</label>
+            <input id="courses-summer-import-f2" type="number" value={year} onChange={(e) => setYear(Number(e.target.value) || new Date().getFullYear())}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           </div>
           <button type="button" onClick={() => submit("dry-run")} disabled={loading || importing}

@@ -92,34 +92,34 @@ export default function SchoolStatsPage() {
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
           <div>
-            <label className="text-xs text-slate-500">年份</label>
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <label className="text-xs text-slate-500" htmlFor="school-stats-f1">年份</label>
+            <select id="school-stats-f1" value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {[2024, 2025, 2026, 2027].map((y) => <option key={y}>{y}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500">月份</label>
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+            <label className="text-xs text-slate-500" htmlFor="school-stats-f2">月份</label>
+            <select id="school-stats-f2" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500">園所類型</label>
-            <select value={type} onChange={(e) => setType(e.target.value)}>
+            <label className="text-xs text-slate-500" htmlFor="school-stats-f3">園所類型</label>
+            <select id="school-stats-f3" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="">全部</option>
               {DEPARTMENT_OPTIONS.map((d) => <option key={d}>{d}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500">園所</label>
-            <select value={school} onChange={(e) => setSchool(e.target.value)}>
+            <label className="text-xs text-slate-500" htmlFor="school-stats-f4">園所</label>
+            <select id="school-stats-f4" value={school} onChange={(e) => setSchool(e.target.value)}>
               <option value="">全部</option>
               {schools.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500">課程</label>
-            <select value={courseType} onChange={(e) => setCourseType(e.target.value)}>
+            <label className="text-xs text-slate-500" htmlFor="school-stats-f5">課程</label>
+            <select id="school-stats-f5" value={courseType} onChange={(e) => setCourseType(e.target.value)}>
               <option value="">全部</option>
               {COURSE_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
             </select>

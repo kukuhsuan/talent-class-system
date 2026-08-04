@@ -383,8 +383,8 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
             <div className="space-y-4">
               {(data.confirmationCourses?.length ?? 0) > 0 ? (
                 <div className="rounded-[24px] border border-[#EBE1D3] bg-white p-4 shadow-sm">
-                  <label className="mb-2 block text-sm font-black text-[#57493C]">請選擇要填寫的課程</label>
-                  <select value={selectedConfirmationCourseId ?? ""} onChange={(event) => {
+                  <label className="mb-2 block text-sm font-black text-[#57493C]" htmlFor="school-portal-token-f1">請選擇要填寫的課程</label>
+                  <select id="school-portal-token-f1" value={selectedConfirmationCourseId ?? ""} onChange={(event) => {
                     const id = Number(event.target.value);
                     setSelectedConfirmationCourseId(id);
                     const selected = data.confirmationCourses?.find((course) => course.id === id);

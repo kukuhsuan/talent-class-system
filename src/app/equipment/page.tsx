@@ -1,4 +1,5 @@
 "use client";
+import { StatusTag } from "@/components/ui";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
@@ -231,16 +232,6 @@ export default function EquipmentPage() {
     } finally {
       setUploadingPhoto(false);
     }
-  }
-
-  function statusBadge(status: string) {
-    const styles: Record<string, string> = {
-      正常: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      需補充: "bg-amber-50 text-amber-700 border-amber-200",
-      損壞: "bg-red-50 text-red-700 border-red-200",
-      遺失: "bg-rose-50 text-rose-700 border-rose-200",
-    };
-    return styles[status] ?? "bg-slate-50 text-slate-600 border-slate-200";
   }
 
   function equipmentIcon(name: string) {
@@ -485,9 +476,7 @@ export default function EquipmentPage() {
                     </td>
                     <td className="px-5 py-4 text-slate-700">{row.quantity || "未填"}</td>
                     <td className="px-5 py-4">
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusBadge(row.status)}`}>
-                        {row.status}
-                      </span>
+                      <StatusTag>{row.status}</StatusTag>
                     </td>
                     <td className="max-w-md px-5 py-4 text-slate-600">{row.notes || "-"}</td>
                     <td className="px-5 py-4">
@@ -518,9 +507,7 @@ export default function EquipmentPage() {
                     <p className="text-xs font-semibold text-slate-500">{rowSchool?.name || row.school || "未指定園所"} · {rowSchool?.type || "未分類"}</p>
                     <h3 className="mt-1 text-lg font-bold text-slate-900">{equipmentIcon(row.name)} {row.name}</h3>
                   </div>
-                  <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${statusBadge(row.status)}`}>
-                    {row.status}
-                  </span>
+                  <StatusTag className="shrink-0">{row.status}</StatusTag>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-xl bg-white p-3">

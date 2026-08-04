@@ -141,8 +141,8 @@ export default function SchedulePage() {
 
       {/* 縣市改下拉選單，避免整排按鈕佔版面 */}
       <div className="mb-4 flex items-center gap-2">
-        <label className="text-sm font-semibold text-slate-700">地區</label>
-        <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+        <label className="text-sm font-semibold text-slate-700" htmlFor="schedule-f1">地區</label>
+        <select id="schedule-f1" value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
           <option value="">全部地區</option>
           {[...new Set([...REGION_OPTIONS, ...allRegions])].map((r) => <option key={r} value={r}>{r}</option>)}
         </select>

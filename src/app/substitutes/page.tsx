@@ -253,26 +253,26 @@ export default function SubstitutesPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div>
-              <label>第一步：園所 *</label>
-              <select ref={firstInputRef} disabled={Boolean(editing)} value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value, attendanceIds: [] })}>
+              <label htmlFor="substitutes-f1">第一步：園所 *</label>
+              <select id="substitutes-f1" ref={firstInputRef} disabled={Boolean(editing)} value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value, attendanceIds: [] })}>
                 <option value="">-- 選擇園所 --</option>
                 {schools.map((school) => <option key={school} value={school}>{school}</option>)}
               </select>
             </div>
             <div>
-              <label>第二步：日期 *</label>
-              <input disabled={Boolean(editing)} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, attendanceIds: [] })} />
+              <label htmlFor="substitutes-f2">第二步：日期 *</label>
+              <input id="substitutes-f2" disabled={Boolean(editing)} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, attendanceIds: [] })} />
             </div>
             <div>
-              <label>代課身份 *</label>
-              <select disabled={Boolean(editing)} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role, attendanceIds: [] })}>
+              <label htmlFor="substitutes-f3">代課身份 *</label>
+              <select id="substitutes-f3" disabled={Boolean(editing)} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role, attendanceIds: [] })}>
                 <option value="主教">主教代課</option>
                 <option value="助教">助教代課</option>
               </select>
             </div>
             <div>
-              <label>代課老師 *</label>
-              <TeacherCombobox
+              <label htmlFor="substitutes-f4">代課老師 *</label>
+              <TeacherCombobox id="substitutes-f4"
                 teachers={teachers}
                 value={form.substituteTeacherId || null}
                 onChange={(teacherId) => setForm({ ...form, substituteTeacherId: teacherId ?? 0 })}
@@ -326,12 +326,12 @@ export default function SubstitutesPage() {
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-4">
             <div>
-              <label>代課費用（選填）</label>
-              <input type="number" value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} placeholder="不會自動加入薪資" />
+              <label htmlFor="substitutes-f5">代課費用（選填）</label>
+              <input id="substitutes-f5" type="number" value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} placeholder="不會自動加入薪資" />
             </div>
             <div className="md:col-span-2">
-              <label>備註</label>
-              <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="代課原因、聯繫事項..." />
+              <label htmlFor="substitutes-f6">備註</label>
+              <input id="substitutes-f6" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="代課原因、聯繫事項..." />
             </div>
             <label className="flex items-end gap-2 pb-3 text-sm font-medium text-slate-700">
               <input type="checkbox" checked={form.confirmed} onChange={(e) => setForm({ ...form, confirmed: e.target.checked })} className="h-4 w-4" />

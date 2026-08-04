@@ -534,8 +534,8 @@ export default function CoursesPage() {
               </div>
             </div>
             <div className="md:col-span-2">
-              <label>園所名稱 *</label>
-              <SearchableSelect
+              <label htmlFor="courses-f1">園所名稱 *</label>
+              <SearchableSelect id="courses-f1"
                 options={schoolOptions}
                 value={form.schoolId ?? ""}
                 onChange={(value) => {
@@ -558,24 +558,24 @@ export default function CoursesPage() {
               )}
             </div>
             {!form.schoolId && <div>
-              <label>手動輸入園所名稱 *</label>
-              <input value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value })} placeholder="學校簡稱" />
+              <label htmlFor="courses-f2">手動輸入園所名稱 *</label>
+              <input id="courses-f2" value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value })} placeholder="學校簡稱" />
             </div>}
             <div>
-              <label>地區</label>
-              <select value={normalizeRegion(form.region)} onChange={(e) => setForm({ ...form, region: e.target.value })}>
+              <label htmlFor="courses-f3">地區</label>
+              <select id="courses-f3" value={normalizeRegion(form.region)} onChange={(e) => setForm({ ...form, region: e.target.value })}>
                 <option value="">-- 選擇地區 --</option>
                 {REGION_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">課程資訊</div>
             <div className="md:col-span-2">
-              <label>上課地址</label>
-              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="可貼完整地址，之後可連 Google Maps" />
+              <label htmlFor="courses-f4">上課地址</label>
+              <input id="courses-f4" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="可貼完整地址，之後可連 Google Maps" />
             </div>
             <div>
-              <label>{form.department === "安親班" ? "課程主教（佔位）" : "負責老師 *"}</label>
-              <TeacherCombobox
+              <label htmlFor="courses-f5">{form.department === "安親班" ? "課程主教（佔位）" : "負責老師 *"}</label>
+              <TeacherCombobox id="courses-f5"
                 teachers={teachers}
                 value={form.teacherId || null}
                 onChange={(teacherId) => setForm({ ...form, teacherId: teacherId ?? 0 })}
@@ -588,8 +588,8 @@ export default function CoursesPage() {
             </div>
             {form.department !== "安親班" && (
               <div>
-                <label>助教老師（選填）</label>
-                <TeacherCombobox
+                <label htmlFor="courses-f6">助教老師（選填）</label>
+                <TeacherCombobox id="courses-f6"
                   teachers={teachers}
                   value={form.assistantTeacherId}
                   onChange={(teacherId) => setForm({ ...form, assistantTeacherId: teacherId })}
@@ -604,8 +604,8 @@ export default function CoursesPage() {
               </div>
             )}
             <div>
-              <label>課程項目</label>
-              <SearchableSelect
+              <label htmlFor="courses-f7">課程項目</label>
+              <SearchableSelect id="courses-f7"
                 options={courseSelectOptions}
                 value={form.courseType}
                 onChange={(value) => setForm({ ...form, courseType: value ?? "" })}
@@ -628,35 +628,35 @@ export default function CoursesPage() {
               )}
             </div>
             <div>
-              <label>星期幾</label>
-              <select value={form.dayOfWeek} onChange={(e) => setForm({ ...form, dayOfWeek: e.target.value })}>
+              <label htmlFor="courses-f8">星期幾</label>
+              <select id="courses-f8" value={form.dayOfWeek} onChange={(e) => setForm({ ...form, dayOfWeek: e.target.value })}>
                 {DAYS.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
-              <label>上課時間</label>
-              <input value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="16:00-17:00" />
+              <label htmlFor="courses-f9">上課時間</label>
+              <input id="courses-f9" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} placeholder="16:00-17:00" />
             </div>
             <div>
-              <label>計薪時數</label>
-              <input type="number" min="0" step="0.5" value={form.payrollHours} onChange={(e) => setForm({ ...form, payrollHours: e.target.value })} placeholder="空白則依時間估算" />
+              <label htmlFor="courses-f10">計薪時數</label>
+              <input id="courses-f10" type="number" min="0" step="0.5" value={form.payrollHours} onChange={(e) => setForm({ ...form, payrollHours: e.target.value })} placeholder="空白則依時間估算" />
               <p className="mt-1 text-xs text-slate-500">手動填寫後，薪資一律以此為準。</p>
             </div>
             <div>
-              <label>類別</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              <label htmlFor="courses-f11">類別</label>
+              <select id="courses-f11" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                 {CATEGORY_OPTIONS.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label>部門</label>
-              <select value={normalizeDepartment(form.department)} onChange={(e) => setForm({ ...form, department: coerceDept(e.target.value) })}>
+              <label htmlFor="courses-f12">部門</label>
+              <select id="courses-f12" value={normalizeDepartment(form.department)} onChange={(e) => setForm({ ...form, department: coerceDept(e.target.value) })}>
                 {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
-              <label>課程期別</label>
-              <select value={form.academicTermOverride} onChange={(e) => setForm({ ...form, academicTermOverride: e.target.value })}>
+              <label htmlFor="courses-f13">課程期別</label>
+              <select id="courses-f13" value={form.academicTermOverride} onChange={(e) => setForm({ ...form, academicTermOverride: e.target.value })}>
                 <option value="">自動依上課日期判斷</option>
                 <option value="114-2">114-2</option>
                 <option value="115-1">115-1</option>
@@ -665,12 +665,12 @@ export default function CoursesPage() {
               <p className="mt-1 text-xs text-slate-500">手動選擇會優先於系統判斷。</p>
             </div>
             <div>
-              <label>報名人數</label>
-              <input value={form.enrollCount} onChange={(e) => setForm({ ...form, enrollCount: e.target.value })} placeholder="10人" />
+              <label htmlFor="courses-f14">報名人數</label>
+              <input id="courses-f14" value={form.enrollCount} onChange={(e) => setForm({ ...form, enrollCount: e.target.value })} placeholder="10人" />
             </div>
             <div className="md:col-span-2">
-              <label>備註</label>
-              <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              <label htmlFor="courses-f15">備註</label>
+              <input id="courses-f15" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
             <div className="md:col-span-4 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">實際日期</div>
             <div className="md:col-span-4 border border-amber-100 bg-amber-50/30 rounded-lg p-4">
@@ -702,8 +702,8 @@ export default function CoursesPage() {
 
               {form.dateMode === "single" && (
                 <div className="max-w-xs">
-                  <label className="text-xs">上課日期</label>
-                  <input type="date" value={form.scheduledDates[0] ?? ""} onChange={(e) => setForm({ ...form, scheduledDates: [e.target.value] })} />
+                  <label className="text-xs" htmlFor="courses-f16">上課日期</label>
+                  <input id="courses-f16" type="date" value={form.scheduledDates[0] ?? ""} onChange={(e) => setForm({ ...form, scheduledDates: [e.target.value] })} />
                 </div>
               )}
 
@@ -711,12 +711,12 @@ export default function CoursesPage() {
                 <>
                   <div className="grid md:grid-cols-[120px_1fr] gap-3">
                     <div>
-                      <label className="text-xs">年份</label>
-                      <input type="number" value={form.scheduledDateYear} onChange={(e) => setForm({ ...form, scheduledDateYear: Number(e.target.value) })} />
+                      <label className="text-xs" htmlFor="courses-f17">年份</label>
+                      <input id="courses-f17" type="number" value={form.scheduledDateYear} onChange={(e) => setForm({ ...form, scheduledDateYear: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label className="text-xs">日期字串</label>
-                      <input value={form.scheduledDateText} onChange={(e) => setForm({ ...form, scheduledDateText: e.target.value })} placeholder="7/1、7/6、8、9、10、7/8、15、22、29" />
+                      <label className="text-xs" htmlFor="courses-f18">日期字串</label>
+                      <input id="courses-f18" value={form.scheduledDateText} onChange={(e) => setForm({ ...form, scheduledDateText: e.target.value })} placeholder="7/1、7/6、8、9、10、7/8、15、22、29" />
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 mt-3">
@@ -740,12 +740,12 @@ export default function CoursesPage() {
               {form.dateMode === "range" && (
                 <div className="grid md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs">開始日期</label>
-                    <input type="date" value={form.rangeStart} onChange={(e) => setForm({ ...form, rangeStart: e.target.value })} />
+                    <label className="text-xs" htmlFor="courses-f19">開始日期</label>
+                    <input id="courses-f19" type="date" value={form.rangeStart} onChange={(e) => setForm({ ...form, rangeStart: e.target.value })} />
                   </div>
                   <div>
-                    <label className="text-xs">結束日期</label>
-                    <input type="date" value={form.rangeEnd} onChange={(e) => setForm({ ...form, rangeEnd: e.target.value })} />
+                    <label className="text-xs" htmlFor="courses-f20">結束日期</label>
+                    <input id="courses-f20" type="date" value={form.rangeEnd} onChange={(e) => setForm({ ...form, rangeEnd: e.target.value })} />
                   </div>
                 </div>
               )}
@@ -754,12 +754,12 @@ export default function CoursesPage() {
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs">開始日期</label>
-                      <input type="date" value={form.recurringStart} onChange={(e) => setForm({ ...form, recurringStart: e.target.value })} />
+                      <label className="text-xs" htmlFor="courses-f21">開始日期</label>
+                      <input id="courses-f21" type="date" value={form.recurringStart} onChange={(e) => setForm({ ...form, recurringStart: e.target.value })} />
                     </div>
                     <div>
-                      <label className="text-xs">結束日期</label>
-                      <input type="date" value={form.recurringEnd} onChange={(e) => setForm({ ...form, recurringEnd: e.target.value })} />
+                      <label className="text-xs" htmlFor="courses-f22">結束日期</label>
+                      <input id="courses-f22" type="date" value={form.recurringEnd} onChange={(e) => setForm({ ...form, recurringEnd: e.target.value })} />
                     </div>
                   </div>
                   <div>

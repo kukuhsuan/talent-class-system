@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Toast } from "@/components/Toast";
 import { useToast } from "@/lib/useToast";
+import { StatusTag } from "@/components/ui";
 
 type AlertRow = {
   id: number;
@@ -14,12 +15,6 @@ type AlertRow = {
   resolvedAt: string | null;
   notifiedAt: string | null;
   createdAt: string;
-};
-
-const LEVEL_STYLE: Record<string, string> = {
-  P1: "bg-red-100 text-red-700",
-  P2: "bg-amber-100 text-amber-700",
-  P3: "bg-slate-100 text-slate-600",
 };
 
 const STATUS_TABS = ["未處理", "已處理", "已忽略"] as const;
@@ -127,11 +122,11 @@ export default function AlertsPage() {
           {alerts.map((alert) => (
             <div key={alert.id} className="rounded-2xl bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start gap-2">
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${LEVEL_STYLE[alert.level] ?? LEVEL_STYLE.P3}`}>
+                <StatusTag size="sm" tone={alert.level === "P1" ? "err" : alert.level === "P2" ? "warn" : "idle"}>
                   {alert.level}
-                </span>
-                <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{alert.category}</span>
-                {alert.notifiedAt && <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">已推播主管</span>}
+                </StatusTag>
+                <StatusTag size="sm" tone="info">{alert.category}</StatusTag>
+                {alert.notifiedAt && <StatusTag size="sm" tone="ok">已推播主管</StatusTag>}
                 <span className="ml-auto text-xs text-slate-400">{String(alert.createdAt).slice(0, 16).replace("T", " ")}</span>
               </div>
               <div className="mt-2 text-sm font-semibold text-slate-800">{alert.title}</div>

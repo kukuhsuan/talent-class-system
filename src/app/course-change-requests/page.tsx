@@ -1,4 +1,5 @@
 "use client";
+import { StatusTag } from "@/components/ui";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchableSelect } from "@/components/SearchableSelect";
@@ -39,12 +40,6 @@ function request(url: string, init?: RequestInit) {
   return fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
 }
 
-function statusClass(status: string) {
-  if (status === "已完成" || status === "老師可配合") return "bg-emerald-50 text-emerald-700";
-  if (status === "老師無法配合" || status === "已取消") return "bg-rose-50 text-rose-700";
-  if (status === "需要討論") return "bg-amber-50 text-amber-700";
-  return "bg-blue-50 text-blue-700";
-}
 
 function changeSummary(item: ChangeRequest) {
   const rows: string[] = [];
@@ -290,7 +285,7 @@ export default function CourseChangeRequestsPage() {
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-3 border-b border-slate-100 p-4 md:grid-cols-3"><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜尋園所、課程、老師或建立人" /><select value={status} onChange={(event) => setStatus(event.target.value)}>{STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item || "全部狀態"}</option>)}</select><select value={source} onChange={(event) => setSource(event.target.value)}><option value="">全部來源</option><option value="ADMIN">行政建立</option><option value="SCHOOL">園所建立</option></select></div>
         <div className="divide-y divide-slate-100">{items.map((item) => <article key={item.id} className="p-4 md:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-slate-900">{item.originalSchoolName}｜{courseLabel(item.course.courseType)}</h3><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass(item.status)}`}>{item.status}</span></div><p className="mt-1 text-sm text-slate-500">老師：{item.teacher.name}｜{item.requestSource === "SCHOOL" ? "園所建立" : "行政建立"}｜{new Date(item.createdAt).toLocaleString("zh-TW")}</p></div><span className="text-xs text-slate-400">#{item.id}</span></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-slate-900">{item.originalSchoolName}｜{courseLabel(item.course.courseType)}</h3><StatusTag status={item.status}>{item.status}</StatusTag></div><p className="mt-1 text-sm text-slate-500">老師：{item.teacher.name}｜{item.requestSource === "SCHOOL" ? "園所建立" : "行政建立"}｜{new Date(item.createdAt).toLocaleString("zh-TW")}</p></div><span className="text-xs text-slate-400">#{item.id}</span></div>
           <div className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700 md:grid-cols-2">{changeSummary(item).map((row) => <div key={row}>{row}</div>)}<div>原因：{item.reasonType}{item.reasonNote ? `・${item.reasonNote}` : ""}</div><div>影響：{item.targets.length} 堂</div></div>
           {item.status === "老師無法配合" && <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">老師無法配合，請行政另行安排。</div>}
           {item.reviewNote && <div className="mt-3 text-sm text-amber-700">行政備註：{item.reviewNote}</div>}

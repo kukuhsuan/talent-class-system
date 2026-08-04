@@ -50,6 +50,12 @@ dev.db-wal
 
 # 資料備份（含敏感資料，不可進版控）
 talent-class-system-backup-*.json
+會計已持有匯款資料名單.txt
+
+# UI 重構過程的暫存物，不是產品程式碼
+ui-prototype.html
+ui-refactor.diff
+sync-fixture.mjs
 
 # scripts/handoff-preview.mjs 產生的離線預覽，隨時可重跑
 handoff-preview.html

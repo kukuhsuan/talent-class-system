@@ -302,30 +302,30 @@ export default function ProgressPage() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-600 whitespace-nowrap">部門</label>
-            <select value={dept} onChange={(e) => { setDept(e.target.value as never); setPage(1); }}
+            <label className="text-sm text-slate-600 whitespace-nowrap" htmlFor="progress-f1">部門</label>
+            <select id="progress-f1" value={dept} onChange={(e) => { setDept(e.target.value as never); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               <option value="">全部</option>
               {DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-600">年份</label>
-            <select value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}
+            <label className="text-sm text-slate-600" htmlFor="progress-f2">年份</label>
+            <select id="progress-f2" value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               {years.map((y) => <option key={y}>{y}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-600">月份</label>
-            <select value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}
+            <label className="text-sm text-slate-600" htmlFor="progress-f3">月份</label>
+            <select id="progress-f3" value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               {months.map((m) => <option key={m} value={m}>{m}月</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-600">老師</label>
-            <select value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}
+            <label className="text-sm text-slate-600" htmlFor="progress-f4">老師</label>
+            <select id="progress-f4" value={filterTeacher} onChange={(e) => { setFilterTeacher(e.target.value); setPage(1); }}
               className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
               <option value="">全部</option>
               {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -333,8 +333,8 @@ export default function ProgressPage() {
           </div>
           {schools.length > 0 && (
             <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">園所</label>
-              <select value={filterSchool} onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}
+              <label className="text-sm text-slate-600" htmlFor="progress-f5">園所</label>
+              <select id="progress-f5" value={filterSchool} onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}
                 className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
                 <option value="">全部</option>
                 {schools.map((s) => <option key={s}>{s}</option>)}

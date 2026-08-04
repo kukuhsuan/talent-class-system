@@ -1,4 +1,5 @@
 "use client";
+import { StatusTag } from "@/components/ui";
 
 import { useEffect, useMemo, useState } from "react";
 import { SaveButton } from "@/components/SaveButton";
@@ -75,13 +76,6 @@ const emptyForm: FormState = {
   notes: "",
 };
 
-function statusClass(status: string) {
-  if (status === "已送達" || status === "已接受") return "bg-emerald-50 text-emerald-700";
-  if (status === "無法協助") return "bg-red-50 text-red-700";
-  if (status === "已詢問") return "bg-blue-50 text-blue-700";
-  if (status === "已取消") return "bg-slate-100 text-slate-500";
-  return "bg-slate-100 text-slate-600";
-}
 
 function fieldValue(value: string) {
   return value.trim() || "-";
@@ -516,7 +510,7 @@ export default function EquipmentWherePage() {
                   <td className="px-4 py-3 min-w-[170px]">{fieldValue(flow.nextSchoolName)}<div className="text-xs text-slate-400">{fieldValue(flow.nextDate)}</div></td>
                   <td className="px-4 py-3 whitespace-nowrap">{fieldValue(flow.responsiblePerson)}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${statusClass(flow.status)}`}>{flow.status}</span>
+                    <StatusTag>{flow.status}</StatusTag>
                     {flow.transportSubsidyEligible && <div className="mt-1 text-xs font-semibold text-blue-600">補貼 100 元</div>}
                     {flow.status === "無法協助" && <div className="mt-1 rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">教練無法協助，請行政另行安排。</div>}
                     {flow.status === "已送達" && <div className="mt-1 text-xs text-slate-400">{fieldValue(flow.updatedBy)}｜{fieldValue(flow.updatedAt)}</div>}
@@ -546,7 +540,7 @@ export default function EquipmentWherePage() {
                   <div className="text-xs text-slate-400">{fieldValue(flow.date)}</div>
                   <div className="mt-1 text-lg font-bold text-slate-900">{fieldValue(flow.equipmentName)}</div>
                 </div>
-                <span className={`rounded-full px-2 py-1 text-xs font-bold ${statusClass(flow.status)}`}>{flow.status}</span>
+                <StatusTag>{flow.status}</StatusTag>
               </div>
               <dl className="mt-3 grid gap-2 text-sm">
                 <div><dt className="font-semibold text-slate-500">目前位置</dt><dd>{fieldValue(flow.currentLocation)}</dd></div>

@@ -1,4 +1,5 @@
 "use client";
+import { StatusTag } from "@/components/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { courseLabel } from "@/lib/courseMeta";
 import { Toast, type ToastState } from "@/components/Toast";
@@ -42,16 +43,6 @@ function dateLabel(iso: string) {
   return `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}（${weekday}）`;
 }
 
-const REPLY_BADGE: Record<string, string> = {
-  會參加: "bg-green-50 text-green-700",
-  無法參加: "bg-rose-50 text-rose-700",
-  尚未回覆: "bg-slate-100 text-slate-500",
-};
-const NOTIFY_BADGE: Record<string, string> = {
-  已通知: "bg-blue-50 text-blue-700",
-  通知失敗: "bg-rose-50 text-rose-700",
-  未通知: "bg-amber-50 text-amber-700",
-};
 
 export default function PreClassMeetingPage() {
   const [toast, setToast] = useState<ToastState>(null);
@@ -281,12 +272,12 @@ export default function PreClassMeetingPage() {
                                 ))}
                             </td>
                             <td className="py-3 pr-3 whitespace-nowrap">
-                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${NOTIFY_BADGE[row.notifyStatus] ?? "bg-slate-100 text-slate-500"}`}>{row.notifyStatus}</span>
+                              <StatusTag>{row.notifyStatus}</StatusTag>
                               {row.notifyError && <div className="mt-1 max-w-[160px] text-xs text-rose-600">{row.notifyError}</div>}
                               {row.notifiedAt && <div className="mt-1 text-xs text-slate-400">{new Date(row.notifiedAt).toLocaleString("zh-TW")}</div>}
                             </td>
                             <td className="py-3 pr-3 whitespace-nowrap">
-                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${REPLY_BADGE[row.reply] ?? "bg-slate-100 text-slate-500"}`}>{row.reply}</span>
+                              <StatusTag>{row.reply}</StatusTag>
                               {row.repliedAt && <div className="mt-1 text-xs text-slate-400">{new Date(row.repliedAt).toLocaleString("zh-TW")}</div>}
                             </td>
                             <td className="py-3 whitespace-nowrap">

@@ -91,24 +91,24 @@ export default function UsersPage() {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-4">
             <div className="md:col-span-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">基本資料</div>
             <div>
-              <label>帳號 *</label>
-              <input ref={firstInputRef} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="例如 amy" />
+              <label htmlFor="users-f1">帳號 *</label>
+              <input id="users-f1" ref={firstInputRef} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="例如 amy" />
             </div>
             <div>
-              <label>姓名 *</label>
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如 王小美" />
+              <label htmlFor="users-f2">姓名 *</label>
+              <input id="users-f2" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如 王小美" />
             </div>
             <div>
-              <label>Email</label>
-              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@example.com" />
+              <label htmlFor="users-f3">Email</label>
+              <input id="users-f3" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@example.com" />
             </div>
             <div>
-              <label>{editing ? "新密碼（不改可留空）" : "密碼 *"}</label>
-              <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="至少 8 碼" />
+              <label htmlFor="users-f4">{editing ? "新密碼（不改可留空）" : "密碼 *"}</label>
+              <input id="users-f4" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="至少 8 碼" />
             </div>
             <div>
-              <label>角色 *</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <label htmlFor="users-f5">角色 *</label>
+              <select id="users-f5" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                 {ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
               </select>
             </div>

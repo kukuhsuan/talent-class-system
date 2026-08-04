@@ -136,8 +136,8 @@ export default function KindergartenAssessmentForm() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">孩子姓名</label>
-          <input value={childName} onChange={(e) => setChildName(e.target.value)}
+          <label className="text-sm font-semibold text-slate-800" htmlFor="assessment-attendance-d-f1">孩子姓名</label>
+          <input id="assessment-attendance-d-f1" value={childName} onChange={(e) => setChildName(e.target.value)}
             className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-semibold outline-none focus:border-[#7B9E87]"
             placeholder="請輸入孩子姓名" />
         </section>

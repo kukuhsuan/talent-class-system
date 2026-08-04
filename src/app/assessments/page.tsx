@@ -96,21 +96,21 @@ export default function AssessmentsPage() {
 
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-slate-600">年份</label>
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <label className="text-sm text-slate-600" htmlFor="assessments-f1">年份</label>
+          <select id="assessments-f1" value={year} onChange={(e) => setYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
             {years.map((y) => <option key={y}>{y}</option>)}
           </select>
-          <label className="text-sm text-slate-600">月份</label>
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <label className="text-sm text-slate-600" htmlFor="assessments-f2">月份</label>
+          <select id="assessments-f2" value={month} onChange={(e) => setMonth(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
             {months.map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
-          <label className="text-sm text-slate-600">園所</label>
-          <select value={school} onChange={(e) => setSchool(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <label className="text-sm text-slate-600" htmlFor="assessments-f3">園所</label>
+          <select id="assessments-f3" value={school} onChange={(e) => setSchool(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
             <option value="">全部</option>
             {schools.map((s) => <option key={s}>{s}</option>)}
           </select>
-          <label className="text-sm text-slate-600">課程</label>
-          <select value={course} onChange={(e) => setCourse(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <label className="text-sm text-slate-600" htmlFor="assessments-f4">課程</label>
+          <select id="assessments-f4" value={course} onChange={(e) => setCourse(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
             <option value="">全部</option>
             {courses.map((c) => <option key={c}>{c}</option>)}
           </select>

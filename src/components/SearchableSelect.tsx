@@ -17,6 +17,11 @@ type SearchableSelectProps<T extends string | number> = {
   allowEmpty?: boolean;
   emptyLabel?: string;
   className?: string;
+  /** 供 <label htmlFor> 關聯用；Field 元件會自動帶入 */
+  id?: string;
+  /** 沒有可見標籤時，至少給螢幕閱讀器一個名稱 */
+  ariaLabel?: string;
+  inputClassName?: string;
 };
 
 export function SearchableSelect<T extends string | number>({
@@ -28,6 +33,9 @@ export function SearchableSelect<T extends string | number>({
   allowEmpty = true,
   emptyLabel = "清除選擇",
   className = "",
+  id,
+  ariaLabel,
+  inputClassName = "w-full min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200",
 }: SearchableSelectProps<T>) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -71,6 +79,9 @@ export function SearchableSelect<T extends string | number>({
     <div ref={rootRef} className={`relative ${className}`}>
       <input
         ref={inputRef}
+        id={id}
+        aria-label={ariaLabel}
+        className={inputClassName}
         role="combobox"
         aria-controls={listId}
         aria-autocomplete="list"

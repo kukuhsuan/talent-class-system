@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { StatCard, StatusTag, Field, FilterChips, controlClass } from "@/components/ui";
 
 type Inquiry = {
   id: number;
@@ -81,15 +82,6 @@ type LeaveCourseOption = {
   courseType: string;
 };
 
-const statusTone: Record<string, string> = {
-  "待審核": "bg-amber-50 text-amber-700",
-  "已核准，待找代課": "bg-blue-50 text-blue-700",
-  "尋找代課中": "bg-indigo-50 text-indigo-700",
-  "已找到代課": "bg-emerald-50 text-emerald-700",
-  "已駁回": "bg-rose-50 text-rose-700",
-  "已取消": "bg-slate-100 text-slate-600",
-};
-
 const STATUS_FILTERS = [
   { value: "all", label: "全部" },
   { value: "pending", label: "待審核" },
@@ -116,15 +108,6 @@ const inquiryLabel: Record<string, string> = {
   cancelled: "取消代課",
   expired: "已失效",
   noLongerNeeded: "已找到代課",
-};
-
-const inquiryTone: Record<string, string> = {
-  pending: "bg-slate-100 text-slate-600",
-  available: "bg-emerald-50 text-emerald-700",
-  unavailable: "bg-rose-50 text-rose-700",
-  cancelled: "bg-orange-50 text-orange-700",
-  expired: "bg-slate-100 text-slate-400",
-  noLongerNeeded: "bg-emerald-50 text-emerald-700",
 };
 
 export default function TeacherLeavesPage() {
@@ -457,18 +440,9 @@ export default function TeacherLeavesPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm text-slate-500">篩選結果</div>
-          <div className="mt-1 text-3xl font-bold text-slate-800">{counts.total}</div>
-        </div>
-        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
-          <div className="text-sm text-amber-700">待審核</div>
-          <div className="mt-1 text-3xl font-bold text-amber-700">{counts.pending}</div>
-        </div>
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
-          <div className="text-sm text-blue-700">待找代課</div>
-          <div className="mt-1 text-3xl font-bold text-blue-700">{counts.searching}</div>
-        </div>
+        <StatCard label="篩選結果" value={counts.total} />
+        <StatCard label="待審核" value={counts.pending} tone="warn" hint="未核准前不會進入代課流程" />
+        <StatCard label="待找代課" value={counts.searching} tone="info" />
       </div>
 
       {message && <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{message}</div>}
@@ -480,43 +454,33 @@ export default function TeacherLeavesPage() {
             <p className="mt-1 text-xs text-slate-500">老師可在 LINE 申請，行政也可代為建立。月份以請假課程日期計算，不是申請時間。</p>
           </div>
           <div className="grid gap-3 md:grid-cols-[180px_180px_1fr] md:items-end">
-            <label className="text-sm font-medium text-slate-700">
-              年份
-              <select
-                value={filterYear}
-                onChange={(event) => setFilterYear(Number(event.target.value))}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-              >
-                {years.map((year) => <option key={year} value={year}>{year}</option>)}
-              </select>
-            </label>
-            <label className="text-sm font-medium text-slate-700">
-              月份
-              <select
-                value={filterMonth}
-                onChange={(event) => setFilterMonth(Number(event.target.value))}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-              >
-                {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month} 月</option>)}
-              </select>
-            </label>
+            <Field label="年份">
+              {(id) => (
+                <select
+                  id={id}
+                  value={filterYear}
+                  onChange={(event) => setFilterYear(Number(event.target.value))}
+                  className={controlClass}
+                >
+                  {years.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              )}
+            </Field>
+            <Field label="月份">
+              {(id) => (
+                <select
+                  id={id}
+                  value={filterMonth}
+                  onChange={(event) => setFilterMonth(Number(event.target.value))}
+                  className={controlClass}
+                >
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month} 月</option>)}
+                </select>
+              )}
+            </Field>
             <div>
-              <div className="mb-1 text-sm font-medium text-slate-700">狀態</div>
-              <div className="flex flex-wrap gap-2">
-                {STATUS_FILTERS.map((status) => (
-                  <button
-                    key={status.value}
-                    onClick={() => setFilterStatus(status.value)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      filterStatus === status.value
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {status.label}
-                  </button>
-                ))}
-              </div>
+              <div className="mb-1 text-xs font-semibold text-slate-600">狀態</div>
+              <FilterChips options={STATUS_FILTERS} value={filterStatus} onChange={setFilterStatus} />
             </div>
           </div>
         </div>
@@ -533,8 +497,8 @@ export default function TeacherLeavesPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-lg font-bold text-slate-800">{item.teacherName}</span>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{item.role}</span>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone[item.status] ?? "bg-slate-100 text-slate-600"}`}>{item.status}</span>
-                      {item.isPayrollLocked && <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">薪資已鎖</span>}
+                      <StatusTag>{item.status}</StatusTag>
+                      {item.isPayrollLocked && <StatusTag tone="err">薪資已鎖</StatusTag>}
                       {item.isReported && <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700">已回報</span>}
                     </div>
                     <div className="text-sm text-slate-600">
@@ -591,9 +555,9 @@ export default function TeacherLeavesPage() {
                             </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${inquiryTone[inquiry.status] ?? "bg-slate-100 text-slate-600"}`}>
+                            <StatusTag size="sm" status={inquiry.status}>
                               狀態：{inquiryLabel[inquiry.status] ?? inquiry.status}
-                            </span>
+                            </StatusTag>
                           {inquiry.status === "available" && item.status !== "已找到代課" && (
                             <button onClick={() => confirmSubstitute(item, inquiry)} className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
                               確認此老師代課

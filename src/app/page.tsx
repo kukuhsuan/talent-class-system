@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useDepartment } from "@/lib/departmentContext";
+import { StatCard, StatusTag, type Tone } from "@/components/ui";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { courseLabel } from "@/lib/courseMeta";
 
@@ -163,20 +164,12 @@ export default function Home() {
     }
   };
 
-  const cards = [
-    { label: "今日課程", value: stats.todayCourseCount, href: "/schedule", tone: "blue" },
-    { label: "今日代課", value: stats.todaySubstituteCount, href: "/substitutes", tone: "orange" },
-    { label: "待回報數量", value: stats.pendingFillableCount, href: "/attendance?status=missing", tone: "amber" },
-    { label: "LINE 未綁定", value: stats.unboundTeacherCount, href: "/notify", tone: "slate" },
+  const cards: Array<{ label: string; value: number; href: string; tone: Tone | "default" }> = [
+    { label: "今日課程", value: stats.todayCourseCount, href: "/schedule", tone: "info" },
+    { label: "今日代課", value: stats.todaySubstituteCount, href: "/substitutes", tone: "info" },
+    { label: "待回報數量", value: stats.pendingFillableCount, href: "/attendance?status=missing", tone: "warn" },
+    { label: "LINE 未綁定", value: stats.unboundTeacherCount, href: "/notify", tone: "idle" },
   ];
-
-  const toneClass: Record<string, string> = {
-    blue: "bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100",
-    orange: "bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100",
-    amber: "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100",
-    slate: "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100",
-    rose: "bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100",
-  };
   const formatDate = (iso: string) => {
     const [, month, day] = iso.slice(0, 10).split("-");
     return `${Number(month)}/${Number(day)}`;
@@ -237,13 +230,7 @@ export default function Home() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {cards.map((card) => (
-            <Link key={card.label} href={card.href}
-              className={`rounded-xl border px-4 py-4 transition-colors ${toneClass[card.tone]}`}>
-              <div className="text-xs font-medium opacity-80">{card.label}</div>
-              {loading
-                ? <div className="mt-3 h-8 w-12 rounded-lg bg-white/70 animate-pulse" />
-                : <div className="mt-1 text-3xl font-bold">{card.value}</div>}
-            </Link>
+            <StatCard key={card.label} label={card.label} value={card.value} href={card.href} tone={card.tone} loading={loading} />
           ))}
         </div>
       </div>
@@ -255,22 +242,15 @@ export default function Home() {
         </div>
         <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           {automationCards.map(({ jobKey, targetDate, label, time, run }) => {
-            const tone = !run
-              ? "border-slate-200 bg-slate-50 text-slate-600"
-              : run.status === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : run.status === "partial"
-                  ? "border-amber-200 bg-amber-50 text-amber-700"
-                  : "border-rose-200 bg-rose-50 text-rose-700";
             const statusLabel = !run ? "尚未執行" : run.status === "success" ? "正常" : run.status === "partial" ? "部分失敗" : "執行失敗";
             return (
-              <div key={`${jobKey}:${targetDate}`} className={`rounded-xl border p-3 ${tone}`} title={run?.details || ""}>
+              <div key={`${jobKey}:${targetDate}`} className="rounded-xl border border-slate-200 bg-white p-3" title={run?.details || ""}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-bold">{label}</span>
-                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold">{statusLabel}</span>
+                  <span className="text-sm font-bold text-slate-800">{label}</span>
+                  <StatusTag size="sm">{statusLabel}</StatusTag>
                 </div>
-                <div className="mt-2 text-xs opacity-80">預定 {time}</div>
-                {run && <div className="mt-1 text-xs font-semibold">成功 {run.success}／{run.total}{run.failed ? `・失敗 ${run.failed}` : ""}</div>}
+                <div className="mt-2 text-xs text-slate-500">預定 {time}</div>
+                {run && <div className="mt-1 text-xs font-semibold text-slate-600">成功 {run.success}／{run.total}{run.failed ? `・失敗 ${run.failed}` : ""}</div>}
               </div>
             );
           })}
@@ -296,9 +276,7 @@ export default function Home() {
                   <div className="font-semibold text-slate-800">{item.school}｜{item.courseType}｜{item.teacherName}</div>
                   <div className="mt-1 truncate text-sm text-slate-500">{item.content}</div>
                 </div>
-                <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${item.ackAt ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                  {item.ackAt ? "老師已確認" : "尚未確認"}
-                </span>
+                <StatusTag tone={item.ackAt ? "ok" : "warn"}>{item.ackAt ? "老師已確認" : "尚未確認"}</StatusTag>
               </Link>
             ))}
           </div>
@@ -357,9 +335,7 @@ export default function Home() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {item.missingItems.map((label) => (
-                      <span key={label} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                        {label}
-                      </span>
+                      <StatusTag key={label} tone="warn" size="sm">{label}</StatusTag>
                     ))}
                   </div>
                   <div className="flex justify-end">
@@ -420,11 +396,7 @@ export default function Home() {
                     {item.nextStop ? <><span className="text-xs text-slate-400">下一站</span> {item.nextStop}</> : <span className="text-slate-300">-</span>}
                   </div>
                   <div className="flex md:justify-end">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      cannotHelp ? "bg-rose-100 text-rose-700"
-                      : item.status === "待確認" ? "bg-amber-50 text-amber-700"
-                      : "bg-green-50 text-green-700"
-                    }`}>{item.status}</span>
+                    <StatusTag tone={cannotHelp ? "err" : item.status === "待確認" ? "warn" : "ok"}>{item.status}</StatusTag>
                   </div>
                 </div>
               );

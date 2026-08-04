@@ -5,6 +5,7 @@ import { SaveButton } from "@/components/SaveButton";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { TeacherCombobox } from "@/components/TeacherCombobox";
 import { Toast } from "@/components/Toast";
+import { StatCard, Field, controlClass } from "@/components/ui";
 import { ensureOk, readApiError } from "@/lib/clientApi";
 import { useDepartment } from "@/lib/departmentContext";
 import { CATEGORY_OPTIONS, courseLabel, normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
@@ -422,8 +423,8 @@ export default function AttendancePage() {
           <h2 className="font-semibold text-slate-700 mb-4">{editing ? "正在編輯上課紀錄" : "新增上課紀錄"}</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label>上課日期 *</label>
-              <input ref={firstInputRef} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              <label htmlFor="attendance-f1">上課日期 *</label>
+              <input id="attendance-f1" ref={firstInputRef} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
             {editing === null && (
               <div className="md:col-span-3">
@@ -453,8 +454,8 @@ export default function AttendancePage() {
               </div>
             )}
             <div className="md:col-span-2">
-              <label>課程 *</label>
-              <SearchableSelect
+              <label htmlFor="attendance-f2">課程 *</label>
+              <SearchableSelect id="attendance-f2"
                 options={courseSelectOptions}
                 value={form.courseId || ""}
                 onChange={(value) => onCourseChange(value == null ? 0 : Number(value))}
@@ -464,8 +465,8 @@ export default function AttendancePage() {
               />
             </div>
             <div>
-              <label>上課老師 *（代課時修改）</label>
-              <TeacherCombobox
+              <label htmlFor="attendance-f3">上課老師 *（代課時修改）</label>
+              <TeacherCombobox id="attendance-f3"
                 teachers={teachers}
                 value={form.actualTeacherId || null}
                 onChange={(teacherId) => setForm({ ...form, actualTeacherId: teacherId ?? 0 })}
@@ -473,8 +474,8 @@ export default function AttendancePage() {
               />
             </div>
             <div>
-              <label>助教老師（選填）</label>
-              <TeacherCombobox
+              <label htmlFor="attendance-f4">助教老師（選填）</label>
+              <TeacherCombobox id="attendance-f4"
                 teachers={teachers}
                 value={form.assistantTeacherId}
                 onChange={(teacherId) => setForm({ ...form, assistantTeacherId: teacherId })}
@@ -485,22 +486,22 @@ export default function AttendancePage() {
               />
             </div>
             <div>
-              <label>出席人數{requiresStudentCount(form.category) ? "" : "（課內免填）"}</label>
-              <input type="number" value={form.studentCount} onChange={(e) => setForm({ ...form, studentCount: e.target.value })} placeholder={requiresStudentCount(form.category) ? "人數" : "固定班級免填"} />
+              <label htmlFor="attendance-f5">出席人數{requiresStudentCount(form.category) ? "" : "（課內免填）"}</label>
+              <input id="attendance-f5" type="number" value={form.studentCount} onChange={(e) => setForm({ ...form, studentCount: e.target.value })} placeholder={requiresStudentCount(form.category) ? "人數" : "固定班級免填"} />
             </div>
             <div>
-              <label>預計人數（課前通知顯示）</label>
-              <input type="number" value={form.expectedStudentCount} onChange={(e) => setForm({ ...form, expectedStudentCount: e.target.value })} placeholder="報名人數，選填" />
+              <label htmlFor="attendance-f6">預計人數（課前通知顯示）</label>
+              <input id="attendance-f6" type="number" value={form.expectedStudentCount} onChange={(e) => setForm({ ...form, expectedStudentCount: e.target.value })} placeholder="報名人數，選填" />
             </div>
             <div>
-              <label>類別</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              <label htmlFor="attendance-f7">類別</label>
+              <select id="attendance-f7" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                 {CATEGORY_OPTIONS.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label>計薪時數</label>
-              <input type="number" step="0.01" value={form.hours} onChange={(e) => setForm({ ...form, hours: Number(e.target.value) })} />
+              <label htmlFor="attendance-f8">計薪時數</label>
+              <input id="attendance-f8" type="number" step="0.01" value={form.hours} onChange={(e) => setForm({ ...form, hours: Number(e.target.value) })} />
             </div>
             <div>
               <label className="flex items-center gap-2 mt-6 cursor-pointer">
@@ -519,12 +520,12 @@ export default function AttendancePage() {
             {form.cancelled && (
               <>
                 <div>
-                  <label>停課原因</label>
-                  <input value={form.cancelReason} onChange={(e) => setForm({ ...form, cancelReason: e.target.value })} placeholder="颱風假、園所活動..." />
+                  <label htmlFor="attendance-f9">停課原因</label>
+                  <input id="attendance-f9" value={form.cancelReason} onChange={(e) => setForm({ ...form, cancelReason: e.target.value })} placeholder="颱風假、園所活動..." />
                 </div>
                 <div>
-                  <label>補課日期</label>
-                  <input type="date" value={form.makeupDate} onChange={(e) => setForm({ ...form, makeupDate: e.target.value })} />
+                  <label htmlFor="attendance-f10">補課日期</label>
+                  <input id="attendance-f10" type="date" value={form.makeupDate} onChange={(e) => setForm({ ...form, makeupDate: e.target.value })} />
                 </div>
                 <div>
                   <label className="flex items-center gap-2 mt-6 cursor-pointer">
@@ -535,12 +536,12 @@ export default function AttendancePage() {
               </>
             )}
             <div>
-              <label>每日上課時間（覆蓋課程預設）</label>
-              <input value={form.scheduledTime} onChange={(e) => setForm({ ...form, scheduledTime: e.target.value })} placeholder={courses.find((c) => c.id === form.courseId)?.time ?? "例：14:00-15:00"} />
+              <label htmlFor="attendance-f11">每日上課時間（覆蓋課程預設）</label>
+              <input id="attendance-f11" value={form.scheduledTime} onChange={(e) => setForm({ ...form, scheduledTime: e.target.value })} placeholder={courses.find((c) => c.id === form.courseId)?.time ?? "例：14:00-15:00"} />
             </div>
             <div className="md:col-span-2">
-              <label>備註</label>
-              <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註" />
+              <label htmlFor="attendance-f12">備註</label>
+              <input id="attendance-f12" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="備註" />
             </div>
             <div className="md:col-span-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-4">
@@ -556,13 +557,13 @@ export default function AttendancePage() {
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div className="md:col-span-2">
-                  <label>器材內容</label>
-                  <input value={form.equipment.equipmentNote} onChange={(e) => setEquipment({ equipmentNote: e.target.value })} placeholder="例：籃球架 2 座、球 20 顆" />
+                  <label htmlFor="attendance-f13">器材內容</label>
+                  <input id="attendance-f13" value={form.equipment.equipmentNote} onChange={(e) => setEquipment({ equipmentNote: e.target.value })} placeholder="例：籃球架 2 座、球 20 顆" />
                 </div>
                 {editing !== null && hasEquipmentSettings(form.equipment) && (
                   <div>
-                    <label>器材狀態</label>
-                    <select value={form.equipment.status} onChange={(e) => setEquipment({ status: e.target.value })}>
+                    <label htmlFor="attendance-f14">器材狀態</label>
+                    <select id="attendance-f14" value={form.equipment.status} onChange={(e) => setEquipment({ status: e.target.value })}>
                       {EQUIPMENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
                     </select>
                   </div>
@@ -579,53 +580,67 @@ export default function AttendancePage() {
       )}
 
       <div className="grid grid-cols-2 gap-3 mb-4 md:grid-cols-4">
-        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-          <div className="text-xs font-medium text-blue-600">今日課程</div>
-          <div className="mt-1 text-2xl font-bold text-blue-700">{summary.todayCourses}</div>
-        </div>
-        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
-          <div className="text-xs font-medium text-amber-700">待回報</div>
-          <div className="mt-1 text-2xl font-bold text-amber-700">{summary.missing}</div>
-        </div>
-        <div className="rounded-xl border border-orange-100 bg-orange-50 px-4 py-3">
-          <div className="text-xs font-medium text-orange-700">今日代課</div>
-          <div className="mt-1 text-2xl font-bold text-orange-700">{summary.todaySubstitutes}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs font-medium text-slate-500">本月堂數</div>
-          <div className="mt-1 text-2xl font-bold text-slate-800">{summary.monthTotal}</div>
-        </div>
+        <StatCard label="今日課程" value={summary.todayCourses} tone="info" />
+        <StatCard label="待回報" value={summary.missing} tone="warn" />
+        <StatCard label="今日代課" value={summary.todaySubstitutes} tone="info" />
+        <StatCard label="本月堂數" value={summary.monthTotal} />
       </div>
 
       <div className="sticky top-0 z-20 mb-4 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-          <select value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}>
-            {[2025, 2026, 2027].map((y) => <option key={y}>{y}</option>)}
-          </select>
-          <select value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
-          </select>
-          <SearchableSelect
-            options={schoolFilterOptions}
-            value={filterSchool}
-            onChange={(value) => { setFilterSchool(value ?? ""); setPage(1); }}
-            placeholder={loadingOptions ? "園所載入中…" : "搜尋園所"}
-            emptyLabel="全部園所"
-            emptyText="查無符合的園所，請確認關鍵字"
-          />
-          <SearchableSelect
-            options={teacherFilterOptions}
-            value={filterTeacher}
-            onChange={(value) => { setFilterTeacher(value ?? ""); setPage(1); }}
-            placeholder={loadingOptions ? "老師載入中…" : "搜尋老師"}
-            emptyLabel="全部老師"
-            emptyText="查無符合的老師，請確認關鍵字"
-          />
-          <input type="date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setPage(1); }} />
-          <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}>
-            <option value="">全部類別</option>
-            {CATEGORY_OPTIONS.map((category) => <option key={category}>{category}</option>)}
-          </select>
+          <Field label="年份">
+            {(id) => (
+              <select id={id} className={controlClass} value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setPage(1); }}>
+                {[2025, 2026, 2027].map((y) => <option key={y}>{y}</option>)}
+              </select>
+            )}
+          </Field>
+          <Field label="月份">
+            {(id) => (
+              <select id={id} className={controlClass} value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setPage(1); }}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m} 月</option>)}
+              </select>
+            )}
+          </Field>
+          <Field label="園所">
+            {(id) => (
+              <SearchableSelect
+                id={id}
+                options={schoolFilterOptions}
+                value={filterSchool}
+                onChange={(value) => { setFilterSchool(value ?? ""); setPage(1); }}
+                placeholder={loadingOptions ? "園所載入中…" : "搜尋園所"}
+                emptyLabel="全部園所"
+                emptyText="查無符合的園所，請確認關鍵字"
+              />
+            )}
+          </Field>
+          <Field label="老師">
+            {(id) => (
+              <SearchableSelect
+                id={id}
+                options={teacherFilterOptions}
+                value={filterTeacher}
+                onChange={(value) => { setFilterTeacher(value ?? ""); setPage(1); }}
+                placeholder={loadingOptions ? "老師載入中…" : "搜尋老師"}
+                emptyLabel="全部老師"
+                emptyText="查無符合的老師，請確認關鍵字"
+              />
+            )}
+          </Field>
+          <Field label="指定日期">
+            {(id) => (
+              <input id={id} className={controlClass} type="date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setPage(1); }} />
+            )}
+          </Field>
+          <Field label="類別">
+            {(id) => (
+              <select id={id} className={controlClass} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}>
+                <option value="">全部類別</option>
+                {CATEGORY_OPTIONS.map((category) => <option key={category}>{category}</option>)}
+              </select>
+            )}
+          </Field>
         </div>
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1 md:flex-wrap">
           {statusTabs.map((tab) => (
