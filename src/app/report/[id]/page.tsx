@@ -787,7 +787,7 @@ export default function TeacherReportPage() {
 
         {/* 課後交接：只給下一堂授課老師看，不會進到園所／家長的回報內容 */}
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">給下一堂老師的提醒（非必填）</label>
+          <label className="text-sm font-semibold text-slate-800">交接事項（非必填）</label>
           <p className="mt-1 text-xs leading-5 text-slate-500">
             只在下一堂課前傳給上課的老師，<span className="font-semibold text-slate-600">不會</span>出現在園所與家長的回報裡。
           </p>
