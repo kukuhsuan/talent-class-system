@@ -10,6 +10,7 @@ import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 export type NotifyTargetType = "teacher" | "school";
 export type NotifyTemplateKey =
   | "new_term"
+  | "first_class"
   | "term_kickoff_meeting"
   | "class_notes"
   | "coach_rules"
@@ -49,6 +50,32 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "{課程摘要}",
       "",
       "若資訊有誤或需調整，請與行政聯繫，謝謝！",
+    ].join("\n"),
+  },
+  {
+    key: "first_class",
+    label: "第一堂課課表通知",
+    target: "teacher",
+    editable: true,
+    needsAck: true,
+    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、開課日期、時間、地點與報名人數，以卡片發送並附「確認收到」按鈕",
+    defaultBody: [
+      "{姓名} 老師您好：",
+      "",
+      "📘 第一堂課課表與班級資訊如下：",
+      "",
+      "{課程摘要}",
+      "",
+      "第一堂課請協助確認：",
+      "1️⃣ 請提前 10 分鐘到校，完成場地與器材準備",
+      "2️⃣ 依現場實際狀況核對上課人數",
+      "3️⃣ 上課前確認活動範圍、器材與孩子安全",
+      "4️⃣ 課後請依課程類別完成進度或人數回報",
+      "",
+      "⏰ 請準時到校，勿遲到早退",
+      "🙂 請保持禮貌與專業態度",
+      "",
+      "若課表、人數或地點有誤，請立即與行政聯繫，謝謝！",
     ].join("\n"),
   },
   {
@@ -411,12 +438,13 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     // 課程摘要素材（文字版供紀錄／備援；色塊版供 Flex 卡片）
     const itemsByTeacher = new Map<number, Array<{ text: string; block: FlexBlock }>>();
     const dateIso = taipeiDateStr(0);
-    if (opts.templateKey === "new_term") {
+    if (opts.templateKey === "new_term" || opts.templateKey === "first_class") {
       const courses = await prisma.course.findMany({
         where: { isActive: true, OR: [{ teacherId: { in: ids } }, { assistantTeacherId: { in: ids } }] },
         select: {
           teacherId: true, assistantTeacherId: true, school: true, courseType: true,
-          dayOfWeek: true, weekday: true, time: true, address: true, startDate: true, notes: true,
+          dayOfWeek: true, weekday: true, time: true, address: true, startDate: true,
+          enrollCount: true, notes: true,
         },
         orderBy: [{ school: "asc" }],
       });
@@ -433,6 +461,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
             c.school,
             `${start}每${day} ${c.time || "時間未填"}`,
             ...(c.address ? [c.address] : []),
+            ...(opts.templateKey === "first_class" ? [`報名／預計人數：${c.enrollCount.trim() || "尚未提供"}`] : []),
           ];
           return { text: [`◆ ${title}`, ...lines].join("\n"), block: { title, lines, color: palette.fg, bg: palette.bg } };
         };
@@ -448,7 +477,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       if (!t) return { id, name: `#${id}`, lineUserId: null, lineRegion: "north", message: "", skipped: "找不到老師資料" };
       const items = itemsByTeacher.get(id) ?? [];
       const summary = items.map((i) => i.text).join("\n\n");
-      if (opts.templateKey === "new_term" && !summary) {
+      if ((opts.templateKey === "new_term" || opts.templateKey === "first_class") && !summary) {
         return { id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north", message: "", skipped: "沒有 115-1 開課課程" };
       }
       const vars: Record<string, string> = {
