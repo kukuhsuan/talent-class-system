@@ -28,6 +28,7 @@ type ReportInfo = {
   aiSummary: string;
   aiSkillFocus: string;
   aiTeachingNote: string;
+  handoffNote: string;
   representativePhotoUrl?: string;
   photoUrls?: string[];
   shouldAskAssessment?: boolean;
@@ -58,6 +59,7 @@ const EMPTY = {
   incidentProcess: "",
   incidentAction: "",
   incidentNotified: "否",
+  handoffNote: "",
   schoolVerifierName: "",
   schoolSignatureData: "",
 };
@@ -369,6 +371,15 @@ const OUTCOME_TEMPLATES = [
   "孩子的秩序與專注有進步，分組活動時能互相配合、輪流等待。",
 ];
 
+// 課後交接常用句：點選會「附加」到現有內容後面，方便一次寫多件事
+const HANDOFF_TEMPLATES = [
+  "進度未上完，下堂請先接續",
+  "器材數量不足，需補",
+  "有孩子狀況需多留意",
+  "場地或時間有異動",
+  "進度正常，可直接接下一堂",
+];
+
 function isHeicLike(file: File) {
   return /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
 }
@@ -451,6 +462,7 @@ export default function TeacherReportPage() {
           incidentProcess: data.incidentProcess ?? "",
           incidentAction: data.incidentAction ?? "",
           incidentNotified: data.incidentNotified || "否",
+          handoffNote: data.handoffNote ?? "",
           schoolVerifierName: data.schoolVerifierName ?? "",
           schoolSignatureData: data.schoolSignatureData ?? "",
         };
@@ -766,6 +778,32 @@ export default function TeacherReportPage() {
                   <button key={text} type="button" onClick={() => setForm({ ...form, outcomeText: text })}
                     className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs leading-5 text-slate-600 active:bg-slate-100">
                     {text.slice(0, 16)}…
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 課後交接：只給下一堂授課老師看，不會進到園所／家長的回報內容 */}
+        <section className="rounded-2xl bg-white p-4 shadow-sm">
+          <label className="text-sm font-semibold text-slate-800">給下一堂老師的提醒（非必填）</label>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            這段<span className="font-semibold text-slate-600">不會</span>出現在園所與家長的回報裡，只會在下一堂課前推播給接手的老師（同一位老師也會收到，當作課前回顧）。
+          </p>
+          <textarea value={form.handoffNote} disabled={locked} maxLength={500}
+            onChange={(e) => setForm({ ...form, handoffNote: e.target.value })}
+            className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#2563EB]"
+            placeholder="例：進度只上到一半，下次先補傳接球。小宇今天狀況比較浮動，需要多引導。三角錐少 2 個。" />
+          {!locked && (
+            <div className="mt-2">
+              <div className="text-xs font-semibold text-slate-400">常見交接事項（點選帶入後可再修改）</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {HANDOFF_TEMPLATES.map((text) => (
+                  <button key={text} type="button"
+                    onClick={() => setForm({ ...form, handoffNote: form.handoffNote ? `${form.handoffNote}\n${text}` : text })}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs leading-5 text-slate-600 active:bg-slate-100">
+                    {text}
                   </button>
                 ))}
               </div>

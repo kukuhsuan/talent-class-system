@@ -317,6 +317,7 @@ model Attendance {
   payrollLockedAt      DateTime?
   notes                String                      @default("")
   reportContent        String                      @default("")
+  // 課後交接 handoffNote 與園所簽名欄位同樣採執行期補欄位（見 src/lib/lessonHandoff.ts），不寫進 schema
   reportSentAt         DateTime?
   schoolNotifyStatus   String                      @default("未通知")
   schoolNotifyError    String                      @default("")

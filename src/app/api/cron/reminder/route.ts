@@ -12,9 +12,13 @@ import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
 import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { recordAutomationRun } from "@/lib/automationHealth";
+import { buildLessonRecapFlex, previousLessonRecapMap, type LessonRecap } from "@/lib/lessonHandoff";
+
+// 一次 push 最多 5 則，主提醒佔 1 則，回顧卡片保守留 3 張
+const MAX_RECAP_CARDS = 3;
 
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
-type ReminderCourse = { attendanceId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null };
+type ReminderCourse = { attendanceId?: number; courseId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null };
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -112,6 +116,7 @@ export async function GET(req: NextRequest) {
   const courses = [
     ...bySchedule.map((att) => ({
       attendanceId: att.id,
+      courseId: att.courseId,
       school: att.course.school,
       address: att.course.address || att.course.schoolRel?.address || "",
       time: effectiveAttendanceTime({
@@ -134,6 +139,7 @@ export async function GET(req: NextRequest) {
     })),
     ...weekdayWithAttendance.map((course) => ({
       attendanceId: course.attendanceId,
+      courseId: course.id,
       school: course.school,
       address: course.address || course.schoolRel?.address || "",
       time: course.time,
@@ -160,9 +166,11 @@ export async function GET(req: NextRequest) {
   }
 
   // 器材提醒 + 預計人數：一次撈出所有出勤的設定，附掛到提醒卡片
-  const [equipmentMap, expectedMap] = await Promise.all([
+  // 上一堂回顧：同課程最近一堂已回報的進度與交接提醒，接在提醒後面推給接手的老師
+  const [equipmentMap, expectedMap, recapMap] = await Promise.all([
     equipmentByAttendanceIds(courses.map((course) => course.attendanceId ?? 0)),
     expectedStudentCountMap(courses.map((course) => course.attendanceId ?? 0)),
+    previousLessonRecapMap(courses.map((course) => course.courseId ?? 0), targetIso).catch(() => new Map<number, LessonRecap>()),
   ]);
 
   const byTeacher = new Map<number, { teacher: ReminderTeacher; courses: ReminderCourse[] }>();
@@ -171,6 +179,7 @@ export async function GET(req: NextRequest) {
       const item = byTeacher.get(teacher.id) ?? { teacher, courses: [] };
       item.courses.push({
         attendanceId: course.attendanceId,
+        courseId: course.courseId,
         school: course.school,
         address: course.address,
         time: course.time,
@@ -211,8 +220,19 @@ export async function GET(req: NextRequest) {
       courses: teacherCourses,
     });
 
+    // 上一堂回顧：同一位老師也照送（當作自己的課前回顧），只是文案改成「你自己留下的提醒」
+    const seenCourseIds = new Set<number>();
+    const recapMessages: object[] = [];
+    for (const course of teacherCourses) {
+      if (recapMessages.length >= MAX_RECAP_CARDS) break;
+      const recap = course.courseId ? recapMap.get(course.courseId) : undefined;
+      if (!recap || seenCourseIds.has(recap.courseId)) continue;
+      seenCourseIds.add(recap.courseId);
+      recapMessages.push(buildLessonRecapFlex(recap, { sameTeacher: recap.teacherId === teacher.id }));
+    }
+
     try {
-      await pushMessage(teacher.lineUserId, [message], token);
+      await pushMessage(teacher.lineUserId, [message, ...recapMessages], token);
       await markCourseReminderSent(teacher.id, targetIso, dayOffset);
       sent++;
     } catch (e) {

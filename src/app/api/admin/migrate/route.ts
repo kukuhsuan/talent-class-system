@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
     'ALTER TABLE Attendance ADD COLUMN aiSummary TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN aiSkillFocus TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN aiTeachingNote TEXT NOT NULL DEFAULT ""',
+    'ALTER TABLE Attendance ADD COLUMN handoffNote TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN schoolVerifierName TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN schoolSignatureData TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Attendance ADD COLUMN schoolSignedAt DATETIME',

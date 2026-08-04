@@ -7,6 +7,7 @@ import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAcce
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
 import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, validSignatureData } from "@/lib/schoolSignature";
+import { readHandoffNotes, writeHandoffNote } from "@/lib/lessonHandoff";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -21,6 +22,7 @@ type ReportPayload = {
   incidentProcess?: string;
   incidentAction?: string;
   incidentNotified?: string;
+  handoffNote?: string;
   schoolVerifierName?: string;
   schoolSignatureData?: string;
 };
@@ -180,6 +182,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       aiSummary: attendance.aiSummary,
       aiSkillFocus: attendance.aiSkillFocus,
       aiTeachingNote: attendance.aiTeachingNote,
+      handoffNote: (await readHandoffNotes([attendance.id])).get(attendance.id) ?? "",
       representativePhotoUrl: reportPhotoUrls(attendance.reportPhotos, id)[0] ?? "",
       photoUrls: reportPhotoUrls(attendance.reportPhotos, id),
       shouldAskAssessment,
@@ -347,6 +350,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const focusText = kindergarten ? String(lessonTemplate?.focus ?? "").trim() : "";
     const outcomeText = String(data.outcomeText ?? lessonTemplate?.activityDirection ?? "").trim();
 
+    // 交接提醒只給下一堂的老師看，不併入 reportContent（那份會送到園所／家長端）
+    const handoffNote = String(data.handoffNote ?? "").trim().slice(0, 500);
+
     const reportContent = [
       progress ? `${kindergarten ? "課程進度" : "訓練內容"}：${progress}` : "",
       focusText ? `本堂重點：${focusText}` : "",
@@ -376,6 +382,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         aiTeachingNote: "",
       },
     });
+    await writeHandoffNote(attendance.id, handoffNote).catch(() => undefined);
     if (signatureRequired) await saveSchoolSignature(attendance.id, schoolVerifierName, schoolSignatureData);
     const { writeAuditLog } = await import("@/lib/auditLog");
     await writeAuditLog(req, {
