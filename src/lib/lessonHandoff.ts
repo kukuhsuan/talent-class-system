@@ -163,7 +163,7 @@ function textRow(label: string, value: string, color: string) {
  * 上一堂回顧卡片，接在課程提醒後面一起 push。
  * 同一位老師也會收到（自己回顧自己上一堂寫的交接）。
  */
-export function buildLessonRecapFlex(recap: LessonRecap, opts: { sameTeacher: boolean }) {
+export function buildLessonRecapFlex(recap: LessonRecap) {
   const rows: object[] = [];
   if (recap.progress) rows.push(textRow("上到進度", recap.progress, "#263548"));
   if (recap.outcome) rows.push(textRow("課堂摘要", recap.outcome, "#4A5A6D"));
@@ -193,8 +193,8 @@ export function buildLessonRecapFlex(recap: LessonRecap, opts: { sameTeacher: bo
       contents: [
         {
           type: "text",
-          // 這張卡主要給接手／代課的老師看，文案一律站在「接下來要上這堂課的人」的角度
-          text: opts.sameTeacher ? "上次你留下的交接事項" : `${recap.teacherName}老師的交接事項`,
+          // 卡片標頭已經寫了日期與授課老師，這裡不再重複「誰留的」
+          text: "交接事項",
           size: "xs",
           weight: "bold",
           color: "#B0722B",

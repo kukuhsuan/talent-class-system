@@ -274,7 +274,7 @@ export async function GET(req: NextRequest) {
       const recap = course.courseId ? recapMap.get(course.courseId) : undefined;
       if (!recap || seenCourseIds.has(recap.courseId)) continue;
       seenCourseIds.add(recap.courseId);
-      recapMessages.push(buildLessonRecapFlex(recap, { sameTeacher: recap.teacherId === teacher.id }));
+      recapMessages.push(buildLessonRecapFlex(recap));
     }
 
     try {
