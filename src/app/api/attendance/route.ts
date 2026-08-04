@@ -8,6 +8,7 @@ import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/cou
 import { attendanceMissingItems, attendanceReportWindow, isPendingReport } from "@/lib/reportWindow";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { resolvePayrollHours } from "@/lib/payrollHoursCore";
+import { attendanceHoursOverrideMap, setAttendanceHoursOverrideMany } from "@/lib/attendanceHoursOverride";
 import { ensureAttendanceEquipmentTable, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
 import { expectedStudentCountMap, parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { writeAuditLog } from "@/lib/auditLog";
@@ -143,9 +144,11 @@ export async function GET(req: NextRequest) {
     paginateInDatabase ? prisma.attendance.count({ where: where as Prisma.AttendanceWhereInput }) : Promise.resolve(0),
   ]);
   // scheduledTime / payrollHours 已在 schema 內，直接由 findMany 取得，省 2 次資料庫來回
-  const [expectedMap, signatures] = await Promise.all([
+  const [expectedMap, signatures, hoursOverrideMap] = await Promise.all([
     expectedStudentCountMap(records.map((record) => record.id)),
     schoolSignatureMap(records.map((record) => record.id)),
+    // 出勤列表顯示的時數必須和薪資算出來的一致，否則行政又會看到「畫面一個數字、薪資另一個」
+    attendanceHoursOverrideMap(records.map((record) => record.id)),
   ]);
   const annotatedRecords = records.map((record) => {
     const scheduledTime = effectiveAttendanceTime({
@@ -159,7 +162,12 @@ export async function GET(req: NextRequest) {
       studentCountA: record.studentCountA,
       studentCountB: record.studentCountB,
     });
-    const payrollHours = resolvePayrollHours(record.hours, record.course.payrollHours, scheduledTime);
+    const payrollHours = resolvePayrollHours(
+      record.hours,
+      record.course.payrollHours,
+      scheduledTime,
+      hoursOverrideMap.get(record.id) === true,
+    );
     const reportWindow = attendanceReportWindow({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     const missingItems = attendanceMissingItems({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     return {
@@ -228,6 +236,9 @@ export async function POST(req: NextRequest) {
   const fields = buildFields(data);
   const course = await prisma.course.findUnique({ where: { id: fields.courseId }, select: { id: true, time: true, payrollHours: true } });
   const calculatedHours = coursePayrollHoursForAttendance(course?.payrollHours, course?.time ?? "");
+  // 行政在新增排課時就特地填了和課程預設不同的時數，和事後在出勤頁改是同一件事，
+  // 一樣要標記成人工覆蓋，否則薪資會靜默地照課程預設算（見 lib/attendanceHoursOverride.ts）
+  const createdWithOverride = fields.hours > 0 && fields.hours !== calculatedHours.hours;
   if (!fields.hours || fields.hours <= 0) fields.hours = calculatedHours.hours;
   if (calculatedHours.needsReview && !fields.notes.includes("上課時間需人工確認")) {
     fields.notes = [fields.notes, `上課時間需人工確認：${calculatedHours.reason}`].filter(Boolean).join("；");
@@ -236,6 +247,9 @@ export async function POST(req: NextRequest) {
   const { created, skipped, records } = await createAttendancesForUniqueDays(dates, fields);
   if (created > 0) {
     await stampAttendanceTime(fields.courseId, dates, course?.time ?? "");
+    if (createdWithOverride) {
+      await setAttendanceHoursOverrideMany(records.map((record) => record.id), true);
+    }
   }
   // 預計人數（行政先填，課前提醒顯示）
   const expectedCount = parseExpectedStudentCount(data.expectedStudentCount);

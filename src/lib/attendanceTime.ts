@@ -3,6 +3,7 @@ import { calculateCourseHours } from "@/lib/courseHours";
 import { taipeiDateIso, utcStartOfNextIsoDay } from "@/lib/courseDates";
 import { parseAttendanceDay } from "@/lib/attendanceBatch";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
+import { attendanceHoursOverrideMap, ensureAttendanceHoursOverrideColumn } from "@/lib/attendanceHoursOverride";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 
@@ -132,6 +133,8 @@ export async function syncFutureUnreportedAttendanceTime(courseId: number, time:
   if (!(await ensureAttendanceScheduledTimeColumn())) return;
   const calculated = coursePayrollHoursForAttendance(payrollHours, time);
   const futureFromIso = utcStartOfNextIsoDay(fromIso).toISOString().slice(0, 10);
+  // 行政單堂改過時數的課不跟著課程走，否則改課程時間會默默把人工調整蓋掉
+  await ensureAttendanceHoursOverrideColumn();
   await prisma.$executeRawUnsafe(
     `UPDATE "Attendance"
      SET "scheduledTime" = ?,
@@ -140,6 +143,7 @@ export async function syncFutureUnreportedAttendanceTime(courseId: number, time:
        AND substr("date", 1, 10) >= ?
        AND "cancelled" = 0
        AND "isPayrollLocked" = 0
+       AND COALESCE("hoursOverridden", 0) = 0
        AND "reportContent" = ''
        AND "reportSentAt" IS NULL
        AND "studentCount" IS NULL
@@ -155,15 +159,21 @@ export async function syncFutureUnreportedAttendanceTime(courseId: number, time:
 export async function syncFutureUnreportedAttendanceHours(courseId: number, time: string, payrollHours?: number | null, fromIso = taipeiDateIso()) {
   const calculated = coursePayrollHoursForAttendance(payrollHours, time);
   const futureFromIso = utcStartOfNextIsoDay(fromIso).toISOString().slice(0, 10);
+  const where = {
+    courseId,
+    date: { gte: parseAttendanceDay(futureFromIso) },
+    cancelled: false,
+    isPayrollLocked: false,
+    reportContent: "",
+    reportSentAt: null,
+  };
+  // 同上：跳過行政單堂改過時數的課
+  const candidates = await prisma.attendance.findMany({ where, select: { id: true } });
+  const overrideMap = await attendanceHoursOverrideMap(candidates.map((row) => row.id));
+  const targetIds = candidates.filter((row) => overrideMap.get(row.id) !== true).map((row) => row.id);
+  if (targetIds.length === 0) return { count: 0 };
   return prisma.attendance.updateMany({
-    where: {
-      courseId,
-      date: { gte: parseAttendanceDay(futureFromIso) },
-      cancelled: false,
-      isPayrollLocked: false,
-      reportContent: "",
-      reportSentAt: null,
-    },
+    where: { id: { in: targetIds } },
     data: { hours: calculated.hours },
   });
 }

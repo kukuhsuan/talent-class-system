@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { requiredAuthSecret } from "@/lib/authSecret";
 
 type PublicTokenPayload = {
-  type: "report" | "assessment" | "recruitment" | "teacher_resume" | "teacher_document";
+  type: "report" | "assessment" | "recruitment" | "teacher_resume" | "teacher_card" | "teacher_document";
   attendanceId: number;
   campaignId?: number;
   teacherId?: number;
@@ -107,6 +107,47 @@ export function verifyTeacherResumeToken(token: string) {
 
   const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as PublicTokenPayload;
   if (payload.type !== "teacher_resume" || !Number.isFinite(payload.teacherId)) {
+    throw new Error("Invalid token");
+  }
+  if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) throw new Error("Expired token");
+  return { teacherId: Number(payload.teacherId) };
+}
+
+/**
+ * 「簡歷卡片」用的唯讀權杖，和 teacher_resume 刻意分開。
+ *
+ * teacher_resume 是**發給老師本人填履歷**的連結：
+ * /api/teacher-resumes/public/[token] 的 GET 會回傳未遮罩的電話與 Email，
+ * PUT 還可以直接覆寫整份履歷。那把鑰匙絕對不能發給園所。
+ *
+ * 卡片連結是要貼進 LINE 群組給園所看的，只需要「唯讀、且只限這一位老師」。
+ * 所以另立 teacher_card：拿卡片連結去打填寫端點會被 verifyTeacherResumeToken 擋掉。
+ * 效期也短一些（90 天），因為它散布得比填寫連結廣。
+ */
+export function signTeacherCardToken(teacherId: number, maxAgeDays = 90) {
+  const payload: PublicTokenPayload = {
+    type: "teacher_card",
+    attendanceId: 0,
+    teacherId,
+    exp: Math.floor(Date.now() / 1000) + maxAgeDays * 24 * 60 * 60,
+  };
+  const encodedPayload = base64url(JSON.stringify(payload));
+  return `${encodedPayload}.${signPayload(encodedPayload)}`;
+}
+
+export function verifyTeacherCardToken(token: string) {
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature) throw new Error("Invalid token");
+
+  const expectedSignature = signPayload(encodedPayload);
+  const actual = Buffer.from(signature);
+  const expected = Buffer.from(expectedSignature);
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
+    throw new Error("Invalid token");
+  }
+
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as PublicTokenPayload;
+  if (payload.type !== "teacher_card" || !Number.isFinite(payload.teacherId)) {
     throw new Error("Invalid token");
   }
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) throw new Error("Expired token");

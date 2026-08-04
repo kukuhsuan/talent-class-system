@@ -5,6 +5,7 @@ import { ensureAttendanceScheduledTimeColumn, stampAttendanceTime } from "@/lib/
 import { normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { coursePayrollHoursForAttendance, coursePayrollHoursMap } from "@/lib/payrollHours";
 import { parsePayrollHours } from "@/lib/payrollHoursCore";
+import { setAttendanceHoursOverride } from "@/lib/attendanceHoursOverride";
 import { deleteAttendanceEquipment, parseEquipmentInput, saveAttendanceEquipment } from "@/lib/equipmentReminder";
 import { parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
@@ -94,6 +95,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   if (record.assistantTeacherId !== current.assistantTeacherId) {
     await syncSubstituteWithAttendance(record.id, "助教", record.assistantTeacherId);
+  }
+  // 計薪時數的人工覆蓋：行政特地為這一堂填了和課程預設不同的數字，就標記起來，
+  // 讓薪資計算以這一堂為準（沒有這個標記，改了畫面但薪資不會變）。
+  // 填的數字和課程預設相同、或整個清空，視為「回到課程預設」，清除標記。
+  if (data.hours !== undefined) {
+    await setAttendanceHoursOverride(
+      record.id,
+      requestedHours !== null && requestedHours !== calculatedHours.hours,
+    );
   }
   if (typeof scheduledTime === "string") {
     await ensureAttendanceScheduledTimeColumn();

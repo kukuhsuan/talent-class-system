@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
+import { attendanceHoursOverrideMap } from "@/lib/attendanceHoursOverride";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
@@ -148,6 +149,8 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   const substituteFeeMap = new Map(
     substituteRows.map((row) => [`${row.attendanceId}:${row.role}:${row.substituteTeacherId}`, row.fee]),
   );
+  // 哪些課的計薪時數是行政單堂改過的：這些要蓋過課程預設，否則改了等於沒改
+  const hoursOverrideMap = await attendanceHoursOverrideMap(rows.map((row) => row.id));
   // scheduledTime / payrollHours 已在 schema 內，include 直接帶回，省 2 次資料庫來回
   const leadByTeacher = new Map<number, AttendanceRow[]>();
   const assistantByTeacher = new Map<number, AttendanceRow[]>();
@@ -169,13 +172,16 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     studentCountA: row.studentCountA,
     studentCountB: row.studentCountB,
   });
-  const salaryHours = (row: AttendanceRow) => salaryHoursFromValues(row.hours, row.course.payrollHours, rowTime(row));
+  const salaryHours = (row: AttendanceRow) =>
+    salaryHoursFromValues(row.hours, row.course.payrollHours, rowTime(row), hoursOverrideMap.get(row.id) === true);
   const detail = (row: AttendanceRow, teacher: TeacherRow, role: "主教" | "助教"): SalaryDetail => {
     const category = normalizeCategory(row.category);
     const isDemo = category === "Demo";
     const hours = salaryHours(row);
     const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
-    const travelFee = role === "助教" || isDemo || hours.needsReview ? 0 : hours.payableHours * teacher.travelFee;
+    // 車費是「每堂固定」，不隨時數變動：老師跑一趟就是一趟，上 1 小時和 2 小時的
+    // 交通成本一樣。原本寫成 payableHours * travelFee，1.5 小時的課會發 1.5 倍車費。
+    const travelFee = role === "助教" || isDemo || hours.needsReview ? 0 : teacher.travelFee;
     const substituteFee = substituteFeeMap.get(`${row.id}:${role}:${teacher.id}`) ?? null;
     const teachingPay = substituteFee ?? hours.payableHours * rate;
     return {

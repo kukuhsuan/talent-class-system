@@ -143,6 +143,26 @@ export async function createPortalSessionCookie(schoolId: number, remember: bool
   };
 }
 
+/**
+ * 這個園所有沒有「啟用中的驗證碼」。
+ *
+ * 只有行政在後台按下產生驗證碼，SchoolPortalAuth 才會有資料列；停用時 enabled = 0。
+ * 換句話說：沒產過碼的園所永遠不可能通過 hasValidPortalSession。
+ * 所以 /api/school-portal/[token] 的 GET/POST/PUT 都不能無條件擋，必須先問這一題 ——
+ * 否則一上線，所有還沒設定驗證碼的園所會直接看到 401 錯誤頁，等於整個園所端掛掉。
+ *
+ * 注意：這個豁免對讀取和寫入一視同仁。未啟用驗證碼的園所，寫入（送出異動申請、
+ * 存開學確認）同樣只靠連結權杖保護，和改動前一樣 —— 也就是說，
+ * **在行政把所有園所的驗證碼都產生出來之前，這個豁免本身就是殘留的風險**。
+ * 這是為了不讓上線當天全面中斷而做的取捨，不是終點。
+ *
+ * 例外：同層的 changes/route.ts 是無條件要求驗證的（既有行為，未更動）。
+ */
+export async function portalVerificationRequired(schoolId: number): Promise<boolean> {
+  const row = await getPortalAuthRow(schoolId);
+  return Boolean(row && row.enabled && row.codeHash);
+}
+
 // POST API 後端驗證：cookie 有效、schoolId 相符、sessionVersion 未被登出
 export async function hasValidPortalSession(req: NextRequest, schoolId: number): Promise<boolean> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;

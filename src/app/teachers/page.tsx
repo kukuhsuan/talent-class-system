@@ -429,7 +429,7 @@ export default function TeachersPage() {
                     <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課後時薪</div><div className="font-medium text-slate-700">${t.rateAfterSchool}</div></div>
                     <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">課內時薪</div><div className="font-medium text-slate-700">${t.rateInSchool}</div></div>
                     <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">Demo</div><div className="font-medium text-slate-700">${t.rateDemo}</div></div>
-                    <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">車費</div><div className="font-medium text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
+                    <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">每節車費</div><div className="font-medium text-slate-700">{t.travelFee > 0 ? `$${t.travelFee}` : "-"}</div></div>
                   </>
                 )}
               </div>
@@ -456,7 +456,7 @@ export default function TeachersPage() {
                 <th className="px-4 py-3 text-center font-semibold">課後時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">課內時薪</th>
                 <th className="px-4 py-3 text-center font-semibold">Demo</th>
-                <th className="px-4 py-3 text-center font-semibold">車費</th>
+                <th className="px-4 py-3 text-center font-semibold">每節車費</th>
                 <th className="px-4 py-3 text-center font-semibold">助教費</th>
                 <th className="w-44 px-4 py-3 text-left font-semibold">匯款資料</th>
                 <th className="w-40 px-4 py-3 text-left font-semibold">薪資文件</th>

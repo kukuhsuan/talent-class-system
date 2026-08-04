@@ -7,6 +7,7 @@ import { courseBearImage } from "@/lib/courseBearMap";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { courseLabel } from "@/lib/courseMeta";
 import AfterSchoolPortal, { type PortalSummary } from "./AfterSchoolPortal";
+import PortalVerifyModal from "./PortalVerifyModal";
 
 type PortalData = {
   school: { name: string; type: string; region: string; address: string; contact: string; phone: string };
@@ -186,6 +187,9 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
   const [teacherCourseFilter, setTeacherCourseFilter] = useState("");
   const [installEvent, setInstallEvent] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [showInstallHint, setShowInstallHint] = useState(false);
+  // 後端已改成「有啟用驗證碼的園所讀取也要驗證」，收到 401 requiresVerify 時要跳輸入框而不是錯誤頁
+  const [needVerify, setNeedVerify] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // 依園所類型顯示不同分頁：安親班以「評分」取代「證書」
   const isAfterSchoolPortal = (data?.school.type ?? "").includes("安親");
@@ -257,7 +261,11 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
       return fetch(`/api/school-portal/${encodeURIComponent(params.token)}?year=${year}&month=${month}${standaloneConfirmation ? "&confirmationOnly=1" : ""}`, { signal: controller.signal })
         .then(async (res) => {
           const body = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(body.error || "讀取園所資料失敗");
+          if (!res.ok) {
+            const err = new Error(body.error || "讀取園所資料失敗") as Error & { requiresVerify?: boolean };
+            if (res.status === 401 && body.requiresVerify) err.requiresVerify = true;
+            throw err;
+          }
           return body;
         })
         .finally(() => clearTimeout(timer));
@@ -266,7 +274,8 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
       setLoading(true);
       setError("");
       fetchOnce(30000)
-        .catch(() => fetchOnce(30000))
+        // 需要驗證碼不是網路問題，重試也沒用，直接往下走去跳輸入框
+        .catch((e) => { if ((e as { requiresVerify?: boolean }).requiresVerify) throw e; return fetchOnce(30000); })
         .then((body) => {
           if (!cancelled) {
             setData(body);
@@ -275,13 +284,17 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
             setConfirmation({ ...EMPTY_CONFIRMATION, ...(firstCourse?.confirmation ?? body.courseConfirmation ?? {}) });
           }
         })
-        .catch((e) => { if (!cancelled) setError((e as Error).name === "AbortError" ? "載入逾時，請點選重新載入" : (e as Error).message || "讀取園所資料失敗"); })
+        .catch((e) => {
+          if (cancelled) return;
+          if ((e as { requiresVerify?: boolean }).requiresVerify) { setNeedVerify(true); setError(""); return; }
+          setError((e as Error).name === "AbortError" ? "載入逾時，請點選重新載入" : (e as Error).message || "讀取園所資料失敗");
+        })
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => {
       cancelled = true;
     };
-  }, [params.token, year, month, standaloneConfirmation]);
+  }, [params.token, year, month, standaloneConfirmation, reloadKey]);
 
   const recentReports = useMemo(() => (data?.reports ?? []).slice(0, 3), [data]);
   const learningMaps = useMemo(() => buildLearningMaps(data?.reports ?? [], data?.curriculum ?? []), [data]);
@@ -321,6 +334,8 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
         body: JSON.stringify({ courseId: standaloneConfirmation ? selectedConfirmationCourseId : undefined, courseConfirmation: confirmation, confirmationTerm: data?.confirmationTerm }),
       });
       const body = await res.json().catch(() => ({}));
+      // Session 過期／換裝置：跳驗證碼而不是丟一句「送出失敗」
+      if (res.status === 401 && body.requiresVerify) { setNeedVerify(true); return; }
       if (!res.ok) throw new Error(body.error || "送出失敗");
       setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? confirmation) });
       setData((current) => current ? {
@@ -346,6 +361,7 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
         body: JSON.stringify({ action: "copyPrevious", confirmationTerm: data?.confirmationTerm }),
       });
       const body = await res.json().catch(() => ({}));
+      if (res.status === 401 && body.requiresVerify) { setNeedVerify(true); return; }
       if (!res.ok) throw new Error(body.error || "複製失敗");
       setConfirmation({ ...EMPTY_CONFIRMATION, ...(body.courseConfirmation ?? {}) });
       setData((current) => current ? { ...current, ...body } : current);
@@ -355,6 +371,19 @@ function KindergartenPortal({ standaloneConfirmation = false }: { standaloneConf
     } finally {
       setSavingConfirmation(false);
     }
+  }
+
+  // 驗證碼優先於其他畫面：沒通過驗證就一筆資料都還沒拿到，沒東西可以顯示
+  if (needVerify) {
+    return (
+      <div className="min-h-screen bg-white">
+        <PortalVerifyModal
+          token={params.token}
+          onClose={() => { setNeedVerify(false); setError("需要園所驗證碼才能開啟，請向運動班長承辦人索取。"); }}
+          onVerified={() => { setNeedVerify(false); setReloadKey((key) => key + 1); }}
+        />
+      </div>
+    );
   }
 
   if (error) {
@@ -772,6 +801,8 @@ function CourseChangePanel({ token, options, requests, schools, onCreated }: {
         }),
       });
       const body = await response.json().catch(() => ({}));
+      // 這張表單要先載入完成才看得到，等於已驗證過；會走到這裡只有 Session 過期，請使用者重新整理重跳驗證
+      if (response.status === 401 && body.requiresVerify) throw new Error("園所驗證已逾期，請重新整理頁面後再輸入一次驗證碼");
       if (!response.ok) throw new Error(body.error || "送出異動申請失敗");
       onCreated(body);
       setMessage("已收到異動申請，將由行政確認老師是否可以配合。");

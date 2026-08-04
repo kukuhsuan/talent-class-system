@@ -15,8 +15,9 @@ export function salaryHoursFromValues(
   attendanceHours: unknown,
   coursePayrollHours: unknown,
   rawTime: string | null | undefined,
+  hoursOverridden = false,
 ) {
-  const resolved = resolvePayrollHours(attendanceHours, coursePayrollHours, rawTime);
+  const resolved = resolvePayrollHours(attendanceHours, coursePayrollHours, rawTime, hoursOverridden);
   return {
     hours: resolved.payableHours,
     payableHours: resolved.payableHours,

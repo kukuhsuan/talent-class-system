@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel, normalizeCategory, normalizeDepartment } from "@/lib/courseMeta";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
+import { attendanceHoursOverrideMap } from "@/lib/attendanceHoursOverride";
 
 export const runtime = "nodejs";
 
@@ -213,6 +214,9 @@ export async function GET(req: NextRequest) {
     } | null;
   }>;
 
+  // 這份統計的時數必須和薪資算出來的一致，否則園所端看到的時數會和發薪金額對不起來
+  const hoursOverrideMap = await attendanceHoursOverrideMap(records.map((r) => r.id));
+
   // scheduledTime / payrollHours 已在 schema 內，include 直接帶回，省 2 次資料庫來回
   const rows = records
     .map((r) => {
@@ -235,7 +239,7 @@ export async function GET(req: NextRequest) {
         studentCountB: r.studentCountB,
       });
       const payrollHours = course?.id
-        ? salaryHoursFromValues(r.hours, course.payrollHours, time)
+        ? salaryHoursFromValues(r.hours, course.payrollHours, time, hoursOverrideMap.get(r.id) === true)
         : null;
       return {
         id: r.id,

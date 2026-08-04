@@ -29,6 +29,29 @@ const RAW_DUMP_EXCLUDE = new Set([
 ]);
 
 /**
+ * 備份是用 Gmail 寄出的純附件，收件匣一旦外洩＝整份老師匯款資料外洩。
+ * 因此預設把銀行帳號遮罩成「只留末 4 碼」再寫進備份檔：日常備份的用途是
+ * 查資料與還原營運資料，用不到完整帳號（帳號本來也由會計線下持有，見
+ * prisma/schema.prisma Teacher.bankHeldOfflineAt 的註解）。
+ *
+ * 真的需要完整帳號做整庫還原時，在 Vercel 環境變數設 BACKUP_INCLUDE_BANK_ACCOUNT=1
+ * 手動跑一次即可；還原前請先看 payload.redaction 確認該份備份有沒有被遮罩。
+ */
+const INCLUDE_BANK_ACCOUNT = () => process.env.BACKUP_INCLUDE_BANK_ACCOUNT === "1";
+
+function maskAccount(value: string) {
+  const digits = String(value ?? "").trim();
+  if (!digits) return "";
+  if (digits.length <= 4) return "*".repeat(digits.length);
+  return `${"*".repeat(digits.length - 4)}${digits.slice(-4)}`;
+}
+
+function redactTeachers<T extends { bankAccountNumber: string }>(rows: T[]) {
+  if (INCLUDE_BANK_ACCOUNT()) return rows;
+  return rows.map((row) => ({ ...row, bankAccountNumber: maskAccount(row.bankAccountNumber) }));
+}
+
+/**
  * 動態匯出所有其他資料表（raw SQL 建立的表：請假、代課詢問、請款、異常、
  * 器材、審核歷程、LINE 紀錄等）。之後新增的表也會自動納入備份。
  */
@@ -92,6 +115,10 @@ async function buildBackupPayload() {
     backupVersion: 2,
     exportedAt: new Date().toISOString(),
     exportedTimezone: "Asia/Taipei",
+    // 還原前務必先看這一段：被遮罩的欄位還原回去會是假資料
+    redaction: INCLUDE_BANK_ACCOUNT()
+      ? { bankAccountNumber: "full" as const }
+      : { bankAccountNumber: "masked-last4" as const },
     counts: {
       schools: schools.length,
       teachers: teachers.length,
@@ -109,7 +136,7 @@ async function buildBackupPayload() {
       rawTables,
       attendanceSignatures,
       schools,
-      teachers,
+      teachers: redactTeachers(teachers),
       courses,
       attendances,
       substitutes,
@@ -163,6 +190,11 @@ export async function GET(req: NextRequest) {
           <li>其他資料表（請假／代課／請款／異常／歷程等）：${Object.keys(payload.data.rawTables).length} 張</li>
         </ul>
         <p>請至少保留最近 30 天備份信件。</p>
+        <p style="color:#64748b;">${
+          payload.redaction.bankAccountNumber === "masked-last4"
+            ? "老師銀行帳號已遮罩為末 4 碼（需完整帳號時請設定 BACKUP_INCLUDE_BANK_ACCOUNT=1 另行匯出）。"
+            : "⚠ 本份備份含完整銀行帳號，請勿轉寄，確認用畢後刪除。"
+        }</p>
       </div>
     `,
     attachments: [

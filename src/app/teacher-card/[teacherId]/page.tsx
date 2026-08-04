@@ -140,7 +140,10 @@ export default function TeacherCardPage() {
   }
 
   useEffect(() => {
-    fetch(`/api/teacher-resumes/card/${encodeURIComponent(params.teacherId)}`, { cache: "no-store" })
+    // 分享連結帶的權杖要原樣轉給 API；沒有權杖時只有已登入的後台帳號看得到
+    const shareToken = new URLSearchParams(window.location.search).get("t") ?? "";
+    const query = shareToken ? `?t=${encodeURIComponent(shareToken)}` : "";
+    fetch(`/api/teacher-resumes/card/${encodeURIComponent(params.teacherId)}${query}`, { cache: "no-store" })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "找不到老師簡歷");

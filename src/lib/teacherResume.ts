@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { signTeacherResumeToken } from "@/lib/publicAccessToken";
+import { signTeacherCardToken, signTeacherResumeToken } from "@/lib/publicAccessToken";
 
 export type TeacherResumeInput = {
   photoUrl?: string;
@@ -115,7 +115,10 @@ export async function listTeacherResumes() {
     return {
       ...mapped,
       collectUrl: `${appUrl()}/teacher-resume/${encodeURIComponent(signTeacherResumeToken(mapped.teacherId))}`,
-      cardUrl: `${appUrl()}/teacher-card/${mapped.teacherId}`,
+      // 卡片連結要帶簽章權杖，否則 API 會擋下（見 api/teacher-resumes/card/[teacherId]）。
+      // 用唯讀的 teacher_card，不能用上面那個 collectUrl 的 teacher_resume：
+      // 後者可以讀未遮罩個資、還能覆寫履歷，卡片是要貼給園所看的。
+      cardUrl: `${appUrl()}/teacher-card/${mapped.teacherId}?t=${encodeURIComponent(signTeacherCardToken(mapped.teacherId))}`,
     };
   });
 }

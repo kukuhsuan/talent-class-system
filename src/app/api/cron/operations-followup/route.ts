@@ -5,6 +5,7 @@ import type { LineRegion } from "@/lib/line";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { normalizeCategory, requiresStudentCount } from "@/lib/courseMeta";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
+import { attendanceHoursOverrideMap } from "@/lib/attendanceHoursOverride";
 import { dayBounds } from "@/lib/scheduleLogic";
 import { effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { attendanceMissingItems } from "@/lib/reportWindow";
@@ -47,6 +48,8 @@ export async function GET(req: NextRequest) {
     }),
     operationsRecipientRows(),
   ]);
+  // 判斷「計薪時數待確認」要和薪資用同一套規則，否則會對已經人工調整過的課誤報
+  const hoursOverrideMap = await attendanceHoursOverrideMap(attendances.map((a) => a.id));
   const items: RegionalAttentionItem[] = [];
   const teacherPending = new Map<number, {
     teacher: (typeof attendances)[number]["actualTeacher"];
@@ -64,7 +67,7 @@ export async function GET(req: NextRequest) {
       items.push({ region: attendance.course.region, level: "warning", title: `${prefix} 尚未填人數`, detail: `${time}｜${attendance.actualTeacher.name}｜請完成課後人數` });
     }
     if (isToday && normalized !== "Demo" && !requiresStudentCount(category)) {
-      const hours = salaryHoursFromValues(attendance.hours, attendance.course.payrollHours, time);
+      const hours = salaryHoursFromValues(attendance.hours, attendance.course.payrollHours, time, hoursOverrideMap.get(attendance.id) === true);
       if (hours.needsReview) items.push({ region: attendance.course.region, level: "warning", title: `${prefix} 計薪時數待確認`, detail: `${time}｜${attendance.actualTeacher.name}｜${hours.reason}` });
     }
     if (isToday && !attendance.reportContent.trim()) {
