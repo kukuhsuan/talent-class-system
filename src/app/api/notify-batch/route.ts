@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
         lineRegion: r.lineRegion, message: r.message, skipped: r.skipped ?? "", ackButton: Boolean(r.ackUrl),
         flexPre: r.flexPre ?? "", flexPost: r.flexPost ?? "",
         flexBlocks: r.flexBlocks ?? [], linkButtons: r.linkButtons ?? [],
+        lessonPlans: r.lessonPlans ?? [],
       })),
     });
   }

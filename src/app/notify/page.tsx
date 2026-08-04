@@ -1,4 +1,5 @@
 "use client";
+import { StatusTag } from "@/components/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { courseLabel } from "@/lib/courseMeta";
 
@@ -31,6 +32,10 @@ type PreviewData = {
     flexPre?: string; flexPost?: string;
     flexBlocks?: Array<{ title: string; lines: string[]; color: string; bg: string }>;
     linkButtons?: Array<{ label: string; url: string; primary?: boolean }>;
+    lessonPlans?: Array<{
+      courseName: string; color: string; bg: string;
+      items: Array<{ lesson: number; title: string; focus: string; skills: string[] }>;
+    }>;
   }>;
 };
 
@@ -61,10 +66,6 @@ const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" |
   { name: "停課狀態", sample: "上方所選的課程狀態（颱風範本專用）", targets: ["teacher", "school"], typhoonOnly: true },
 ];
 const RESULT_LABEL: Record<string, string> = { success: "成功", failed: "失敗", unbound: "未綁定", skipped: "略過", pending: "處理中" };
-const RESULT_STYLE: Record<string, string> = {
-  success: "bg-green-100 text-green-700", failed: "bg-red-100 text-red-700",
-  unbound: "bg-orange-100 text-orange-600", skipped: "bg-slate-100 text-slate-500", pending: "bg-blue-100 text-blue-600",
-};
 
 export default function NotifyPage() {
   const [tab, setTab] = useState<"batch" | "teachers" | "schools" | "logs">("batch");
@@ -583,6 +584,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                 </pre>
               ) : (
                 /* LINE 卡片模擬預覽 */
+                <div className="space-y-3">
                 <div className="rounded-2xl border shadow-sm overflow-hidden max-w-sm bg-white">
                   <div className="bg-[#2C5DA8] px-4 py-3 text-white text-sm font-bold">{preview.template.label}</div>
                   <div className="p-4 space-y-3 text-sm text-slate-800 max-h-72 overflow-y-auto">
@@ -611,6 +613,38 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* 接續送出的整學期教學課表卡片（LINE 上可左右滑動） */}
+                {(previewRecipient?.lessonPlans ?? []).map((plan) => (
+                  <div key={plan.courseName} className="rounded-2xl border shadow-sm overflow-hidden max-w-sm bg-white">
+                    <div className="px-4 py-3 text-white" style={{ backgroundColor: plan.color }}>
+                      <div className="text-sm font-bold">{plan.courseName}教學課表</div>
+                      <div className="text-xs opacity-90">本學期共 {plan.items.length} 堂　每堂重點與能力培養</div>
+                    </div>
+                    <div className="max-h-72 space-y-2 overflow-y-auto p-3">
+                      {plan.items.map((row) => (
+                        <div key={row.lesson} className="flex gap-3 rounded-xl p-3" style={{ backgroundColor: plan.bg }}>
+                          <div className="w-8 shrink-0 text-center leading-none" style={{ color: plan.color }}>
+                            <div className="text-[10px]">第</div>
+                            <div className="text-lg font-bold">{row.lesson}</div>
+                            <div className="text-[10px]">堂</div>
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="text-sm font-bold text-slate-800">{row.title || "（未填標題）"}</div>
+                            {row.skills.length > 0 && (
+                              <div className="text-[11px]" style={{ color: plan.color }}>能力培養：{row.skills.join("、")}</div>
+                            )}
+                            {row.focus && <div className="text-xs text-slate-500">{row.focus}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="bg-slate-50 px-4 py-2 text-[11px] text-slate-400">
+                      LINE 上每 6 堂一頁，可左右滑動
+                    </div>
+                  </div>
+                ))}
                 </div>
               )}
             </div>
@@ -725,9 +759,9 @@ function LogsTab() {
                     <td className="px-3 py-2 text-xs text-slate-500">{OA_LABEL[r.lineRegion] ?? r.lineRegion}</td>
                     <td className="px-3 py-2 text-xs font-mono text-slate-400">{r.maskedLineId || "—"}</td>
                     <td className="px-3 py-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${RESULT_STYLE[r.status] ?? "bg-slate-100 text-slate-500"}`}>
+                      <StatusTag size="sm" status={r.status}>
                         {RESULT_LABEL[r.status] ?? r.status}
-                      </span>
+                      </StatusTag>
                     </td>
                     <td className="px-3 py-2 text-xs">
                       {r.ackAt

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage } from "@/lib/line";
-import type { BatchRecipientMessage, NotifyTargetType } from "@/lib/notifyTemplates";
+import type { BatchRecipientMessage, LessonPlanCard, NotifyTargetType } from "@/lib/notifyTemplates";
 
 // 客服批次通知：批次資料表與發送引擎
 // - 批次 UUID idempotency：同一 uuid 重送直接回傳既有結果
@@ -281,6 +281,71 @@ function buildAckFlex(label: string, r: BatchRecipientMessage) {
   };
 }
 
+// 整學期教學課表：直接在 LINE 以 Flex carousel 呈現（不另開連結）
+// 版面沿用營運班表：色頭 + 淡色列 + 頁碼，一張 bubble 放 6 堂，可左右滑動
+const LESSONS_PER_BUBBLE = 6;
+const MAX_PLAN_BUBBLES = 10; // LINE carousel 上限 12，保守留餘裕
+
+function buildLessonPlanFlex(card: LessonPlanCard) {
+  const total = card.items.length;
+  const pages: LessonPlanCard["items"][] = [];
+  for (let i = 0; i < total; i += LESSONS_PER_BUBBLE) {
+    pages.push(card.items.slice(i, i + LESSONS_PER_BUBBLE));
+  }
+  const shown = pages.slice(0, MAX_PLAN_BUBBLES);
+  const bubbles = shown.map((rows, pageIndex) => ({
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: card.color, paddingAll: "18px", spacing: "sm",
+      contents: [
+        { type: "text", text: `${card.courseName}教學課表`, color: "#FFFFFF", weight: "bold", size: "xl", wrap: true },
+        { type: "text", text: `本學期共 ${total} 堂　每堂重點與能力培養`, color: "#EAF2FF", size: "sm", wrap: true },
+      ],
+    },
+    body: {
+      type: "box", layout: "vertical", backgroundColor: "#FFFFFF", paddingAll: "14px", spacing: "sm",
+      contents: rows.map((row) => ({
+        type: "box", layout: "horizontal", backgroundColor: card.bg, cornerRadius: "10px", paddingAll: "11px", spacing: "md",
+        contents: [
+          {
+            type: "box", layout: "vertical", flex: 2, spacing: "none",
+            contents: [
+              { type: "text", text: "第", size: "xxs", color: card.color, align: "center" },
+              { type: "text", text: String(row.lesson), size: "xl", weight: "bold", color: card.color, align: "center" },
+              { type: "text", text: "堂", size: "xxs", color: card.color, align: "center" },
+            ],
+          },
+          {
+            type: "box", layout: "vertical", flex: 8, spacing: "xs",
+            contents: [
+              { type: "text", text: row.title || "（未填標題）", size: "sm", color: "#263548", weight: "bold", wrap: true },
+              ...(row.skills.length > 0
+                ? [{ type: "text", text: `能力培養：${row.skills.join("、")}`, size: "xxs", color: card.color, wrap: true }]
+                : []),
+              ...(row.focus
+                ? [{ type: "text", text: row.focus, size: "xs", color: "#68778A", wrap: true }]
+                : []),
+            ],
+          },
+        ],
+      })),
+    },
+    footer: {
+      type: "box", layout: "horizontal", backgroundColor: "#FAFBFC", paddingAll: "12px",
+      contents: [
+        { type: "text", text: "課表如需調整請聯繫行政", size: "xxs", color: "#8391A3", flex: 8, wrap: true },
+        { type: "text", text: `${pageIndex + 1}/${shown.length}`, size: "xxs", color: "#8391A3", align: "end", flex: 2 },
+      ],
+    },
+  }));
+  return {
+    type: "flex",
+    altText: `${card.courseName}教學課表（共 ${total} 堂）`,
+    contents: bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles },
+  };
+}
+
 // 清洗錯誤訊息：不外洩 token/secret
 function sanitizeError(message: string) {
   return String(message ?? "")
@@ -352,9 +417,15 @@ export async function runNotifyBatch(opts: RunOptions) {
     let lastError = "";
     for (let attempt = 0; attempt < 2; attempt++) { // 最多重試 1 次
       try {
-        const payload = r.ackToken || r.flexBlocks?.length || r.linkButtons?.length
+        const payload: object[] = r.ackToken || r.flexBlocks?.length || r.linkButtons?.length
           ? [buildAckFlex(opts.templateLabel || "通知", r)]
           : [{ type: "text", text: r.message }];
+        // 教學課表接在主卡片後面直接送出；LINE 單次 push 最多 5 則
+        for (const card of r.lessonPlans ?? []) {
+          if (payload.length >= 5) break;
+          if (card.items.length === 0) continue;
+          payload.push(buildLessonPlanFlex(card));
+        }
         await pushMessage(r.lineUserId, payload, token);
         success++;
         await setStatus(r.id, "success");
