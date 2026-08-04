@@ -492,19 +492,30 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
     const lessonPlanByCourse = new Map<string, LessonPlanItem[]>();
     if (opts.templateKey === "first_class") {
       const usedCourses = [...new Set([...courseTypesByTeacher.values()].flatMap((set) => [...set]))];
-      const { listLessonTemplates } = await import("@/lib/lessonTemplates");
+      const { readLessonTemplatesBulk, listLessonTemplates } = await import("@/lib/lessonTemplates");
+      // 先用單次唯讀查詢拿全部課別（預覽會頻繁呼叫，不能每次都跑同步）
+      let bulk = new Map<string, Array<{ lesson: number; title: string; focus: string; skills: string[] }>>();
+      try {
+        bulk = await readLessonTemplatesBulk(prisma, usedCourses);
+      } catch {
+        bulk = new Map();
+      }
       for (const courseName of usedCourses) {
-        try {
-          const rows = await listLessonTemplates(prisma, courseName);
-          lessonPlanByCourse.set(
-            courseName,
-            rows
-              .map((row) => ({ lesson: Number(row.lesson), title: row.title, focus: row.focus, skills: row.skills }))
-              .sort((a, b) => a.lesson - b.lesson),
-          );
-        } catch {
-          lessonPlanByCourse.set(courseName, []);
+        let rows = bulk.get(courseName) ?? [];
+        // 尚未建立過課表的課別才退回同步版（會從 canonical 種資料補齊）
+        if (rows.length === 0) {
+          try {
+            rows = await listLessonTemplates(prisma, courseName);
+          } catch {
+            rows = [];
+          }
         }
+        lessonPlanByCourse.set(
+          courseName,
+          rows
+            .map((row) => ({ lesson: Number(row.lesson), title: row.title, focus: row.focus, skills: row.skills }))
+            .sort((a, b) => a.lesson - b.lesson),
+        );
       }
     }
 

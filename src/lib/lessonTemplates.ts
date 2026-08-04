@@ -167,6 +167,23 @@ export async function getLessonTemplateForReport(
   return template;
 }
 
+// 唯讀批次查詢：一次取多個課別，且不做 canonical 同步（同步含刪除與逐堂 upsert，太慢）。
+// 供通知預覽／發送這類高頻唯讀路徑使用；查不到資料時再由呼叫端退回 listLessonTemplates。
+export async function readLessonTemplatesBulk(prisma: PrismaClient, courseTypes: string[]) {
+  const map = new Map<string, LessonTemplateForReport[]>();
+  const courses = [...new Set(courseTypes.map((c) => courseLabel(c)).filter(Boolean))];
+  if (courses.length === 0) return map;
+  await ensureLessonTemplateTable(prisma);
+  for (const course of courses) map.set(course, []);
+  const rows = await prisma.$queryRawUnsafe<LessonTemplateRow[]>(
+    `SELECT courseType, lesson, title, focus, skills, activityDirection, aiStyle FROM LessonTemplate
+     WHERE courseType IN (${courses.map(() => "?").join(", ")}) ORDER BY courseType ASC, lesson ASC`,
+    ...courses,
+  );
+  for (const row of rows) map.get(row.courseType)?.push(rowToTemplate(row));
+  return map;
+}
+
 export async function listLessonTemplates(prisma: PrismaClient, courseType = "") {
   await ensureLessonTemplateTable(prisma);
   const course = courseType ? courseLabel(courseType) : "";
