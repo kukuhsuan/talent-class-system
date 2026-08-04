@@ -58,7 +58,7 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsAck: true,
-    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、開課日期、時間、地點與報名人數，以卡片發送並附「確認收到」按鈕",
+    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、開課日期、時間、地點與報名人數，並依課程類別附上「整學期教學課表」按鈕，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "{姓名} 老師您好：",
       "",
@@ -74,6 +74,8 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "",
       "⏰ 請準時到校，勿遲到早退",
       "🙂 請保持禮貌與專業態度",
+      "",
+      "📗 整學期每堂課的教學重點與能力培養，請點下方「教學課表」按鈕查看。",
       "",
       "若課表、人數或地點有誤，請立即與行政聯繫，謝謝！",
     ].join("\n"),
@@ -437,6 +439,8 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
 
     // 課程摘要素材（文字版供紀錄／備援；色塊版供 Flex 卡片）
     const itemsByTeacher = new Map<number, Array<{ text: string; block: FlexBlock }>>();
+    // 第一堂課通知：老師教哪些課程類別 → 附上該課別的整學期教學課表按鈕
+    const courseTypesByTeacher = new Map<number, Set<string>>();
     const dateIso = taipeiDateStr(0);
     if (opts.templateKey === "new_term" || opts.templateKey === "first_class") {
       const courses = await prisma.course.findMany({
@@ -465,9 +469,16 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
           ];
           return { text: [`◆ ${title}`, ...lines].join("\n"), block: { title, lines, color: palette.fg, bg: palette.bg } };
         };
-        if (ids.includes(c.teacherId)) (itemsByTeacher.get(c.teacherId) ?? itemsByTeacher.set(c.teacherId, []).get(c.teacherId)!).push(entry("主教"));
+        const markCourseType = (teacherId: number) => {
+          (courseTypesByTeacher.get(teacherId) ?? courseTypesByTeacher.set(teacherId, new Set()).get(teacherId)!).add(label);
+        };
+        if (ids.includes(c.teacherId)) {
+          (itemsByTeacher.get(c.teacherId) ?? itemsByTeacher.set(c.teacherId, []).get(c.teacherId)!).push(entry("主教"));
+          markCourseType(c.teacherId);
+        }
         if (c.assistantTeacherId && ids.includes(c.assistantTeacherId)) {
           (itemsByTeacher.get(c.assistantTeacherId) ?? itemsByTeacher.set(c.assistantTeacherId, []).get(c.assistantTeacherId)!).push(entry("助教"));
+          markCourseType(c.assistantTeacherId);
         }
       }
     }
@@ -496,6 +507,17 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const { body: teacherBody, buttons: linkButtons } = asCard
         ? extractLinkButtons(body)
         : { body, buttons: [] as FlexLinkButton[] };
+      // 第一堂課通知：依老師教的課別附上整學期教學課表按鈕
+      if (opts.templateKey === "first_class") {
+        for (const courseName of [...(courseTypesByTeacher.get(id) ?? new Set<string>())].sort()) {
+          if (linkButtons.length >= MAX_LINK_BUTTONS) break;
+          linkButtons.push({
+            label: `📗 ${courseName}教學課表`.slice(0, LINE_BUTTON_LABEL_MAX),
+            url: `${appUrl()}/lesson-plan/${encodeURIComponent(courseName)}`,
+            primary: linkButtons.length === 0,
+          });
+        }
+      }
       // 課程色塊：卡片內每堂課一塊、依課程配色
       const flexParts = items.length > 0 ? buildFlexParts(teacherBody, vars) : null;
       return {

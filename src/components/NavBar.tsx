@@ -124,6 +124,7 @@ export default function NavBar() {
     || pathname.startsWith("/teacher-card/")
     || pathname.startsWith("/course-briefing-ack/")
     || pathname.startsWith("/rating/")
+    || pathname.startsWith("/lesson-plan/")
   ) return null;
 
   async function logout() {
