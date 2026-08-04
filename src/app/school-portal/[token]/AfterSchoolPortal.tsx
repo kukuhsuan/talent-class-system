@@ -54,6 +54,20 @@ function cacheGet<T>(key: string): T | null {
 function cacheSet(key: string, data: unknown) { portalCache.set(key, { at: Date.now(), data }); }
 function cacheClear(prefix: string) { for (const key of [...portalCache.keys()]) if (key.startsWith(prefix)) portalCache.delete(key); }
 
+// 取出老師回報中的指定段落，保留原始換行與編號。
+function reportField(content: string, label: string) {
+  const lines = content.split("\n");
+  const start = lines.findIndex((line) => line.trim().startsWith(`${label}：`));
+  if (start < 0) return "";
+  const first = lines[start].replace(`${label}：`, "").trim();
+  const rest: string[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^[^：:]{2,8}[：:]/.test(lines[index].trim())) break;
+    rest.push(lines[index]);
+  }
+  return [first, ...rest].join("\n").trim();
+}
+
 /* ---------- Lucide 風格線條 icon ---------- */
 function Icon({ name, className }: { name: "book" | "calendar" | "star" | "check" | "alert" | "copy" | "image" | "chevron"; className?: string }) {
   const paths: Record<string, React.ReactNode> = {
@@ -327,9 +341,9 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [making, setMaking] = useState(false);
-  const summary = (item.aiSummary || item.reportContent).trim();
+  const teacherOutcome = reportField(item.reportContent, "成果回報") || item.reportContent.trim();
+  const summary = teacherOutcome || item.aiSummary.trim();
   const skills = useMemo(() => parseAbilities(item.skillFocus), [item.skillFocus]);
-  const long = summary.length > 80;
 
   async function copyText() {
     try {
@@ -365,14 +379,16 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
       )}
       {summary && (
         <div className="mx-4 mt-3 rounded-[10px] bg-[#F5F7FA] p-3">
-          <p className="whitespace-pre-wrap text-[14px] leading-6 text-[#1F2937]">{expanded || !long ? summary : summary.slice(0, 80) + "…"}</p>
-          {item.aiTeachingNote.trim() && expanded && <p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-[#64748B]">{item.aiTeachingNote.trim()}</p>}
+          <p className="whitespace-pre-wrap break-words text-[14px] leading-6 text-[#1F2937]">{summary}</p>
+          {item.aiTeachingNote.trim() && item.aiTeachingNote.trim() !== summary && (
+            <p className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-6 text-[#64748B]">{item.aiTeachingNote.trim()}</p>
+          )}
         </div>
       )}
       {item.incidentNote && <p className="mx-4 mt-2 rounded-[10px] bg-[#FBF3E8] px-3 py-2 text-[13px] text-[#8A5A17]">{item.incidentNote}</p>}
-      {(long || item.photoUrls.length > 1 || item.aiTeachingNote.trim()) && (
+      {item.photoUrls.length > 1 && (
         <button onClick={() => setExpanded(!expanded)} className="mx-4 mt-2 flex items-center gap-1 text-[13px] font-bold text-[#315E9F]">
-          {expanded ? "收合" : "查看完整成果"}
+          {expanded ? "收合照片" : `查看全部 ${item.photoUrls.length} 張照片`}
           <Icon name="chevron" className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
       )}

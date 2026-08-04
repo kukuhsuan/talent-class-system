@@ -1187,7 +1187,6 @@ function OutcomeList({ rows, skillMap }: { rows: PortalData["reports"]; skillMap
 }
 
 function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; skillMap: Record<string, SkillMeta> }) {
-  const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
   const [shareImageUrl, setShareImageUrl] = useState("");
@@ -1198,7 +1197,6 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   const outcomeText = reportField(row.reportContent, "成果回報") || row.aiTeachingNote || row.aiSummary || "";
   const mainText = outcomeText || progressText || "本堂課已完成成果回報。";
   const shareText = buildParentShareText(row, mainText, skills);
-  const canExpand = mainText.length > 95;
   const lesson = extractLesson(progressText);
   const courseBear = courseBearImage(`${row.courseName} ${progressText}`);
   // 課堂照片（多張；相容舊資料只有 representativePhotoUrl）
@@ -1245,12 +1243,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
           <div className="mt-3 grid overflow-hidden rounded-[18px] border border-[#F0E2D0] bg-[#FBF7F1] sm:mt-5 sm:grid-cols-[minmax(0,1fr)_220px] sm:rounded-[20px]">
             <div className="p-4 text-sm leading-7 text-[#3E332B] sm:p-6 sm:text-[15px] sm:leading-8">
               <div className="mb-3 text-base font-black text-[#315E9F] sm:text-lg">今日課堂紀錄</div>
-              <p className={`whitespace-pre-line ${expanded ? "" : "line-clamp-6"}`}>{mainText}</p>
-              {canExpand && (
-                <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-3 text-sm font-black text-[#C06B3E]">
-                  {expanded ? "收合內容" : "查看更多"}
-                </button>
-              )}
+              <p className="whitespace-pre-wrap break-words">{mainText}</p>
             </div>
             {courseBear && (
               <div className="flex min-h-[190px] items-center justify-center border-t border-[#F0E2D0] bg-white/70 p-3 sm:min-h-[240px] sm:border-l sm:border-t-0">
