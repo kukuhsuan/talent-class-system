@@ -789,7 +789,7 @@ export default function TeacherReportPage() {
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">給下一堂老師的提醒（非必填）</label>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            這段<span className="font-semibold text-slate-600">不會</span>出現在園所與家長的回報裡，只會在下一堂課前推播給接手的老師（同一位老師也會收到，當作課前回顧）。
+            只在下一堂課前傳給上課的老師，<span className="font-semibold text-slate-600">不會</span>出現在園所與家長的回報裡。
           </p>
           <textarea value={form.handoffNote} disabled={locked} maxLength={500}
             onChange={(e) => setForm({ ...form, handoffNote: e.target.value })}

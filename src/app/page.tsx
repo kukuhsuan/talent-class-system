@@ -146,7 +146,7 @@ export default function Home() {
 
   const handleCourseReminder = async (dayOffset: 0 | 1) => {
     const label = dayOffset === 1 ? "明日" : "今日";
-    if (!window.confirm(`確定要立即補發「${label}課程提醒」嗎？\n已收到的老師會自動略過。`)) return;
+    if (!window.confirm(`確定要立即補發「${label}課程提醒」嗎？\n課表沒變動的老師會自動略過；排程後才加課的會重新收到。`)) return;
     setCourseReminderSending(dayOffset);
     try {
       const response = await fetch("/api/line/course-reminder", {
@@ -156,7 +156,7 @@ export default function Home() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "提醒傳送失敗");
-      alert(`「${label}課程提醒」處理完成\n成功：${data.sent ?? 0} 位\n已發送略過：${data.skippedAlreadySent ?? 0} 位\n未綁 LINE：${data.skippedNoLine ?? 0} 位${data.errors?.length ? `\n失敗：${data.errors.length} 位` : ""}`);
+      alert(`「${label}課程提醒」處理完成\n成功：${data.sent ?? 0} 位${data.resent ? `（其中 ${data.resent} 位是課表有更新重發）` : ""}\n課表未變動略過：${data.skippedAlreadySent ?? 0} 位\n未綁 LINE：${data.skippedNoLine ?? 0} 位${data.errors?.length ? `\n失敗：${data.errors.length} 位` : ""}\n\n單獨補發某位老師請到「客服通知中心 → 老師 LINE 綁定」。`);
     } catch (error) {
       alert(error instanceof Error ? error.message : "提醒傳送失敗");
     } finally {

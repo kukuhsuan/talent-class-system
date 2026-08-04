@@ -72,6 +72,7 @@ export default function NotifyPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [sending, setSending] = useState<number | null>(null);
+  const [resending, setResending] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [publicBase, setPublicBase] = useState("");
 
@@ -87,6 +88,28 @@ export default function NotifyPage() {
     const { code } = await res.json();
     setTeachers(prev => prev.map(t => t.id === teacherId ? { ...t, lineBindCode: code } : t));
     setSending(null);
+  }
+
+  // 指定老師補發課程提醒：排程跑完之後才加的課，整批補發會被去重擋掉，只能單點救援
+  async function resendReminder(teacher: Teacher, dayOffset: 0 | 1) {
+    const label = dayOffset === 1 ? "明日" : "今日";
+    if (!window.confirm(`確定要重新發送「${label}課程提醒」給 ${teacher.name} 嗎？\n她若已收到過，會再收到一則。`)) return;
+    setResending(`${teacher.id}:${dayOffset}`);
+    try {
+      const res = await fetch("/api/line/course-reminder", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dayOffset, teacherId: teacher.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "補發失敗");
+      if (data.sent) setMsg(`已補發「${label}課程提醒」給 ${teacher.name}`);
+      else if (data.skippedNoLine) setMsg(`${teacher.name} 尚未綁定 LINE，無法補發`);
+      else setMsg(`${teacher.name} ${label}沒有排課，沒有可發送的提醒`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "補發失敗");
+    } finally {
+      setResending(null);
+    }
   }
 
   async function generateSchoolCode(schoolId: number) {
@@ -149,6 +172,7 @@ export default function NotifyPage() {
                   <th className="text-left px-4 py-3 font-medium">LINE 狀態</th>
                   <th className="text-left px-4 py-3 font-medium">地區</th>
                   <th className="text-left px-4 py-3 font-medium">綁定碼</th>
+                  <th className="text-left px-4 py-3 font-medium">補發課程提醒</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -166,6 +190,18 @@ export default function NotifyPage() {
                       {t.lineBindCode
                         ? <code className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{t.lineBindCode}</code>
                         : <span className="text-xs text-slate-400">未產生</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {t.lineUserId ? (
+                        <div className="flex gap-1">
+                          {([[0, "今日"], [1, "明日"]] as const).map(([offset, label]) => (
+                            <button key={offset} onClick={() => resendReminder(t, offset)} disabled={resending !== null}
+                              className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-1 rounded-lg disabled:opacity-50">
+                              {resending === `${t.id}:${offset}` ? "發送中…" : label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : <span className="text-xs text-slate-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => generateTeacherCode(t.id)} disabled={sending === t.id}

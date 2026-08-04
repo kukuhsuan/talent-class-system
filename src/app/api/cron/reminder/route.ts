@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage, buildReminderMessage } from "@/lib/line";
@@ -37,24 +38,56 @@ async function ensureCourseReminderDeliveryTable() {
       UNIQUE(teacherId, targetDate, dayOffset)
     )
   `);
+  // 舊資料只記「這位老師這天發過了」，不記發了什麼；補上內容指紋後，
+  // 排程跑完才新增的課才有辦法被判定為「內容變了，要補發」。
+  await prisma
+    .$executeRawUnsafe("ALTER TABLE CourseReminderDelivery ADD COLUMN contentHash TEXT")
+    .catch(() => undefined);
 }
 
-async function wasCourseReminderSent(teacherId: number, targetDate: string, dayOffset: number) {
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
-    "SELECT id FROM CourseReminderDelivery WHERE teacherId = ? AND targetDate = ? AND dayOffset = ? LIMIT 1",
+/**
+ * 課表指紋：只取「老師會在乎的異動」——多一堂課、換園所、改時間、改課別。
+ * 器材／預計人數這類附掛資訊變動不重發，免得老師被同一天的提醒洗版。
+ */
+function reminderContentHash(courses: ReminderCourse[]) {
+  const fingerprint = courses
+    .map((course) => [course.courseId ?? 0, course.school, course.time, course.courseType].join("|"))
+    .sort()
+    .join(";");
+  return createHash("sha1").update(fingerprint).digest("hex");
+}
+
+type DeliveryState = "new" | "changed" | "same";
+
+async function courseReminderState(
+  teacherId: number,
+  targetDate: string,
+  dayOffset: number,
+  contentHash: string,
+): Promise<DeliveryState> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ contentHash: string | null }>>(
+    "SELECT contentHash FROM CourseReminderDelivery WHERE teacherId = ? AND targetDate = ? AND dayOffset = ? LIMIT 1",
     teacherId,
     targetDate,
     dayOffset,
   );
-  return rows.length > 0;
+  if (rows.length === 0) return "new";
+  const stored = rows[0]?.contentHash;
+  // 加欄位之前寫入的舊列沒有指紋，無從比對；當作已發送，避免升級當下對全體老師重發。
+  if (!stored) return "same";
+  return stored === contentHash ? "same" : "changed";
 }
 
-async function markCourseReminderSent(teacherId: number, targetDate: string, dayOffset: number) {
+async function markCourseReminderSent(teacherId: number, targetDate: string, dayOffset: number, contentHash: string) {
   await prisma.$executeRawUnsafe(
-    "INSERT OR IGNORE INTO CourseReminderDelivery (teacherId, targetDate, dayOffset) VALUES (?, ?, ?)",
+    `INSERT INTO CourseReminderDelivery (teacherId, targetDate, dayOffset, contentHash)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(teacherId, targetDate, dayOffset)
+     DO UPDATE SET contentHash = excluded.contentHash, sentAt = CURRENT_TIMESTAMP`,
     teacherId,
     targetDate,
     dayOffset,
+    contentHash,
   );
 }
 
@@ -195,16 +228,27 @@ export async function GET(req: NextRequest) {
   }
 
   let sent = 0;
+  let resent = 0;
   let skippedNoLine = 0;
   let skippedAlreadySent = 0;
   const errors: string[] = [];
 
-  for (const { teacher, courses: teacherCourses } of byTeacher.values()) {
+  // 指定老師補發：只鎖定這一位，並略過去重（人工按下去就是明知故犯地要重發）
+  const onlyTeacherIdRaw = Number(req.nextUrl.searchParams.get("teacherId") ?? "");
+  const onlyTeacherId = Number.isInteger(onlyTeacherIdRaw) && onlyTeacherIdRaw > 0 ? onlyTeacherIdRaw : null;
+
+  const queue = onlyTeacherId
+    ? [...byTeacher.values()].filter((item) => item.teacher.id === onlyTeacherId)
+    : [...byTeacher.values()];
+
+  for (const { teacher, courses: teacherCourses } of queue) {
     if (!teacher.lineUserId) {
       skippedNoLine++;
       continue;
     }
-    if (await wasCourseReminderSent(teacher.id, targetIso, dayOffset)) {
+    const contentHash = reminderContentHash(teacherCourses);
+    const state = onlyTeacherId ? "changed" : await courseReminderState(teacher.id, targetIso, dayOffset, contentHash);
+    if (state === "same") {
       skippedAlreadySent++;
       continue;
     }
@@ -212,9 +256,11 @@ export async function GET(req: NextRequest) {
     const region = (teacher.lineRegion || "north") as LineRegion;
     const token = getLineConfig(region).token;
 
+    const baseTitle = dayOffset === 1 ? "明日課程提醒" : "今日課程提醒";
     const message = buildReminderMessage({
       teacherName: teacher.name,
-      title: dayOffset === 1 ? "明日課程提醒" : "今日課程提醒",
+      // 第二次以後才送的，標題講清楚原因，老師才不會以為系統重複發同一則
+      title: state === "changed" ? `${baseTitle}（課表有更新）` : baseTitle,
       date: targetIso,
       dayOfWeek: targetName,
       courses: teacherCourses,
@@ -233,32 +279,38 @@ export async function GET(req: NextRequest) {
 
     try {
       await pushMessage(teacher.lineUserId, [message, ...recapMessages], token);
-      await markCourseReminderSent(teacher.id, targetIso, dayOffset);
+      await markCourseReminderSent(teacher.id, targetIso, dayOffset, contentHash);
       sent++;
+      if (state === "changed") resent++;
     } catch (e) {
       errors.push(`${teacher.name}: ${e}`);
     }
   }
 
-  await recordAutomationRun({
-    jobKey: `teacher-reminder:${dayOffset}`,
-    targetDate: targetIso,
-    status: errors.length ? (sent || skippedAlreadySent ? "partial" : "failed") : "success",
-    total: byTeacher.size,
-    success: sent + skippedAlreadySent,
-    failed: errors.length,
-    details: errors.join("\n"),
-  }).catch(() => undefined);
+  // 指定老師補發是人工單點操作，不該覆蓋當天整批排程的健康狀態
+  if (!onlyTeacherId) {
+    await recordAutomationRun({
+      jobKey: `teacher-reminder:${dayOffset}`,
+      targetDate: targetIso,
+      status: errors.length ? (sent || skippedAlreadySent ? "partial" : "failed") : "success",
+      total: byTeacher.size,
+      success: sent + skippedAlreadySent,
+      failed: errors.length,
+      details: errors.join("\n"),
+    }).catch(() => undefined);
+  }
 
   return NextResponse.json({
     ok: errors.length === 0,
     sent,
-    total: byTeacher.size,
+    resent,
+    total: queue.length,
     checked: courses.length,
     skippedNoLine,
     skippedAlreadySent,
     dayOffset,
     targetDate: targetIso,
+    teacherId: onlyTeacherId,
     errors,
   });
 }
