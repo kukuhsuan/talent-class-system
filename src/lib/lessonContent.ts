@@ -141,6 +141,19 @@ const COURSE_DEFAULTS: Record<string, Omit<LessonProfile, "course" | "lesson" | 
       practice: "孩子仍在熟悉球路判斷，會持續用互動遊戲累積經驗。",
     },
   },
+  帶式橄欖球: {
+    theme: "持球跑動與安全攻防",
+    purpose: "透過持球、傳接與拔旗遊戲，建立跑動控制、合作與安全觀念。",
+    movementFocus: ["持球護球跑動", "閃躲變向", "傳接與拔旗"],
+    skillFocus: ["敏捷反應", "團隊合作", "安全意識"],
+    learningPoints: ["練習持球跑動與護球", "建立傳接球默契", "學習以拔旗代替碰撞"],
+    parentSummary: "今天透過帶式橄欖球活動練習持球跑動與傳接球，孩子在拔旗遊戲中累積反應與合作經驗，也學會不推撞的安全規則。",
+    classFeedback: {
+      active: "孩子對跑動與拔旗挑戰很投入，願意嘗試不同跑位。",
+      steady: "孩子能跟著老師完成持球與傳接練習，動作逐漸穩定。",
+      practice: "孩子仍在熟悉閃躲與傳球時機，後續會用小遊戲持續累積。",
+    },
+  },
   冰壺: {
     theme: "推壺控制與目標判斷",
     purpose: "透過推壺活動練習方向、距離感與策略觀察。",

@@ -46,6 +46,7 @@ function courseEmoji(course: string) {
   if (course.includes("棒球")) return "⚾";
   if (course.includes("高爾夫")) return "⛳";
   if (course.includes("羽球")) return "🏸";
+  if (course.includes("橄欖球")) return "🏉";
   if (course.includes("冰壺")) return "🥌";
   if (course.includes("舞蹈")) return "💃";
   return "🌟";
