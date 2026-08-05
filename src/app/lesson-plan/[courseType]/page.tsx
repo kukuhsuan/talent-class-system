@@ -173,7 +173,7 @@ export default function LessonPlanPage() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-3xl pb-16">
+      <div className="mx-auto w-full max-w-6xl pb-16">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="px-5 py-6 text-white sm:px-7 relative" style={{ background: `linear-gradient(135deg, ${palette.fg} 0%, ${palette.fg}CC 100%)` }}>
             <div className="text-xs font-semibold tracking-widest opacity-80">WAYSLEADER AI｜教學課表</div>
@@ -215,7 +215,7 @@ export default function LessonPlanPage() {
               <div className="py-16 text-center text-sm text-slate-400">此課程尚未建立教學課表，請聯繫行政。</div>
             )}
 
-            <ol className="space-y-2.5">
+            <ol className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {rows.map((row) => (
                 <li key={row.lesson}
                   className="rounded-xl border border-slate-100 bg-white p-3 transition-colors hover:border-slate-200 sm:p-4 group relative"
