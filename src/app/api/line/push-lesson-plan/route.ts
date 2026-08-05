@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       title: lp.title || "",
       focus: lp.focus || "",
       skills: lp.skills || [],
+      activityDirection: lp.activityDirection || undefined,
     })),
   };
 

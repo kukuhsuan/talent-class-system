@@ -297,7 +297,7 @@ function stripEmptySections(text: string) {
 export type FlexBlock = { title: string; lines: string[]; color: string; bg: string };
 export type FlexLinkButton = { label: string; url: string; primary?: boolean };
 // 整學期教學課表（第一堂課通知：直接在 LINE 以獨立卡片列出，不用另開連結）
-export type LessonPlanItem = { lesson: number; title: string; focus: string; skills: string[] };
+export type LessonPlanItem = { lesson: number; title: string; focus: string; skills: string[]; activityDirection?: string };
 export type LessonPlanCard = { courseName: string; color: string; bg: string; items: LessonPlanItem[] };
 
 export type BatchRecipientMessage = {
@@ -513,7 +513,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         lessonPlanByCourse.set(
           courseName,
           rows
-            .map((row) => ({ lesson: Number(row.lesson), title: row.title, focus: row.focus, skills: row.skills }))
+            .map((row) => ({ lesson: Number(row.lesson), title: row.title, focus: row.focus, skills: row.skills, activityDirection: row.activityDirection ?? undefined }))
             .sort((a, b) => a.lesson - b.lesson),
         );
       }

@@ -20,7 +20,7 @@ export default async function LessonPlansIndexPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {courseTypes.length === 0 ? (
           <div className="col-span-full py-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-            目前還沒有教案資料，請先前往「系統管理 > 教案庫同步」上傳 CSV 檔案。
+            目前還沒有教案資料，請先前往「系統管理 &gt; 教案庫同步」上傳 CSV 檔案。
           </div>
         ) : (
           courseTypes.map(course => (

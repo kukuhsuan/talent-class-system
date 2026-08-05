@@ -326,6 +326,12 @@ function buildLessonPlanFlex(card: LessonPlanCard) {
               ...(row.focus
                 ? [{ type: "text", text: row.focus, size: "xs", color: "#68778A", wrap: true }]
                 : []),
+              ...(row.activityDirection
+                ? [
+                    { type: "separator", margin: "md" },
+                    { type: "text", text: row.activityDirection.replace(/\\n/g, '\n'), size: "xs", color: "#4A5568", wrap: true }
+                  ]
+                : []),
             ],
           },
         ],
