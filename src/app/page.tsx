@@ -12,7 +12,6 @@ type DashboardStats = {
   todayCourseCount: number;
   todaySubstituteCount: number;
   pendingFillableCount: number;
-  pendingOverdueCount: number;
   pendingSubstituteCount: number;
   pendingSubstitutePastCount: number;
   unboundTeacherCount: number;
@@ -28,7 +27,6 @@ type PendingDetail = {
   teacherLineUserId: string | null;
   time: string;
   missingItems: string[];
-  overdueDays: number;
 };
 type EquipmentItem = {
   id: number;
@@ -59,7 +57,6 @@ const EMPTY_STATS: DashboardStats = {
   todayCourseCount: 0,
   todaySubstituteCount: 0,
   pendingFillableCount: 0,
-  pendingOverdueCount: 0,
   pendingSubstituteCount: 0,
   pendingSubstitutePastCount: 0,
   unboundTeacherCount: 0,
@@ -106,7 +103,6 @@ export default function Home() {
         todayCourseCount: Number(data.todayCourseCount ?? 0),
         todaySubstituteCount: Number(data.todaySubstituteCount ?? 0),
         pendingFillableCount: Number(data.pendingFillableCount ?? 0),
-        pendingOverdueCount: Number(data.pendingOverdueCount ?? 0),
         pendingSubstituteCount: Number(data.pendingSubstituteCount ?? 0),
         pendingSubstitutePastCount: Number(data.pendingSubstitutePastCount ?? 0),
         unboundTeacherCount: Number(data.unboundTeacherCount ?? 0),
@@ -177,7 +173,7 @@ export default function Home() {
   const cards: Array<{ label: string; value: number; href: string; tone: Tone | "default" }> = [
     { label: "今日課程", value: stats.todayCourseCount, href: "/schedule", tone: "info" },
     { label: "今日代課", value: stats.todaySubstituteCount, href: "/substitutes", tone: "info" },
-    { label: "待回報數量", value: stats.pendingFillableCount, href: "/attendance?status=missing", tone: stats.pendingOverdueCount > 0 ? "err" : "warn" },
+    { label: "待回報數量", value: stats.pendingFillableCount, href: "/attendance?status=missing", tone: "warn" },
     // 待指派代課＝這堂課沒有人會去上。已經過去的課一律紅色：那不是還來得及找人，是已經開了天窗。
     { label: "待指派代課", value: stats.pendingSubstituteCount, href: "/attendance?status=unassigned", tone: stats.pendingSubstitutePastCount > 0 ? "err" : stats.pendingSubstituteCount > 0 ? "warn" : "idle" },
     { label: "LINE 未綁定", value: stats.unboundTeacherCount, href: "/notify", tone: "idle" },
@@ -315,16 +311,11 @@ export default function Home() {
         <div className="flex flex-col gap-2 border-b border-amber-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-semibold text-slate-800">待回報明細</h2>
-            <p className="text-sm text-slate-500">
-              近 30 天未回報的課，逾期最久的排在前面。只顯示前 5 筆，完整清單請到上課紀錄查看。
-              {stats.pendingOverdueCount > 0 && (
-                <span className="ml-1 font-medium text-red-600">其中 {stats.pendingOverdueCount} 筆已逾期 3 天以上。</span>
-              )}
-            </p>
+            <p className="text-sm text-slate-500">下課後 48 小時內還沒回報的課，只顯示前 5 筆，完整清單請到上課紀錄查看。</p>
           </div>
           {stats.pendingFillableCount > 5 && (
             <Link href="/attendance?status=missing" className="text-sm font-medium text-amber-700 hover:underline">
-              查看其餘 {stats.pendingFillableCount - 5} 筆待回報
+              查看更多待回報
             </Link>
           )}
         </div>
@@ -352,20 +343,11 @@ export default function Home() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {item.missingItems.map((label) => (
-                      <StatusTag key={label} tone={item.overdueDays >= 3 ? "err" : "warn"} size="sm">{label}</StatusTag>
+                      <StatusTag key={label} tone="warn" size="sm">{label}</StatusTag>
                     ))}
-                    {item.overdueDays >= 3 && (
-                      <StatusTag tone="err" size="sm">逾期 {item.overdueDays} 天</StatusTag>
-                    )}
                   </div>
                   <div className="flex justify-end">
-                    {/* 回報連結下課後 48 小時就失效，逾期再推提醒只會給老師一個打不開的連結，
-                        這時要走後台補登，不是再催一次。 */}
-                    {item.overdueDays >= 2 ? (
-                      <Link href="/attendance?status=missing" className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors">
-                        連結已過期 · 後台補登
-                      </Link>
-                    ) : !hasLine ? (
+                    {!hasLine ? (
                       <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs text-slate-400 cursor-default">
                         老師未綁 LINE
                       </span>

@@ -4,19 +4,23 @@ import { departmentQueryValues } from "@/lib/courseMeta";
 import { courseDateWindowWhere, courseIdsWithAnyAttendance, courseOccursOnIso, dayNameOfIso } from "@/lib/scheduleLogic";
 import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
-import { outstandingReportItems, reportOverdueDays } from "@/lib/reportWindow";
+import { attendanceMissingItems, isPendingReport } from "@/lib/reportWindow";
 import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
 import { automationRunsForDates } from "@/lib/automationHealth";
 
 export const dynamic = "force-dynamic";
 
-const PENDING_REPORT_LOOKBACK_DAYS = 30;
-// 逾期幾天以上要標紅：48 小時補填視窗過了還沒填就是行政要主動追的
-const PENDING_REPORT_ALERT_DAYS = 3;
-// 待指派代課看多遠：往回 30 天（已經開天窗、薪資與請款都不會算的課）、
-// 往後 14 天（還來得及找人）。不設上限的話，暑期營隊匯入後那一大批尚未排課的
+// 首頁待回報只收 48 小時補填視窗內的課，也就是「按提醒老師還打得開連結」的那些。
+// 曾經放寬到 30 天，結果清單被一個月前、連結早就失效的課塞滿，行政按提醒等於發一個
+// 打不開的連結給老師，反而看不到今天真正該追的。逾期未回報要一次看完整清單，
+// 走 /attendance?status=missing，那頁本來就有後台補登。
+// 撈 3 天是給 48 小時視窗加一天時區餘裕，不是清單的長度。
+const PENDING_REPORT_LOOKBACK_DAYS = 3;
+// 待指派代課跟待回報不同，要往回看 30 天：那是已經開過天窗、薪資與請款都不會算的課，
+// 過了 48 小時反而更該被看到。往後只看 14 天，否則暑期營隊匯入的那批尚未排課的
 // 佔位課會把數字灌成幾百筆，行政就不會再看這個提醒了。
+const PENDING_SUBSTITUTE_LOOKBACK_DAYS = 30;
 const PENDING_SUBSTITUTE_AHEAD_DAYS = 14;
 
 // Single endpoint for the home page — replaces 3 separate fetches
@@ -31,10 +35,10 @@ export async function GET(req: NextRequest) {
   const todayDayName = dayNameOfIso(todayIso);
   const todayStart = utcStartOfIsoDay(todayIso);
   const tomorrowStart = utcStartOfNextIsoDay(todayIso);
-  // 待回報往回看 30 天。原本只看 2 天，代表漏回報的課第 4 天起就從首頁消失，
-  // 連假之後回來前面的課已經看不到了；而回報是園所請款與家長溝通的依據。
   const pendingStart = utcStartOfIsoDay(todayIso);
   pendingStart.setUTCDate(pendingStart.getUTCDate() - PENDING_REPORT_LOOKBACK_DAYS);
+  const pendingSubstituteStart = utcStartOfIsoDay(todayIso);
+  pendingSubstituteStart.setUTCDate(pendingSubstituteStart.getUTCDate() - PENDING_SUBSTITUTE_LOOKBACK_DAYS);
   const pendingSubstituteEnd = utcStartOfIsoDay(todayIso);
   pendingSubstituteEnd.setUTCDate(pendingSubstituteEnd.getUTCDate() + PENDING_SUBSTITUTE_AHEAD_DAYS);
 
@@ -107,7 +111,7 @@ export async function GET(req: NextRequest) {
     prisma.attendance.findMany({
       where: {
         cancelled: false,
-        date: { gte: pendingStart, lt: pendingSubstituteEnd },
+        date: { gte: pendingSubstituteStart, lt: pendingSubstituteEnd },
         OR: [
           { actualTeacher: { name: WAITING_TEACHER_NAME } },
           { assistantTeacher: { name: WAITING_TEACHER_NAME } },
@@ -142,16 +146,15 @@ export async function GET(req: NextRequest) {
     return {
       ...item,
       scheduledTime,
-      missingItems: outstandingReportItems(item, scheduledTime),
-      overdueDays: reportOverdueDays(item, scheduledTime),
+      // attendanceMissingItems 只在 48 小時補填視窗內才回傳缺項，逾期的會回空陣列，
+      // 下面的 filter 就自然把它們排除掉——首頁只留「現在提醒老師，老師打得開連結」的課。
+      missingItems: attendanceMissingItems(item, scheduledTime),
+      pendingReport: isPendingReport(item, scheduledTime),
     };
   })
-    // 逾期未回報的課也留下來：補填視窗過了不代表這筆帳可以不追
-    .filter((a) => a.missingItems.length > 0)
-    // 最舊的排前面——擺最久的最需要處理
+    .filter((a) => a.pendingReport)
     .sort((a, b) => a.date.getTime() - b.date.getTime());
   const pendingFillableCount = pendingAttendance.length;
-  const pendingOverdueCount = pendingAttendance.filter((a) => a.overdueDays >= PENDING_REPORT_ALERT_DAYS).length;
   const pendingDetails = pendingAttendance.slice(0, 5).map((a) => ({
     id: a.id,
     school: a.course.school,
@@ -161,7 +164,6 @@ export async function GET(req: NextRequest) {
     teacherLineUserId: a.actualTeacher.lineUserId ?? null,
     time: a.scheduledTime,
     missingItems: a.missingItems,
-    overdueDays: a.overdueDays,
   }));
   const todayCourseIds = new Set(validTodayAttendance.map((a) => a.course.id));
   for (const course of courses) {
@@ -218,7 +220,6 @@ export async function GET(req: NextRequest) {
     todayCourseCount: todayCourseIds.size,
     todaySubstituteCount,
     pendingFillableCount,
-    pendingOverdueCount,
     pendingDetails,
     unboundTeacherCount,
     unnotifiedCount,
