@@ -1,7 +1,7 @@
 import { createHash, randomInt } from "crypto";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requiredAuthSecret } from "@/lib/authSecret";
 
@@ -176,4 +176,28 @@ export async function hasValidPortalSession(req: NextRequest, schoolId: number):
   } catch {
     return false;
   }
+}
+
+/**
+ * 園所端 API 的統一驗證閘門。放行回 null，擋下來回 401 JSON。
+ *
+ * 原本只有 /api/school-portal/[token] 主路由做這件事，底下的 reports、ratings、
+ * summary、photo、certificate 子路由完全沒檢查 —— 等於就算園所已經啟用驗證碼，
+ * 光靠原始連結還是能把月報表、評分與課程照片全部讀走。連結會在 LINE 群組轉貼，
+ * 「有連結」不等於「是園所人員」，所以每一支回傳園所資料的路由都要自己再問一次。
+ *
+ * 豁免規則沿用 portalVerificationRequired：沒產過驗證碼的園所照舊放行，
+ * 否則上線當天所有還沒設定的園所會集體看到 401。這是過渡期的取捨，
+ * 行政把驗證碼補齊後豁免就自動失效。
+ *
+ * 例外：manifest（PWA 設定檔，不含園所資料，且加入主畫面時瀏覽器不帶 cookie）
+ * 與 verify（驗證碼本身的入口）不套用。
+ */
+export async function requirePortalVerification(
+  req: NextRequest,
+  schoolId: number,
+): Promise<NextResponse | null> {
+  if (!(await portalVerificationRequired(schoolId))) return null;
+  if (await hasValidPortalSession(req, schoolId)) return null;
+  return NextResponse.json({ error: "請先完成園所驗證", requiresVerify: true }, { status: 401 });
 }

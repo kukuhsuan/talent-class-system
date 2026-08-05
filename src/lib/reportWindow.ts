@@ -101,16 +101,31 @@ export function attendanceReportWindow(attendance: ReportAttendanceLike, timeTex
   };
 }
 
-export function attendanceMissingItems(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
+// 缺什麼跟「還能不能補」是兩件事。48 小時只決定老師自己還能不能填，
+// 行政的待辦清單必須連逾期未回報的課一起看到——那才是需要追的。
+export function outstandingReportItems(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
   if (attendance.cancelled) return [];
 
   const window = attendanceReportWindow(attendance, timeText, now);
-  if (!window.fillable) return [];
+  if (!window.ended || window.complete) return [];
   if (requiresStudentCount(reportCategory(attendance))) {
     return !hasAttendanceCount(attendance) ? ["缺出席人數"] : [];
   }
   const reportText = (attendance.reportContent ?? "").trim();
   return !reportText || reportText === "正常上課" ? ["缺課程進度"] : [];
+}
+
+// 逾期天數以「下課時間」起算，不是日期，避免當天下午的課一過午夜就被當成逾期 1 天
+export function reportOverdueDays(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
+  const elapsed = now.getTime() - courseEndAt(attendance, timeText).getTime();
+  return elapsed <= 0 ? 0 : Math.floor(elapsed / (24 * 60 * 60 * 1000));
+}
+
+export function attendanceMissingItems(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {
+  if (attendance.cancelled) return [];
+  // 補填視窗內才算「待補填」；逾期的請改用 outstandingReportItems
+  if (!attendanceReportWindow(attendance, timeText, now).fillable) return [];
+  return outstandingReportItems(attendance, timeText, now);
 }
 
 export function isPendingReport(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {

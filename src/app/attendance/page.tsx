@@ -28,6 +28,7 @@ type Attendance = {
   schoolVerifierName?: string;
   schoolSignatureData?: string;
   schoolSignedAt?: string | null;
+  version?: number;
 };
 type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -35,7 +36,8 @@ const today = () => taipeiDateIso();
 const initialStatusFilter = () => {
   if (typeof window === "undefined") return "all";
   const status = new URLSearchParams(window.location.search).get("status");
-  return ["all", "missing", "done", "substitute", "cancelled"].includes(status ?? "") ? status ?? "all" : "all";
+  // unassigned 要能從網址進來：首頁的「待指派代課」紅字就是連到這裡
+  return ["all", "missing", "done", "substitute", "cancelled", "unassigned"].includes(status ?? "") ? status ?? "all" : "all";
 };
 const EMPTY_EQUIPMENT: EquipmentReminderData = {
   isFirstClass: false, needsAssembly: false, equipmentNote: "",
@@ -48,6 +50,9 @@ const EMPTY_FORM = {
   scheduledTime: "", confirmCompleted: false, extraDates: [] as string[],
   equipment: EMPTY_EQUIPMENT,
   expectedStudentCount: "",
+  // 樂觀鎖版本號：按下編輯時記下當下的版本，儲存時原樣送回給後端比對。
+  // 新增時沒有版本可比，維持 null，後端會略過檢查。
+  version: null as number | null,
 };
 
 export default function AttendancePage() {
@@ -156,6 +161,17 @@ export default function AttendancePage() {
         void _x;
         const body = JSON.stringify({ ...rest, studentCount: form.studentCount === "" ? null : Number(form.studentCount) });
         const res = await fetch(`/api/attendance/${editing}`, { method: "PUT", headers, body });
+        // 版本衝突：重載清單，行政才看得到老師剛回報了什麼，而不是把它蓋掉。
+        // 同時把最新版本號寫回表單——只重載清單的話表單還握著舊 version，
+        // 使用者再按一次儲存必然又 409，只能關掉重開。
+        // 這裡認 conflict 旗標而不是 409：薪資鎖定也回 409，那種情況重抓版本沒有意義。
+        if (res.status === 409 && await res.clone().json().then((d) => d?.conflict === true).catch(() => false)) {
+          void loadRecords();
+          void fetch(`/api/attendance/${editing}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((latest) => { if (latest) setForm((prev) => ({ ...prev, version: latest.version ?? null })); })
+            .catch(() => undefined);
+        }
         await ensureOk(res, "上課紀錄儲存失敗");
         showToast("success", "上課紀錄已儲存");
       } else {
@@ -259,7 +275,7 @@ export default function AttendancePage() {
   };
 
   const edit = (r: Attendance) => {
-    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [], expectedStudentCount: r.expectedStudentCount?.toString() ?? "", equipment: r.equipment ? { isFirstClass: Boolean(r.equipment.isFirstClass), needsAssembly: Boolean(r.equipment.needsAssembly), equipmentNote: r.equipment.equipmentNote ?? "", needsTransferAfterClass: Boolean(r.equipment.needsTransferAfterClass), nextSchoolName: r.equipment.nextSchoolName ?? "", nextClassDate: r.equipment.nextClassDate ?? "", nextCourseType: r.equipment.nextCourseType ?? "", nextAddress: r.equipment.nextAddress ?? "", transferNote: r.equipment.transferNote ?? "", status: r.equipment.status || "待確認" } : EMPTY_EQUIPMENT });
+    setForm({ date: r.date.slice(0, 10), courseId: r.course.id, actualTeacherId: r.actualTeacher.id, assistantTeacherId: r.assistantTeacherId ?? r.course.assistantTeacherId ?? null, studentCount: r.studentCount?.toString() ?? "", cancelled: r.cancelled, cancelReason: r.cancelReason ?? "", makeupDate: r.makeupDate?.slice(0, 10) ?? "", makeupDone: r.makeupDone ?? false, category: normalizeCategory(r.category), hours: r.hours, notes: r.notes, scheduledTime: r.scheduledTime ?? "", confirmCompleted: Boolean(r.reportContent?.trim()), extraDates: [], expectedStudentCount: r.expectedStudentCount?.toString() ?? "", equipment: r.equipment ? { isFirstClass: Boolean(r.equipment.isFirstClass), needsAssembly: Boolean(r.equipment.needsAssembly), equipmentNote: r.equipment.equipmentNote ?? "", needsTransferAfterClass: Boolean(r.equipment.needsTransferAfterClass), nextSchoolName: r.equipment.nextSchoolName ?? "", nextClassDate: r.equipment.nextClassDate ?? "", nextCourseType: r.equipment.nextCourseType ?? "", nextAddress: r.equipment.nextAddress ?? "", transferNote: r.equipment.transferNote ?? "", status: r.equipment.status || "待確認" } : EMPTY_EQUIPMENT, version: r.version ?? null });
     setEditing(r.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -289,7 +305,10 @@ export default function AttendancePage() {
   };
   const isMissingReport = (r: Attendance) => Boolean(r.pendingReport);
   const isSubstitute = (r: Attendance) => Boolean(r.substitutes?.some((record) => record.role === "主教"));
-  const isUnassigned = (r: Attendance) => r.actualTeacher.name === WAITING_TEACHER;
+  const isUnassignedLead = (r: Attendance) => r.actualTeacher.name === WAITING_TEACHER;
+  // 助教欄位掛著待排老師也算待指派：助教請假核准後就是這個狀態，
+  // 只看主教的話這堂課少一個人也不會有人知道。
+  const isUnassigned = (r: Attendance) => isUnassignedLead(r) || r.assistantTeacher?.name === WAITING_TEACHER;
   const statusLabel = (r: Attendance) => {
     if (r.cancelled) return "停課";
     if (!isCountRequired(r)) return isReportComplete(r) ? "出課完成" : "待確認出課";
@@ -330,7 +349,10 @@ export default function AttendancePage() {
     { key: "done", label: "已回報", count: filteredByControls.filter(isReportComplete).length, className: "bg-green-50 text-green-700 border-green-100" },
     { key: "substitute", label: "代課", count: filteredByControls.filter(isSubstitute).length, className: "bg-orange-50 text-orange-700 border-orange-100" },
     { key: "cancelled", label: "停課", count: filteredByControls.filter((r) => r.cancelled).length, className: "bg-red-50 text-red-700 border-red-100" },
-    ...(unassignedCount > 0 ? [{ key: "unassigned", label: "⚠ 待指派老師", count: unassignedCount, className: "bg-rose-50 text-rose-700 border-rose-200" }] : []),
+    // 正在看這個分頁時一定要留著這顆按鈕，否則從首頁連進來會看到一個沒有任何分頁被選取的畫面
+    ...(unassignedCount > 0 || statusFilter === "unassigned"
+      ? [{ key: "unassigned", label: "⚠ 待指派老師", count: unassignedCount, className: "bg-rose-50 text-rose-700 border-rose-200" }]
+      : []),
   ];
   const schoolOptions = [...new Set(courses.map((r) => r.school).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
   const schoolFilterOptions = schoolOptions.map((school) => ({
@@ -702,7 +724,7 @@ export default function AttendancePage() {
                             <div>
                               <div className="font-semibold text-slate-900">{fmtShort(r.date)}</div>
                               <div className="mt-1 text-sm text-slate-600">{courseLabel(r.course.courseType)}｜{isUnassigned(r) ? <span className="font-semibold text-rose-600">⚠ 待指派老師</span> : `主教 ${r.actualTeacher.name}`}</div>
-                              {!isUnassigned(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
+                              {!isUnassignedLead(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教 {(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                             </div>
                             <span className={`rounded-full px-2 py-1 text-xs ${
                               r.cancelled ? "bg-red-100 text-red-600"
@@ -760,7 +782,7 @@ export default function AttendancePage() {
                                   ? <div className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">⚠ 待指派老師</div>
                                   : <div className={substitute ? "font-medium text-orange-700" : "text-slate-700"}>{r.actualTeacher.name}</div>
                                 }
-                                {!isUnassigned(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教：{(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
+                                {!isUnassignedLead(r) && (r.assistantTeacher || r.course.assistantTeacher) && <div className="mt-1 text-xs text-blue-600">助教：{(r.assistantTeacher ?? r.course.assistantTeacher)?.name}</div>}
                                 {!isUnassigned(r) && substitute && <div className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                               </td>
                               <td className="px-4 py-4 text-center">

@@ -9,6 +9,12 @@ import { hasValidPortalSession } from "@/lib/portalAuth";
 export const dynamic = "force-dynamic";
 
 // 輕量摘要 API：園所名稱/類型＋待辦數（安親班端首次載入用，避免一次抓整包資料）
+//
+// 這支刻意「不」套 requirePortalVerification：前端要先打它拿到 verified 旗標，
+// 才知道該不該跳驗證碼輸入框。擋掉它等於整個驗證流程進不去。
+// 代價是園所名稱、類型與兩個待辦數字仍可從原始連結讀到 —— 這是已知且可接受的最小揭露，
+// 真正的內容（成果、照片、評分明細、證書）都在有擋的子路由後面。
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;

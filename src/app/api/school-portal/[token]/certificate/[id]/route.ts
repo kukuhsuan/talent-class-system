@@ -1,11 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
+import { requirePortalVerification } from "@/lib/portalAuth";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ token: string; id: string }> }) {
+// 型別從 Request 改成 NextRequest：驗證要讀 cookie，而且 Next 執行期本來就是 NextRequest
+export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string; id: string }> }) {
   try {
     const { token, id } = await params;
-    const { schoolId } = await resolveSchoolPortalParam(token, _req);
+    const { schoolId } = await resolveSchoolPortalParam(token, req);
+    // 證書帶孩子姓名與評語，屬於未成年人個資
+    const unverified = await requirePortalVerification(req, schoolId);
+    if (unverified) return unverified;
     const assessment = await prisma.kindergartenAssessment.findUnique({
       where: { id: Number(id) },
       include: { attendance: { include: { course: true, actualTeacher: true } } },

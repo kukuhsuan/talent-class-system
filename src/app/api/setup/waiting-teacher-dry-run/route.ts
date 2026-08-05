@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizeDepartment } from "@/lib/courseMeta";
 import { prisma } from "@/lib/prisma";
 import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
+import { OPEN_LEAVE_STATUSES } from "@/lib/leaveStatus";
 
 const DEPARTMENT = "安親班";
 const CONFIRM_REPAIR = "repair-all-after-school-waiting-teachers";
@@ -12,6 +13,7 @@ function skipReasons(item: {
   unlocked: boolean;
   notCancelled: boolean;
   hasNoSubstitute: boolean;
+  hasNoOpenLeave: boolean;
 }) {
   return [
     ...(!item.courseHasFormalTeacher ? ["Course老師仍為待排老師"] : []),
@@ -19,6 +21,7 @@ function skipReasons(item: {
     ...(!item.unlocked ? ["已鎖薪"] : []),
     ...(!item.notCancelled ? ["已取消"] : []),
     ...(!item.hasNoSubstitute ? ["已有代課紀錄"] : []),
+    ...(!item.hasNoOpenLeave ? ["仍有未結案的請假單"] : []),
   ];
 }
 
@@ -37,6 +40,10 @@ async function scanWaitingTeacherAttendances() {
       reportSentAt: true,
       cancelled: true,
       substitutes: { select: { id: true, role: true } },
+      // 核准請假後課會被標成「待排老師」等指派代課。這支修復程式的用途是把
+      // 匯入後忘記排課的課還給課程主檔老師——如果連請假中的課也一起還回去，
+      // 等於把課塞回一個人不在的老師身上，而且首頁的待指派提醒會同時消失。
+      leaveRequests: { where: { status: { in: OPEN_LEAVE_STATUSES } }, select: { id: true, status: true } },
       course: {
         select: {
           code: true,
@@ -59,6 +66,7 @@ async function scanWaitingTeacherAttendances() {
       unlocked: !row.isPayrollLocked,
       notCancelled: !row.cancelled,
       hasNoSubstitute: row.substitutes.length === 0,
+      hasNoOpenLeave: row.leaveRequests.length === 0,
     };
     const reasons = skipReasons(conditions);
     return {
@@ -138,6 +146,8 @@ export async function POST(req: NextRequest) {
         reportContent: "",
         reportSentAt: null,
         substitutes: { none: {} },
+        // 掃描到執行之間可能剛好有人請假被核准，這裡再擋一次
+        leaveRequests: { none: { status: { in: OPEN_LEAVE_STATUSES } } },
         course: {
           department: item.courseDepartment,
           teacherId: item.expectedTeacherId,

@@ -231,6 +231,9 @@ model SalaryAdjustment {
   createdBy   String    @default("")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  // 樂觀鎖版本號，每次更新自動 +1（見 src/lib/prisma.ts 的 client extension）。
+  // 兩個行政同時開同一筆補發、後存的人會蓋掉先存的人改的金額，而且雙方都看不出來發生過。
+  version     Int       @default(0)
 
   @@index([teacherId, payoutMonth])
   @@index([payoutMonth])
@@ -265,6 +268,9 @@ model Course {
   isActive           Boolean                   @default(true)
   notes              String                    @default("")
   createdAt          DateTime                  @default(now())
+  // 樂觀鎖版本號，每次更新自動 +1（見 src/lib/prisma.ts 的 client extension）。
+  // 課程主檔一改就會連帶重排出勤、同步老師，被覆蓋的話錯的不只是這一列。
+  version            Int                       @default(0)
   attendances        Attendance[]
   scheduleExceptions CourseScheduleException[]
   leaveRequests      TeacherLeaveRequest[]
@@ -334,6 +340,10 @@ model Attendance {
   aiSkillFocus         String                      @default("")
   aiTeachingNote       String                      @default("")
   createdAt            DateTime                    @default(now())
+  // 樂觀鎖版本號，每次更新自動 +1（見 src/lib/prisma.ts 的 client extension）。
+  // 同一堂課會被老師 LINE 回報、行政後台編輯、代課流程三邊同時寫；
+  // 行政開著舊表單按儲存，會把老師剛回報的人數與內容整段蓋掉。
+  version              Int                         @default(0)
   assessments          KindergartenAssessment[]
   substitutes          Substitute[]
   leaveRequests        TeacherLeaveRequest[]

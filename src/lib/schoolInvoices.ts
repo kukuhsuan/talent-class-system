@@ -9,6 +9,7 @@ import {
   type SchoolInvoiceBrand,
 } from "@/lib/schoolInvoiceConfig";
 import { ensureSchoolBillingProfileTable } from "@/lib/schoolBillingProfile";
+import { WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 
 const MONTH_LABELS = ["", "一月份", "二月份", "三月份", "四月份", "五月份", "六月份", "七月份", "八月份", "九月份", "十月份", "十一月份", "十二月份"];
 export const BILLING_TYPES = ["perClass", "perPerson"] as const;
@@ -347,6 +348,10 @@ export async function buildSchoolInvoicePreview(input: {
     where: {
       OR: monthRanges.map(({ start, end }) => ({ date: { gte: start, lt: end } })),
       cancelled: false,
+      // 掛在「待排老師」佔位帳號上的課代表還沒指派到人：核准請假後沒找到代課，
+      // 或是匯入後還沒排課。沒有人去上的課不能向園所請款——這種帳單寄出去賠上的是信任。
+      // 這些課不會無聲消失：首頁的「待指派代課」紅字與代課懸空告警都會把它們叫出來。
+      actualTeacher: { name: { not: WAITING_TEACHER_NAME } },
       course: {
         OR: [
           { schoolId: input.schoolId },

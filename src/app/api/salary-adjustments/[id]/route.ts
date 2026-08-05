@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { SALARY_ROLES, requireRole } from "@/lib/permissions";
 import { getPayrollRun } from "@/lib/payrollRun";
+import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
 
 // M14：發放月已結算鎖定 → 調整不可增刪改（快照不會反映，會造成帳實不符）
 async function payoutMonthLocked(payoutMonth: string) {
@@ -19,13 +20,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!current) return NextResponse.json({ error: "補發紀錄不存在" }, { status: 404 });
   if (await payoutMonthLocked(current.payoutMonth)) return NextResponse.json({ error: `${current.payoutMonth} 已結算鎖定，不可修改調整` }, { status: 409 });
   const isPaid = data.isPaid === undefined ? current.isPaid : Boolean(data.isPaid);
-  const record = await prisma.salaryAdjustment.update({ where: { id: current.id }, data: {
-    ...(data.type !== undefined ? { type: String(data.type) } : {}),
-    ...(data.amount !== undefined ? { amount: Number(data.amount) } : {}),
-    ...(data.reason !== undefined ? { reason: String(data.reason).trim() } : {}),
-    ...(data.notes !== undefined ? { notes: String(data.notes).trim() } : {}),
-    isPaid, paidAt: isPaid ? current.paidAt ?? new Date() : null,
-  } });
+  // 樂觀鎖：金額被兩個人各改一次時，後存的會靜靜蓋掉前一個人，帳目對不起來也查不出是誰改的
+  const expectedVersion = parseExpectedVersion(data.version);
+  if (expectedVersion === null) return invalidVersionResponse();
+  const record = await prisma.salaryAdjustment.update({
+    where: versionWhere({ id: current.id }, expectedVersion),
+    data: {
+      ...(data.type !== undefined ? { type: String(data.type) } : {}),
+      ...(data.amount !== undefined ? { amount: Number(data.amount) } : {}),
+      ...(data.reason !== undefined ? { reason: String(data.reason).trim() } : {}),
+      ...(data.notes !== undefined ? { notes: String(data.notes).trim() } : {}),
+      isPaid, paidAt: isPaid ? current.paidAt ?? new Date() : null,
+    },
+    // 上面剛查到這筆紀錄，這裡卻找不到（P2025），只可能是 version 條件不成立
+  }).catch((error: unknown) => {
+    if (isRecordNotFound(error)) return null;
+    throw error;
+  });
+  if (!record) return versionConflictResponse();
   await writeAuditLog(req, {
     action: "update",
     targetType: "SalaryAdjustment",
@@ -52,7 +64,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!current) return NextResponse.json({ error: "補發紀錄不存在" }, { status: 404 });
   if (current.isPaid) return NextResponse.json({ error: "已付款紀錄不可刪除，請先取消付款標記" }, { status: 409 });
   if (await payoutMonthLocked(current.payoutMonth)) return NextResponse.json({ error: `${current.payoutMonth} 已結算鎖定，不可刪除調整` }, { status: 409 });
-  await prisma.salaryAdjustment.delete({ where: { id: current.id } });
+  // 刪除同樣要驗版本：別人可能剛把它改成已付款，這裡照刪就是把一筆已發的錢從帳上抹掉
+  const expectedVersion = parseExpectedVersion(req.nextUrl.searchParams.get("version"));
+  if (expectedVersion === null) return invalidVersionResponse();
+  const removed = await prisma.salaryAdjustment.deleteMany({ where: versionWhere({ id: current.id }, expectedVersion) });
+  if (removed.count === 0) return versionConflictResponse();
   await writeAuditLog(req, {
     action: "delete",
     targetType: "SalaryAdjustment",

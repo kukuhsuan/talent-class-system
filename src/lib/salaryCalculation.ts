@@ -39,6 +39,8 @@ export type SalaryAdjustmentRow = {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  // 樂觀鎖版本號，薪資頁刪除調整時要原樣帶回後端比對（見 src/lib/optimisticLock.ts）
+  version: number;
 };
 
 type TeacherRow = {

@@ -35,12 +35,17 @@ export async function GET(req: NextRequest) {
     const school = params.get("school") ?? "";
     const conditions = ["1=1"];
     const args: unknown[] = [];
+    // a.date 是 Attendance.date，Prisma 在 SQLite 存成整數毫秒。
+    // strftime 收到數值參數時會當成儒略日，1754352000000 遠超範圍 → 回傳 NULL，
+    // 永遠不等於 "2026" 或 "08"，所以年份與月份篩選從來沒有篩到任何一筆
+    //（不帶篩選時正常，這也是為什麼一直沒被發現）。
+    // 先除以 1000 再用 'unixepoch' 轉成真正的日期。
     if (year) {
-      conditions.push("strftime('%Y', a.date) = ?");
+      conditions.push("strftime('%Y', a.date / 1000, 'unixepoch') = ?");
       args.push(year);
     }
     if (month) {
-      conditions.push("strftime('%m', a.date) = ?");
+      conditions.push("strftime('%m', a.date / 1000, 'unixepoch') = ?");
       args.push(String(month).padStart(2, "0"));
     }
     if (school) {

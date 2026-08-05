@@ -24,15 +24,28 @@ type Params = { token: string } | Promise<{ token: string }>;
 const PUBLIC_UPLOAD_LIMIT_PER_HOUR = 12;
 
 // Teacher.name 是唯一鍵，稽核紀錄的 actorName 就是老師本人，拿來當計數依據夠穩定
+//
+// 這裡原本傳 toISOString()（"2026-08-04T11:34:56.000Z"）去比 AuditLog.createdAt。
+// AuditLog 雖然在 schema.prisma 裡有 model，實際卻是 ensureAuditLogStorage() 建表、
+// insertAuditLog() 不寫 createdAt，所以值一律是 SQLite CURRENT_TIMESTAMP 的
+// "2026-08-04 12:34:56"。兩個都是 TEXT，但第 11 個字元 ' '(0x20) < 'T'(0x54)，
+// 同一天的紀錄永遠排在 ISO 字串前面 → 條件恆為 false → 計數恆為 0，
+// 這個每小時 12 次的公開上傳頻率限制等於從來沒有生效過。
+// 改成用 SQLite 自己的格式（UTC，和 CURRENT_TIMESTAMP 一致）比對。
 async function recentUploadCount(teacherName: string) {
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
   const rows = await prisma.$queryRawUnsafe<Array<{ total: number }>>(
     `SELECT COUNT(*) as total FROM "AuditLog"
       WHERE "targetType" = 'TeacherDocument' AND "actorRole" = 'teacher_public_link'
         AND "action" = 'create' AND "actorName" = ? AND "createdAt" >= ?`,
     teacherName,
     since,
-  ).catch(() => []);
+  ).catch((error) => {
+    // 原本是靜默 .catch(() => [])，正是這個 bug 活這麼久沒被發現的原因。
+    // 仍然放行（查詢壞掉不該讓老師補不了件），但至少要留下痕跡。
+    console.error("[teacher-documents] 上傳頻率計數失敗，本次放行：", error);
+    return [] as Array<{ total: number }>;
+  });
   return Number(rows[0]?.total ?? 0);
 }
 

@@ -8,6 +8,7 @@ import { coursePayrollHoursForAttendance, coursePayrollHoursMap, parsePayrollHou
 import { recurrenceFields } from "@/lib/courseRecurrence";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
+import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
 
 // GET /api/courses/[id] — returns single course with scheduledDates (for edit form)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -77,6 +78,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         { status: 409 },
       );
     }
+    // 先確認課程真的存在，下面才能把更新時的 P2025 一律解讀成「版本過期」
+    if (!currentCourse) return NextResponse.json({ error: "找不到課程" }, { status: 404 });
 
     const scheduled: string[] = Array.isArray(scheduledDates)
       ? [...new Set((scheduledDates as string[]).map((d) => String(d).trim().slice(0, 10)).filter(Boolean))]
@@ -104,8 +107,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const timeChanged = String(currentCourse?.time ?? "") !== newTime;
     const payrollChanged = (oldPayrollHours ?? null) !== (payrollHours ?? null);
 
+    // 樂觀鎖：課程一存下去會連帶重排出勤、同步主教助教、刪掉多餘日期。
+    // 兩個人拿著不同版本的排課表各存一次，後者不只覆蓋欄位，還會照著自己的日期清單
+    // 把對方剛建好的堂次砍掉——那些堂次的回報與代課紀錄都會跟著消失。
+    const expectedVersion = parseExpectedVersion(data.version);
+    if (expectedVersion === null) return invalidVersionResponse();
     const course = await prisma.course.update({
-      where: { id: courseId },
+      where: versionWhere({ id: courseId }, expectedVersion),
       data: {
         code,
         region: normalizeRegion(selectedSchool.region || data.region),
@@ -125,7 +133,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         notes: notesWithCourseTerm(data.notes, data.academicTermOverride),
       },
       include: { teacher: true, assistantTeacher: true },
+      // 只有這一行的 P2025 才代表版本過期。原本靠外層 catch 判斷，但底下的
+      // writeAuditLog、重排出勤、清理多餘日期若丟出同樣的錯，會被誤報成「請重新載入」，
+      // 而課程其實已經存檔了——使用者照著提示重載再存一次，出勤就會被重排第二次。
+    }).catch((error: unknown) => {
+      if (isRecordNotFound(error)) return null;
+      throw error;
     });
+    if (!course) return versionConflictResponse("這門課剛被其他人修改過");
     await setCoursePayrollHours(course.id, payrollHours);
     await writeAuditLog(req, {
       action: "update",

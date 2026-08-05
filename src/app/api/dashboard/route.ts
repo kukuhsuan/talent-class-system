@@ -4,12 +4,20 @@ import { departmentQueryValues } from "@/lib/courseMeta";
 import { courseDateWindowWhere, courseIdsWithAnyAttendance, courseOccursOnIso, dayNameOfIso } from "@/lib/scheduleLogic";
 import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
-import { attendanceMissingItems, isPendingReport } from "@/lib/reportWindow";
-import { isWaitingTeacherName } from "@/lib/teacherAssignment";
+import { outstandingReportItems, reportOverdueDays } from "@/lib/reportWindow";
+import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
 import { automationRunsForDates } from "@/lib/automationHealth";
 
 export const dynamic = "force-dynamic";
+
+const PENDING_REPORT_LOOKBACK_DAYS = 30;
+// 逾期幾天以上要標紅：48 小時補填視窗過了還沒填就是行政要主動追的
+const PENDING_REPORT_ALERT_DAYS = 3;
+// 待指派代課看多遠：往回 30 天（已經開天窗、薪資與請款都不會算的課）、
+// 往後 14 天（還來得及找人）。不設上限的話，暑期營隊匯入後那一大批尚未排課的
+// 佔位課會把數字灌成幾百筆，行政就不會再看這個提醒了。
+const PENDING_SUBSTITUTE_AHEAD_DAYS = 14;
 
 // Single endpoint for the home page — replaces 3 separate fetches
 // Returns the compact data needed by the home page.
@@ -23,15 +31,19 @@ export async function GET(req: NextRequest) {
   const todayDayName = dayNameOfIso(todayIso);
   const todayStart = utcStartOfIsoDay(todayIso);
   const tomorrowStart = utcStartOfNextIsoDay(todayIso);
+  // 待回報往回看 30 天。原本只看 2 天，代表漏回報的課第 4 天起就從首頁消失，
+  // 連假之後回來前面的課已經看不到了；而回報是園所請款與家長溝通的依據。
   const pendingStart = utcStartOfIsoDay(todayIso);
-  pendingStart.setUTCDate(pendingStart.getUTCDate() - 2);
+  pendingStart.setUTCDate(pendingStart.getUTCDate() - PENDING_REPORT_LOOKBACK_DAYS);
+  const pendingSubstituteEnd = utcStartOfIsoDay(todayIso);
+  pendingSubstituteEnd.setUTCDate(pendingSubstituteEnd.getUTCDate() + PENDING_SUBSTITUTE_AHEAD_DAYS);
 
   const deptFilter = dept ? { department: { in: departmentQueryValues(dept) } } : {};
   const todayCourseWindow = courseDateWindowWhere(todayIso);
 
   // 首頁所有獨立資料一次平行讀取，避免先等主要資料、再依序等器材與排程健康度，
   // 冷啟動時可少掉兩段資料庫往返。
-  const [courses, todayAttendance, pendingCandidates, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups, automationRuns] = await Promise.all([
+  const [courses, todayAttendance, pendingCandidates, pendingSubstituteRows, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups, automationRuns] = await Promise.all([
     prisma.course.findMany({
       where: { isActive: true, ...todayCourseWindow, ...deptFilter },
       select: {
@@ -90,6 +102,20 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { date: "asc" },
     }),
+    // 待指派代課：課還掛在「待排老師」佔位帳號上，代表沒有人會去上這堂課。
+    // 這種課薪資不會算、園所也不會請款，行政沒看到就是直接開天窗。
+    prisma.attendance.findMany({
+      where: {
+        cancelled: false,
+        date: { gte: pendingStart, lt: pendingSubstituteEnd },
+        OR: [
+          { actualTeacher: { name: WAITING_TEACHER_NAME } },
+          { assistantTeacher: { name: WAITING_TEACHER_NAME } },
+        ],
+        ...(dept ? { course: { department: { in: departmentQueryValues(dept) } } } : {}),
+      },
+      select: { id: true, date: true },
+    }),
     prisma.teacher.count(),
     prisma.teacher.count({ where: { lineUserId: null } }),
     courseIdsWithAnyAttendance({ isActive: true, ...todayCourseWindow, ...deptFilter }, todayStart),
@@ -115,13 +141,17 @@ export async function GET(req: NextRequest) {
     });
     return {
       ...item,
-      missingItems: attendanceMissingItems(item, scheduledTime),
-      pendingReport: isPendingReport(item, scheduledTime),
+      scheduledTime,
+      missingItems: outstandingReportItems(item, scheduledTime),
+      overdueDays: reportOverdueDays(item, scheduledTime),
     };
   })
-    .filter((a) => a.pendingReport)
+    // 逾期未回報的課也留下來：補填視窗過了不代表這筆帳可以不追
+    .filter((a) => a.missingItems.length > 0)
+    // 最舊的排前面——擺最久的最需要處理
     .sort((a, b) => a.date.getTime() - b.date.getTime());
   const pendingFillableCount = pendingAttendance.length;
+  const pendingOverdueCount = pendingAttendance.filter((a) => a.overdueDays >= PENDING_REPORT_ALERT_DAYS).length;
   const pendingDetails = pendingAttendance.slice(0, 5).map((a) => ({
     id: a.id,
     school: a.course.school,
@@ -129,17 +159,9 @@ export async function GET(req: NextRequest) {
     date: a.date.toISOString().slice(0, 10),
     teacherName: a.actualTeacher.name,
     teacherLineUserId: a.actualTeacher.lineUserId ?? null,
-    time: effectiveAttendanceTime({
-      courseTime: a.course.time,
-      attendanceHours: a.hours,
-      isPayrollLocked: a.isPayrollLocked,
-      reportContent: a.reportContent,
-      reportSentAt: a.reportSentAt,
-      studentCount: a.studentCount,
-      studentCountA: a.studentCountA,
-      studentCountB: a.studentCountB,
-    }),
+    time: a.scheduledTime,
     missingItems: a.missingItems,
+    overdueDays: a.overdueDays,
   }));
   const todayCourseIds = new Set(validTodayAttendance.map((a) => a.course.id));
   for (const course of courses) {
@@ -184,12 +206,19 @@ export async function GET(req: NextRequest) {
     ranAt: run.ranAt instanceof Date ? run.ranAt.toISOString() : String(run.ranAt),
   }));
 
+  // 已經過去卻還沒指派的課要單獨標出來：那不是「還來得及找人」，是已經開過天窗了
+  const pendingSubstituteCount = pendingSubstituteRows.length;
+  const pendingSubstitutePastCount = pendingSubstituteRows.filter((row) => row.date < todayStart).length;
+
   return NextResponse.json({
     equipment,
     automationHealth,
+    pendingSubstituteCount,
+    pendingSubstitutePastCount,
     todayCourseCount: todayCourseIds.size,
     todaySubstituteCount,
     pendingFillableCount,
+    pendingOverdueCount,
     pendingDetails,
     unboundTeacherCount,
     unnotifiedCount,

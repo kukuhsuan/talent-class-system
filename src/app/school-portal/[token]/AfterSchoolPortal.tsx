@@ -363,7 +363,9 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
   );
 }
 
-function OutcomesTab({ token, schoolName, year, month }: { token: string; schoolName: string; year: number; month: number }) {
+// onNeedVerify：/reports 現在也會擋驗證（見 api/school-portal/[token]/reports），
+// 收到 401 requiresVerify 時要跳輸入框並在驗證完自動重載，不能只丟一句「載入失敗」
+function OutcomesTab({ token, schoolName, year, month, onNeedVerify }: { token: string; schoolName: string; year: number; month: number; onNeedVerify: (retry: () => void) => void }) {
   const [data, setData] = useState<ReportsResponse | null>(null);
   const [items, setItems] = useState<ReportItem[]>([]);
   const [course, setCourse] = useState("");
@@ -372,7 +374,8 @@ function OutcomesTab({ token, schoolName, year, month }: { token: string; school
   const [error, setError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (offset: number) => {
+  // 明確標註型別：函式體內要遞迴呼叫自己（驗證完重載），否則 TS 推不出型別
+  const load: (offset: number) => Promise<void> = useCallback(async (offset: number) => {
     const key = `${token}:reports:${year}-${month}:${course}:${offset}`;
     const cached = offset === 0 ? cacheGet<ReportsResponse>(key) : null;
     if (cached) { setData(cached); setItems(cached.items); setLoading(false); setError(""); return; }
@@ -386,6 +389,7 @@ function OutcomesTab({ token, schoolName, year, month }: { token: string; school
       if (course) query.set("course", course);
       const res = await fetch(`/api/school-portal/${encodeURIComponent(token)}/reports?${query}`, { signal: controller.signal });
       const body = await res.json().catch(() => ({}));
+      if (res.status === 401 && body.requiresVerify) { onNeedVerify(() => { void load(offset); }); return; }
       if (!res.ok) throw new Error(body.error || "載入失敗");
       const response = body as ReportsResponse;
       setData(response);
@@ -394,7 +398,7 @@ function OutcomesTab({ token, schoolName, year, month }: { token: string; school
     } catch (err) {
       if ((err as Error).name !== "AbortError") setError((err as Error).message);
     } finally { setLoading(false); setLoadingMore(false); }
-  }, [token, year, month, course]);
+  }, [token, year, month, course, onNeedVerify]);
 
   useEffect(() => { load(0); return () => abortRef.current?.abort(); }, [load]);
 
@@ -714,13 +718,14 @@ function ChangesTab({ token, onNeedVerify, onSubmitted }: { token: string; onNee
 }
 
 /* ---------- 評分分頁 ---------- */
-function RatingsTab({ token, onCounts }: { token: string; onCounts: (pending: number) => void }) {
+function RatingsTab({ token, onCounts, onNeedVerify }: { token: string; onCounts: (pending: number) => void; onNeedVerify: (retry: () => void) => void }) {
   const [data, setData] = useState<RatingsResponse | null>(null);
   const [view, setView] = useState<"pending" | "completed">("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  // 同 OutcomesTab：/ratings 現在會擋驗證，遞迴呼叫自己所以要標型別
+  const load: () => Promise<void> = useCallback(async () => {
     const key = `${token}:ratings`;
     const cached = cacheGet<RatingsResponse>(key);
     if (cached) { setData(cached); onCounts(cached.pending.length); setLoading(false); return; }
@@ -728,12 +733,13 @@ function RatingsTab({ token, onCounts }: { token: string; onCounts: (pending: nu
     try {
       const res = await fetch(`/api/school-portal/${encodeURIComponent(token)}/ratings`);
       const body = await res.json().catch(() => ({}));
+      if (res.status === 401 && body.requiresVerify) { onNeedVerify(() => { void load(); }); return; }
       if (!res.ok) throw new Error(body.error || "載入失敗");
       setData(body as RatingsResponse);
       cacheSet(key, body);
       onCounts((body as RatingsResponse).pending.length);
     } catch (err) { setError((err as Error).message); } finally { setLoading(false); }
-  }, [token, onCounts]);
+  }, [token, onCounts, onNeedVerify]);
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="space-y-3"><SkeletonCard /><SkeletonCard /></div>;
@@ -795,6 +801,9 @@ export default function AfterSchoolPortal({ token, summary }: { token: string; s
   const [pendingRatings, setPendingRatings] = useState(summary.pendingRatings);
   const [, setProcessingChanges] = useState(summary.processingChanges);
   const [verifyRetry, setVerifyRetry] = useState<{ retry: () => void } | null>(null);
+  // 必須是穩定的 reference：各分頁的 load 把它列進 useCallback 依賴，
+  // 每次 render 都給新函式會讓 useEffect 反覆觸發，變成無限重載
+  const needVerify = useCallback((retry: () => void) => setVerifyRetry({ retry }), []);
 
   // 品牌：分頁標題與 PWA manifest 都用運動班長
   useEffect(() => {
@@ -864,15 +873,15 @@ export default function AfterSchoolPortal({ token, summary }: { token: string; s
 
       {/* 內容 */}
       <main className="mx-auto max-w-[1040px] px-4 pb-28 pt-4 lg:pb-10">
-        {tab === "outcomes" && <OutcomesTab token={token} schoolName={summary.school.name} year={year} month={month} />}
+        {tab === "outcomes" && <OutcomesTab token={token} schoolName={summary.school.name} year={year} month={month} onNeedVerify={needVerify} />}
         {tab === "changes" && (
           <ChangesTab
             token={token}
-            onNeedVerify={(retry) => setVerifyRetry({ retry })}
+            onNeedVerify={needVerify}
             onSubmitted={() => setProcessingChanges((n) => n + 1)}
           />
         )}
-        {tab === "ratings" && <RatingsTab token={token} onCounts={setPendingRatings} />}
+        {tab === "ratings" && <RatingsTab token={token} onCounts={setPendingRatings} onNeedVerify={needVerify} />}
         <footer className="mt-8 pb-2 text-center text-[12px] text-[#64748B]">運動班長｜系統技術支援：WaysLeader AI</footer>
       </main>
 

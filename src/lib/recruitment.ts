@@ -151,6 +151,9 @@ export async function listRecruitmentReferrals(filters: { campaign?: string; ref
     args.push(`%${filters.referrer.trim()}%`);
   }
   if (filters.date?.trim()) {
+    // 這裡的 substr 是對的，別跟著 Attendance.date 一起改：RecruitmentReferral 是執行期
+    // CREATE TABLE 建的，createdAt 一律由 SQLite 的 CURRENT_TIMESTAMP 寫入純文字
+    // （"2026-08-04 12:34:56"），不是 Prisma 的整數毫秒。
     where.push("substr(r.createdAt, 1, 10) = ?");
     args.push(filters.date.slice(0, 10));
   }

@@ -43,6 +43,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       role: leave.role,
       confirmed: true,
       notes: [`由請假申請 #${leave.id} 手動指定代課`, notes].filter(Boolean).join("｜"),
+      // 這支下面自己會通知代課老師與其他候選人，交給 assignSubstitute 會變成同一件事送兩則
+      notify: false,
     });
 
     await prisma.$transaction([

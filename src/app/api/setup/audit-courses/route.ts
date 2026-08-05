@@ -53,8 +53,12 @@ export async function GET() {
     prisma.$queryRawUnsafe<CountRow[]>(
       "SELECT CAST(courseId AS TEXT) AS key, COUNT(*) AS count FROM Attendance GROUP BY courseId, date HAVING COUNT(*) > 1 ORDER BY count DESC LIMIT 30",
     ),
+    // Attendance.date 是 Prisma 的 DateTime，在 SQLite 存成整數毫秒。
+    // 原本用 substr(date, 1, 10) 當日期字串來分組，實際上取到的是毫秒數的前 10 位
+    // （＝秒級時間戳），分組結果毫無意義，「同一天重複建課」根本抓不出來。
+    // 改用 date(date/1000, 'unixepoch') 把毫秒轉成真正的 YYYY-MM-DD。
     prisma.$queryRawUnsafe<AttendanceDuplicateRow[]>(
-      "SELECT (COALESCE(Course.code, CAST(Attendance.courseId AS TEXT)) || '|' || substr(Attendance.date, 1, 10)) AS key, Course.code AS code, Course.school AS school, substr(Attendance.date, 1, 10) AS date, COUNT(*) AS count FROM Attendance LEFT JOIN Course ON Course.id = Attendance.courseId GROUP BY key HAVING COUNT(*) > 1 ORDER BY count DESC LIMIT 30",
+      "SELECT (COALESCE(Course.code, CAST(Attendance.courseId AS TEXT)) || '|' || date(Attendance.date / 1000, 'unixepoch')) AS key, Course.code AS code, Course.school AS school, date(Attendance.date / 1000, 'unixepoch') AS date, COUNT(*) AS count FROM Attendance LEFT JOIN Course ON Course.id = Attendance.courseId GROUP BY key HAVING COUNT(*) > 1 ORDER BY count DESC LIMIT 30",
     ),
     prisma.attendance.findMany({
       select: {

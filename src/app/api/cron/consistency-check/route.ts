@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { LEAVE_STATUS } from "@/lib/teacherLeaves";
 import { raiseSystemAlert } from "@/lib/systemAlerts";
+import { findWaitingTeacherId } from "@/lib/pendingSubstitute";
 
 export const maxDuration = 60;
 
@@ -20,36 +21,58 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  const todayIso = now.toISOString().slice(0, 10);
+  // 用 Date 物件而不是 ISO 字串去比 DateTime 欄位（見下方項目 1 的說明）
+  const startOfToday = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
   const in48h = new Date(now.getTime() + 48 * 3600 * 1000);
   const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 3600 * 1000);
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 3600 * 1000);
   const created = { substituteVacant: 0, unreported: 0, unlinkedCourse: 0, notifyFailed: 0 };
 
   // 1. 代課懸空（48 小時內開課仍在找代課）
-  const vacantLeaves = await prisma.$queryRawUnsafe<Array<{
-    id: number; leaveDate: string; startTime: string; endTime: string;
-    status: string; teacherName: string; school: string; courseType: string;
-  }>>(
-    `SELECT lr."id", lr."leaveDate", lr."startTime", lr."endTime", lr."status",
-            t."name" AS "teacherName", c."school", c."courseType"
-     FROM "TeacherLeaveRequest" lr
-     JOIN "Teacher" t ON t."id" = lr."teacherId"
-     JOIN "Course" c ON c."id" = lr."courseId"
-     WHERE lr."status" IN (?, ?)
-       AND lr."leaveDate" >= ? AND lr."leaveDate" <= ?`,
-    LEAVE_STATUS.approved,
-    LEAVE_STATUS.searching,
-    todayIso,
-    in48h.toISOString(),
-  ).catch(() => [] as never[]);
+  //
+  // 這段原本是原生 SQL，把 leaveDate（DateTime）拿去和 ISO 字串比大小。Prisma 在
+  // SQLite/libSQL 把 DateTime 存成整數毫秒，而 SQLite 的型別優先序是
+  // NULL < INTEGER/REAL < TEXT < BLOB —— 「整數 >= 字串」恆為 false，所以這個查詢
+  // 從來沒有回傳過任何一筆。它是全系統唯一會主動抓「明天有課但沒人上」的守門員，
+  // 而它一直是壞的。改用 Prisma 查詢，型別轉換交給 Prisma 處理。
+  //
+  // 另外補上「真的沒人代」的判斷：光看請假單狀態不夠，行政可能已經指派好代課
+  // 但忘了把單子狀態改掉。以出勤上的 actualTeacherId 為準 —— 還掛在請假老師身上
+  // 才算懸空，已經換人就不用叫。
+  //
+  // 也拿掉了原本的 .catch(() => [])：SQL 真的炸掉時整段會靜默跳過，
+  // 這正是這個 bug 活到今天沒被發現的原因。現在讓它往外拋，cron 會回 500 而不是假裝正常。
+  const leaveCandidates = await prisma.teacherLeaveRequest.findMany({
+    where: {
+      status: { in: [LEAVE_STATUS.approved, LEAVE_STATUS.searching] },
+      leaveDate: { gte: startOfToday, lte: in48h },
+    },
+    select: {
+      id: true, leaveDate: true, startTime: true, endTime: true, status: true, teacherId: true, role: true,
+      teacher: { select: { name: true } },
+      course: { select: { school: true, courseType: true } },
+      attendance: { select: { actualTeacherId: true, assistantTeacherId: true, cancelled: true } },
+    },
+  });
+  // 「待排老師」是核准請假後掛上去的佔位帳號，代表課還沒人接，一樣算懸空。
+  // 不把它算進來的話，P1-7 標記待指派代課的那一步會順手把這個告警關掉。
+  const waitingTeacherId = await findWaitingTeacherId();
+  // 已取消的課不用找代課；已經換成別的真人老師代表代課已補上。
+  // 角色要分開看：助教請假時該檢查的是 assistantTeacherId，看主教會永遠判成「已補上」。
+  const vacantLeaves = leaveCandidates.filter((leave) => {
+    if (!leave.attendance) return true;
+    if (leave.attendance.cancelled) return false;
+    const onDuty = leave.role === "助教" ? leave.attendance.assistantTeacherId : leave.attendance.actualTeacherId;
+    return onDuty === leave.teacherId || (waitingTeacherId != null && onDuty === waitingTeacherId);
+  });
   for (const leave of vacantLeaves) {
+    const leaveDateIso = leave.leaveDate.toISOString().slice(0, 10);
     const isNew = await raiseSystemAlert({
       level: "P1",
       category: "代課懸空",
-      title: `${String(leave.leaveDate).slice(0, 10)} ${leave.school}｜${leave.courseType} 即將開課仍無代課老師`,
-      detail: `${leave.startTime}-${leave.endTime}｜原請假老師：${leave.teacherName}｜請假單狀態：${leave.status}`,
-      dedupeKey: `sub-vacant:${leave.id}:${String(leave.leaveDate).slice(0, 10)}`,
+      title: `${leaveDateIso} ${leave.course.school}｜${leave.course.courseType} 即將開課仍無代課老師`,
+      detail: `${leave.startTime}-${leave.endTime}｜原請假老師：${leave.teacher.name}｜請假單狀態：${leave.status}`,
+      dedupeKey: `sub-vacant:${leave.id}:${leaveDateIso}`,
     });
     if (isNew) created.substituteVacant++;
   }
@@ -101,20 +124,20 @@ export async function GET(req: NextRequest) {
   }
 
   // 4. 園所通知失敗（近 14 天）
-  const notifyFailed = await prisma.$queryRawUnsafe<Array<{
-    id: number; date: string; schoolNotifyError: string; school: string; courseType: string;
-  }>>(
-    `SELECT a."id", a."date", a."schoolNotifyError", c."school", c."courseType"
-     FROM "Attendance" a
-     JOIN "Course" c ON c."id" = a."courseId"
-     WHERE a."schoolNotifyStatus" = '通知失敗' AND a."date" >= ?`,
-    fourteenDaysAgo.toISOString(),
-  ).catch(() => [] as never[]);
+  // 和項目 1 完全相同的病：a."date" 是整數毫秒，卻拿 ISO 字串去比，整數 >= 字串恆為 false。
+  // 這條也一樣從來沒有回傳過任何一筆，而且同樣被 .catch(() => []) 蓋住。改用 Prisma。
+  const notifyFailed = await prisma.attendance.findMany({
+    where: { schoolNotifyStatus: "通知失敗", date: { gte: fourteenDaysAgo } },
+    select: {
+      id: true, date: true, schoolNotifyError: true,
+      course: { select: { school: true, courseType: true } },
+    },
+  });
   for (const att of notifyFailed) {
     const isNew = await raiseSystemAlert({
       level: "P2",
       category: "通知失敗",
-      title: `${String(att.date).slice(0, 10)} ${att.school}｜${att.courseType} 園所 LINE 通知失敗`,
+      title: `${att.date.toISOString().slice(0, 10)} ${att.course.school}｜${att.course.courseType} 園所 LINE 通知失敗`,
       detail: `${att.schoolNotifyError}｜出勤 #${att.id}。可至出勤頁重送。`,
       dedupeKey: `notify-fail:${att.id}`,
     });

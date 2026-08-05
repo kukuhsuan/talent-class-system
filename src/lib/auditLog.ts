@@ -259,8 +259,11 @@ export async function readAuditLogs(filters: {
     values.push(filters.from);
   }
   if (filters.to) {
+    // createdAt 存的是 "2026-08-31 09:00:00"，直接和 "2026-08-31" 比字串會小於不成立，
+    // 結束日當天的紀錄會整天查不到。補到當日 23:59:59 才是使用者想要的「到這天為止」。
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(filters.to) ? `${filters.to} 23:59:59` : filters.to;
     where.push('"createdAt" <= ?');
-    values.push(filters.to);
+    values.push(to);
   }
   if (filters.keyword) {
     where.push('("targetLabel" LIKE ? OR "diffSummary" LIKE ? OR "targetId" LIKE ?)');

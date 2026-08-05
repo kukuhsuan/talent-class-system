@@ -5,7 +5,7 @@ import { createAttendancesForUniqueDays, parseAttendanceDay } from "@/lib/attend
 import { effectiveAttendanceTime, stampAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { taipeiDateIso, utcStartOfIsoDay, utcStartOfNextIsoDay } from "@/lib/courseDates";
-import { attendanceMissingItems, attendanceReportWindow, isPendingReport } from "@/lib/reportWindow";
+import { attendanceReportWindow, outstandingReportItems, reportOverdueDays } from "@/lib/reportWindow";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { resolvePayrollHours } from "@/lib/payrollHoursCore";
 import { attendanceHoursOverrideMap, setAttendanceHoursOverrideMany } from "@/lib/attendanceHoursOverride";
@@ -13,6 +13,14 @@ import { ensureAttendanceEquipmentTable, parseEquipmentInput, saveAttendanceEqui
 import { expectedStudentCountMap, parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expectedStudentCount";
 import { writeAuditLog } from "@/lib/auditLog";
 import { schoolSignatureMap } from "@/lib/schoolSignature";
+import { WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
+
+// 待回報清單往回看幾天：要和首頁 /api/dashboard 的 PENDING_REPORT_LOOKBACK_DAYS 一致，
+// 不然首頁的數字和點進來看到的筆數會對不起來。
+const MISSING_REPORT_LOOKBACK_DAYS = 30;
+// 待指派老師的時間視窗，要和 /api/dashboard 的 PENDING_SUBSTITUTE_AHEAD_DAYS 一致
+const UNASSIGNED_LOOKBACK_DAYS = 30;
+const UNASSIGNED_AHEAD_DAYS = 14;
 
 export async function GET(req: NextRequest) {
   await ensureAttendanceEquipmentTable();
@@ -53,12 +61,14 @@ export async function GET(req: NextRequest) {
     where.cancelled = false;
     const todayIso = taipeiDateIso();
     const tomorrowStart = utcStartOfNextIsoDay(todayIso);
-    const twoDaysAgo = utcStartOfIsoDay(todayIso);
-    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    // 往回看 30 天，和首頁待回報清單同一個視窗。原本只看 2 天，
+    // 首頁說「還有 N 筆」點進來卻少一半——而且漏回報的課第 4 天起就再也找不到了。
+    const lookbackStart = utcStartOfIsoDay(todayIso);
+    lookbackStart.setUTCDate(lookbackStart.getUTCDate() - MISSING_REPORT_LOOKBACK_DAYS);
     const dateFilter = (where.date ?? {}) as { gte?: Date; lt?: Date };
     where.date = {
       ...dateFilter,
-      gte: dateFilter.gte && dateFilter.gte > twoDaysAgo ? dateFilter.gte : twoDaysAgo,
+      gte: dateFilter.gte && dateFilter.gte > lookbackStart ? dateFilter.gte : lookbackStart,
       lt: dateFilter.lt && dateFilter.lt < tomorrowStart ? dateFilter.lt : tomorrowStart,
     };
     const missingProgress = { reportContent: "" };
@@ -83,6 +93,25 @@ export async function GET(req: NextRequest) {
     ];
   } else if (status === "cancelled") {
     where.cancelled = true;
+  } else if (status === "unassigned") {
+    // 待指派老師／待指派代課：課還掛在「待排老師」佔位帳號上，代表沒有人會去上這堂課。
+    // 原本這個分頁只在前端過濾當月已載入的那一頁，跨月的漏網之魚看不到；
+    // 首頁的紅字計數就是點進來這裡，兩邊要用同一個時間視窗才對得起來。
+    where.cancelled = false;
+    where.OR = [
+      { actualTeacher: { name: WAITING_TEACHER_NAME } },
+      { assistantTeacher: { name: WAITING_TEACHER_NAME } },
+    ];
+    const todayIso = taipeiDateIso();
+    const windowStart = utcStartOfIsoDay(todayIso);
+    windowStart.setUTCDate(windowStart.getUTCDate() - UNASSIGNED_LOOKBACK_DAYS);
+    const windowEnd = utcStartOfIsoDay(todayIso);
+    windowEnd.setUTCDate(windowEnd.getUTCDate() + UNASSIGNED_AHEAD_DAYS);
+    const dateFilter = (where.date ?? {}) as { gte?: Date; lt?: Date };
+    where.date = {
+      gte: dateFilter.gte && dateFilter.gte > windowStart ? dateFilter.gte : windowStart,
+      lt: dateFilter.lt && dateFilter.lt < windowEnd ? dateFilter.lt : windowEnd,
+    };
   }
   if (Object.keys(courseFilter).length) where.course = courseFilter;
 
@@ -169,7 +198,9 @@ export async function GET(req: NextRequest) {
       hoursOverrideMap.get(record.id) === true,
     );
     const reportWindow = attendanceReportWindow({ ...record, hours: payrollHours.payableHours }, scheduledTime);
-    const missingItems = attendanceMissingItems({ ...record, hours: payrollHours.payableHours }, scheduledTime);
+    // 逾期未回報的課也要留在「待回報」分頁：48 小時只是老師自己能不能補，
+    // 行政要追的帳不會因為過期就消失（首頁待回報清單同一套判斷）。
+    const missingItems = outstandingReportItems({ ...record, hours: payrollHours.payableHours }, scheduledTime);
     return {
       ...record,
       scheduledTime,
@@ -187,7 +218,8 @@ export async function GET(req: NextRequest) {
       reportFillStatus: reportWindow.status,
       reportExpiresAt: reportWindow.expiresAt.toISOString(),
       missingItems,
-      pendingReport: isPendingReport({ ...record, hours: payrollHours.payableHours }, scheduledTime),
+      pendingReport: missingItems.length > 0,
+      overdueDays: reportOverdueDays({ ...record, hours: payrollHours.payableHours }, scheduledTime),
     };
   });
   const unique = new Map<string, (typeof annotatedRecords)[number]>();

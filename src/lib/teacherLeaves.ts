@@ -3,15 +3,11 @@ import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/atten
 import { courseLabel } from "@/lib/courseMeta";
 import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 import { cancelSubstitute } from "@/lib/substituteAssignment";
+import { restoreAttendanceTeacher } from "@/lib/pendingSubstitute";
+import { LEAVE_STATUS } from "@/lib/leaveStatus";
 
-export const LEAVE_STATUS = {
-  pending: "待審核",
-  approved: "已核准，待找代課",
-  searching: "尋找代課中",
-  found: "已找到代課",
-  rejected: "已駁回",
-  cancelled: "已取消",
-} as const;
+// 常數本體搬到 leaveStatus.ts（見該檔說明），這裡續留出口讓既有 import 不用全改
+export { LEAVE_STATUS };
 
 export const INQUIRY_STATUS = {
   pending: "pending",
@@ -406,6 +402,9 @@ export async function cancelLeaveRequestByTeacher(input: { leaveRequestId: numbe
     input.leaveRequestId,
     input.teacherId,
   );
+  // 假取消了，課就要還給老師本人。留在「待排老師」佔位帳號上的話，
+  // 這堂課會一直被當成沒人上：薪資不會發、請款也不會請。
+  await restoreAttendanceTeacher(leave.attendanceId, leave.role, leave.teacherId);
   return { alreadyCancelled: false, leave: { ...leave, status: LEAVE_STATUS.cancelled } };
 }
 

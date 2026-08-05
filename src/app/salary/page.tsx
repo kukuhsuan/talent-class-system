@@ -13,7 +13,7 @@ type SalaryRow = {
   regularHours: number; subHours: number; demoHours: number; assistantHours?: number;
   regularPay: number; demoPay: number; assistantPay?: number; travelPay: number; adjustmentTotal: number; total: number;
   hoursReviewCount?: number; unreportedCount?: number; unreportedItems?: string[]; hasActivity: boolean; details?: Detail[];
-  adjustments: Array<{ id: number; targetMonth: string; payoutMonth: string; type: string; amount: number; reason: string; notes: string; isPaid: boolean }>;
+  adjustments: Array<{ id: number; targetMonth: string; payoutMonth: string; type: string; amount: number; reason: string; notes: string; isPaid: boolean; version?: number }>;
 };
 
 type Readiness = { level: "ok" | "warn" | "block"; code: string; label: string; detail: string };
@@ -144,11 +144,19 @@ export default function SalaryPage() {
     await load();
   };
 
-  const deleteAdjustment = async (id: number) => {
+  const deleteAdjustment = async (id: number, version?: number) => {
     if (!confirm("確定刪除此筆薪資調整？")) return;
-    const res = await fetch(`/api/salary-adjustments/${id}`, { method: "DELETE" });
+    // 帶上畫面載入時的版本號：這一頁不會自動刷新，別人剛把這筆改成已付款的話，
+    // 這裡照刪就是把一筆已經發出去的錢從帳上抹掉，而且刪掉後沒人知道它原本是什麼
+    const query = version === undefined ? "" : `?version=${version}`;
+    const res = await fetch(`/api/salary-adjustments/${id}${query}`, { method: "DELETE" });
     const json = await res.json();
-    if (!res.ok) return alert(json.error ?? "刪除失敗");
+    if (!res.ok) {
+      alert(json.error ?? "刪除失敗");
+      // 版本衝突才需要重載：這一頁不會自動刷新，行政得先看到別人改成什麼再決定
+      if (json.conflict === true) await load();
+      return;
+    }
     await load();
   };
 
@@ -499,7 +507,7 @@ export default function SalaryPage() {
                               <td className="py-1.5 text-slate-500">{item.targetMonth}</td><td className="py-1.5 font-medium">{item.reason}</td>
                               <td className="py-1.5 text-slate-600">{item.type}</td><td className="py-1.5 text-center text-amber-700">薪資調整</td>
                               <td colSpan={4} className="py-1.5 text-center text-slate-500">{item.notes || "—"}</td>
-                              <td className="py-1.5 text-right"><button onClick={() => deleteAdjustment(item.id)} className="text-xs text-red-600 hover:underline">刪除</button></td>
+                              <td className="py-1.5 text-right"><button onClick={() => deleteAdjustment(item.id, item.version)} className="text-xs text-red-600 hover:underline">刪除</button></td>
                               <td className={`py-1.5 text-right font-medium ${item.amount < 0 ? "text-red-600" : "text-amber-700"}`}>{item.amount > 0 ? "+" : ""}${fmt(item.amount)}</td>
                             </tr>
                           ))}

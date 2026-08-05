@@ -97,6 +97,12 @@ export async function POST(req: NextRequest) {
     'CREATE INDEX IF NOT EXISTS SchoolInvoiceItem_invoiceId_idx ON SchoolInvoiceItem(invoiceId)',
     'CREATE INDEX IF NOT EXISTS SchoolInvoiceDetail_invoiceItemId_idx ON SchoolInvoiceDetail(invoiceItemId)',
     'CREATE INDEX IF NOT EXISTS SchoolInvoiceDetail_attendanceId_idx ON SchoolInvoiceDetail(attendanceId)',
+    // 樂觀鎖版本號 — 2026-08-04
+    // 這三個欄位已經寫進 schema.prisma，程式一部署就會 SELECT 它們；欄位還沒補上的話
+    // 課程、出勤、薪資三個頁面會同時整頁壞掉。所以要先打這支端點，再部署新版程式碼。
+    'ALTER TABLE Course ADD COLUMN version INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE Attendance ADD COLUMN version INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE SalaryAdjustment ADD COLUMN version INTEGER NOT NULL DEFAULT 0',
   ];
 
   for (const sql of migrations) {

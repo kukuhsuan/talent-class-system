@@ -11,6 +11,7 @@ import { parseExpectedStudentCount, setExpectedStudentCount } from "@/lib/expect
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { syncSubstituteWithAttendance } from "@/lib/substituteAssignment";
 import { schoolSignatureMap } from "@/lib/schoolSignature";
+import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
 
 // 單堂出勤（供電子簽到表列印頁使用）
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +34,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     hours: record.hours,
     studentCount: record.studentCount,
     scheduledTime: record.scheduledTime ?? "",
+    // 版本衝突後前端要靠這支把最新版本號抓回表單，沒有它使用者會卡在重複的 409
+    version: record.version,
     course: record.course,
     actualTeacher: record.actualTeacher,
     schoolVerifierName: signature?.schoolVerifierName ?? "",
@@ -66,8 +69,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const reportContent = confirmCompleted === true && !requiresStudentCount(category) && !cancelled
     ? current.reportContent?.trim() || "後台確認出課"
     : current.reportContent;
+  // 樂觀鎖：這裡的 data 是「整份表單覆蓋」，沒帶的欄位一律用 current 的值回填。
+  // 表單開著的期間老師若用 LINE 回報了人數，current 已經是舊的，存下去等於把回報清掉。
+  const expectedVersion = parseExpectedVersion(data.version);
+  if (expectedVersion === null) return invalidVersionResponse();
   const record = await prisma.attendance.update({
-    where: { id: Number(id) },
+    where: versionWhere({ id: Number(id) }, expectedVersion),
     data: {
       courseId,
       actualTeacherId: data.actualTeacherId === undefined ? current.actualTeacherId : Number(data.actualTeacherId),
@@ -88,7 +95,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       makeupDate: makeupDate ? parseAttendanceDay(String(makeupDate).slice(0, 10)) : null,
     },
     include: { course: { include: { assistantTeacher: true } }, actualTeacher: true, assistantTeacher: true },
+    // 樂觀鎖沒過時 Prisma 會丟 P2025。上面已經確認過這筆出勤存在，
+    // 所以這裡的「找不到」只可能是 version 對不上。
+  }).catch((error: unknown) => {
+    if (isRecordNotFound(error)) return null;
+    throw error;
   });
+  if (!record) return versionConflictResponse("這堂課剛被老師回報或其他人編輯過");
   // 後台直接改老師時，同步代課紀錄（通知一律以出勤為主，避免發給錯的老師）
   if (record.actualTeacherId !== current.actualTeacherId) {
     await syncSubstituteWithAttendance(record.id, "主教", record.actualTeacherId);

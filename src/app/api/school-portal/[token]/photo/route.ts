@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
+import { requirePortalVerification } from "@/lib/portalAuth";
 
 function blobToken() {
   return process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_READ_WRITE_TOKEN ?? "";
@@ -22,6 +23,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   try {
     const { token } = await params;
     const { schoolId } = await resolveSchoolPortalParam(token, req);
+    // 課程照片裡有孩子的臉，是這條連結上最敏感的東西
+    const unverified = await requirePortalVerification(req, schoolId);
+    if (unverified) return unverified;
     const pathname = req.nextUrl.searchParams.get("path") ?? "";
     if (!pathname.startsWith("report-photos/")) {
       return NextResponse.json({ error: "照片路徑不正確" }, { status: 400 });

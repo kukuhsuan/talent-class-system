@@ -4,6 +4,7 @@ import { getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { getTeacherLeave, LEAVE_STATUS, markLeaveReviewed } from "@/lib/teacherLeaves";
 import { autoSendSubstituteInquiries } from "@/lib/substituteCandidates";
+import { markAttendancePendingSubstitute } from "@/lib/pendingSubstitute";
 import { writeAuditLog } from "@/lib/auditLog";
 import { currentSessionUser } from "@/lib/permissions";
 
@@ -12,6 +13,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const actor = await currentSessionUser();
     const before = await getTeacherLeave(Number(id));
+    if (!before) throw new Error("找不到請假申請");
+    // 先把課從請假老師身上拿下來、改掛「待排老師」，成功了才改請假單狀態。
+    // 順序反過來的話，這一步失敗會留下「假已核准、課卻還算在請假老師頭上」的狀態——
+    // 到了月底薪資照發、園所照請款，而那堂課其實沒有人去上。
+    const pendingResult = await markAttendancePendingSubstitute(before.attendanceId, before.role, before.teacherId);
     await markLeaveReviewed(Number(id), LEAVE_STATUS.approved, { reviewedBy: actor?.name || "管理端" });
     const leave = await getTeacherLeave(Number(id));
     let autoInquiry: { sent: number; skipped: number; asked: string[]; reason: string } = { sent: 0, skipped: 0, asked: [], reason: "" };
@@ -37,11 +43,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       targetId: Number(id),
       targetLabel: leave ? `${leave.leaveDate} ${leave.school} ${leave.courseType}` : `#${id}`,
       beforeData: before ? { status: before.status } : null,
-      afterData: { status: LEAVE_STATUS.approved, autoInquiry },
-      diffSummary: `核准請假；自動詢問代課 ${autoInquiry.sent} 位`,
+      afterData: { status: LEAVE_STATUS.approved, autoInquiry, pendingSubstitute: pendingResult },
+      diffSummary: `核准請假；${pendingResult.changed ? "課堂已標為待指派代課" : `課堂未改動（${pendingResult.reason}）`}；自動詢問代課 ${autoInquiry.sent} 位`,
       sensitive: true,
     });
-    return NextResponse.json({ ok: true, autoInquiry });
+    return NextResponse.json({ ok: true, autoInquiry, pendingSubstitute: pendingResult });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message || "核准請假失敗" }, { status: 400 });
   }

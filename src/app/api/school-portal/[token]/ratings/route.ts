@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { normalizeRatingRow, openEligibleRatings, type CourseRatingRow } from "@/lib/courseRating";
+import { requirePortalVerification } from "@/lib/portalAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   try {
     const { token } = await params;
     const { schoolId } = await resolveSchoolPortalParam(token, req);
+    // 評分清單會帶出老師姓名與逐堂明細
+    const unverified = await requirePortalVerification(req, schoolId);
+    if (unverified) return unverified;
     const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, type: true } });
     if (!school) return NextResponse.json({ error: "找不到園所" }, { status: 404 });
 

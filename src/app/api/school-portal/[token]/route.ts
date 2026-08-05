@@ -18,7 +18,8 @@ import {
 } from "@/lib/courseConfirmation";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { signTeacherCardToken } from "@/lib/publicAccessToken";
-import { hasValidPortalSession, portalVerificationRequired } from "@/lib/portalAuth";
+// 驗證閘門抽到 lib/portalAuth，底下的 reports/ratings/summary/photo/certificate 子路由共用同一套
+import { requirePortalVerification } from "@/lib/portalAuth";
 import { writeAuditLog } from "@/lib/auditLog";
 import { getTeacherResume } from "@/lib/teacherResume";
 import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
@@ -97,25 +98,6 @@ function splitResumeItems(value: string) {
 
 function resumeSummary(value: string) {
   return splitResumeItems(value)[0] ?? "";
-}
-
-/**
- * 園所端的後端驗證。
- *
- * 連結權杖只證明「這條連結是我們發的」，不證明「現在拿著連結的人是園所人員」——
- * 連結會在 LINE 群組裡轉來轉去。所以這支 API（讀成果、送異動申請、存開學確認）
- * 不能只靠前端擋按鈕，後端要自己再確認一次園所 Session。
- *
- * 但這裡刻意做成「有啟用驗證碼的園所才擋」：SchoolPortalAuth 只有行政按過
- * 「產生驗證碼」才會有資料列，沒有資料列的園所 hasValidPortalSession() 永遠回 false。
- * 若無條件擋，上線當天所有還沒設驗證碼的園所會集體看到 401，等於園所端全掛。
- *
- * → 營運上的配套：請行政逐一替所有園所產生驗證碼，全部啟用後這個豁免就自動失效。
- */
-async function requirePortalVerification(req: NextRequest, schoolId: number) {
-  if (!(await portalVerificationRequired(schoolId))) return null;
-  if (await hasValidPortalSession(req, schoolId)) return null;
-  return NextResponse.json({ error: "請先完成園所驗證", requiresVerify: true }, { status: 401 });
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {

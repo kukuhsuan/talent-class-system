@@ -28,6 +28,7 @@ type Course = {
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
   academicTermOverride?: string;
   courseConfirmationSummary?: string;
+  version?: number;
   recurrenceType?: string; startDate?: string | null; endDate?: string | null; weekday?: string;
   scheduledDates?: string[];
 };
@@ -51,6 +52,9 @@ const DATE_MODES = [
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, assistantTeacherId: null as number | null, school: "", schoolId: null as number | null,
   courseType: "", address: "", dayOfWeek: "星期一", time: "", payrollHours: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "", academicTermOverride: "",
+  // 樂觀鎖版本號：按下編輯時記下當下的版本，儲存時原樣送回給後端比對。
+  // 新增課程沒有版本可比，維持 null，後端會略過檢查。
+  version: null as number | null,
   dateMode: "multiple",
   scheduledDateText: "",
   scheduledDateYear: new Date().getFullYear(),
@@ -150,6 +154,13 @@ function inferWeeklyDates(dates: string[]) {
 
 function sanitizeCourseWeekdays(days: string[]) {
   return [...new Set(days.filter((day) => COURSE_WEEKDAY_SET.has(day)))];
+}
+
+// 後端的 409 有兩種意思：課程編號撞號、以及樂觀鎖版本衝突。只有後者會帶 conflict: true。
+// 用 status 判斷會把撞號也當成「別人剛改過」，然後去重抓一個根本沒變的版本號。
+async function isVersionConflict(res: Response) {
+  if (res.status !== 409) return false;
+  return res.clone().json().then((data) => data?.conflict === true).catch(() => false);
 }
 
 async function readErrorMessage(res: Response, fallback: string) {
@@ -388,8 +399,21 @@ export default function CoursesPage() {
         res = await fetch("/api/courses", { method: "POST", headers, body });
       }
       if (!res.ok) {
+        const conflict = await isVersionConflict(res);
         const message = await readErrorMessage(res, "課程儲存失敗");
         if (message.includes("登入狀態")) window.location.href = "/login";
+        // 版本衝突：重載清單讓行政看得到別人改成什麼，同時把最新版本號寫回表單。
+        // 只重載清單是不夠的——表單手上還握著舊 version，再按一次儲存必然又是 409，
+        // 使用者只能整個關掉重開，剛打的東西全部重來。
+        if (conflict) {
+          void loadCourses();
+          if (editing !== null) {
+            void fetch(`/api/courses/${editing}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((latest) => { if (latest) setForm((prev) => ({ ...prev, version: latest.version ?? null })); })
+              .catch(() => undefined);
+          }
+        }
         throw new Error(message);
       }
       const result = await res.json().catch(() => ({}));
@@ -437,6 +461,7 @@ export default function CoursesPage() {
     setForm({ code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
       courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), category: normalizeCategory(fullCourse.category),
       department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes.replace(/\s*\[\[TERM:[^\]]+\]\]\s*/g, " ").trim(), academicTermOverride: fullCourse.academicTermOverride ?? "",
+      version: fullCourse.version ?? null,
       dateMode, scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: dateMode === "weekly" ? [] : existingDates,
       rangeStart: dateMode === "range" ? recurrenceStart : "", rangeEnd: dateMode === "range" ? recurrenceEnd : "",
       recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays.length > 0 ? recurrenceDays : ["星期一"] });

@@ -795,6 +795,99 @@ export function buildSubstituteConfirmedMessage(opts: {
   };
 }
 
+/**
+ * 行政「直接指派」代課時，推給被指派老師的通知。
+ *
+ * 和 buildSubstituteConfirmedMessage 不同：那一則是老師自己在詢問流程裡答應之後的確認，
+ * 帶 inquiryId 所以能放「取消代課」按鈕。直接指派沒有詢問單，老師事前完全不知情，
+ * 所以這則要把上課地點也寫出來，並且不給取消按鈕（要改得聯繫行政，避免單方面放掉課）。
+ *
+ * urgent：距離上課不到 12 小時，標紅提醒老師優先確認。
+ */
+export function buildSubstituteAssignedMessage(opts: {
+  date: string;
+  time: string;
+  school: string;
+  courseType: string;
+  role: string;
+  address?: string;
+  urgent?: boolean;
+}) {
+  const bodyContents: object[] = [
+    { type: "text", text: `行政已安排由您擔任以下課程的${opts.role}：`, size: "sm", color: "#52656A", wrap: true },
+    { type: "separator", margin: "md", color: "#E8EEF0" },
+    { type: "text", text: `日期｜${opts.date}`, size: "sm", color: "#263B40", wrap: true },
+    { type: "text", text: `時間｜${opts.time}`, size: "sm", color: "#263B40", wrap: true },
+    { type: "text", text: `園所｜${opts.school}`, size: "sm", color: "#263B40", wrap: true },
+    { type: "text", text: `課程｜${courseLabel(opts.courseType)}`, size: "sm", color: "#263B40", wrap: true },
+  ];
+  if (opts.address?.trim()) {
+    bodyContents.push({ type: "text", text: `地點｜${opts.address.trim()}`, size: "sm", color: "#263B40", wrap: true });
+  }
+  bodyContents.push(opts.urgent
+    ? { type: "text", text: "⚠️ 這堂課即將開始（12 小時內），請盡快確認能否出席，若有困難請立刻聯繫行政。", size: "xs", color: "#B91C1C", wrap: true, margin: "md" }
+    : { type: "text", text: "若無法配合，請盡快聯繫行政重新安排。", size: "xs", color: "#A16207", wrap: true, margin: "md" });
+
+  return {
+    type: "flex",
+    altText: `${opts.urgent ? "【急】" : ""}代課安排 ${opts.date} ${opts.school}`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: opts.urgent ? "#FDECEC" : "#DDEDEA",
+        paddingAll: "16px",
+        contents: [
+          { type: "text", text: opts.urgent ? "代課安排（即將開課）" : "代課安排", color: opts.urgent ? "#B91C1C" : "#244B52", weight: "bold", size: "xl" },
+        ],
+      },
+      body: { type: "box", layout: "vertical", backgroundColor: "#FBFCFA", paddingAll: "16px", spacing: "sm", contents: bodyContents },
+    },
+  };
+}
+
+/** 原老師收到的「這堂課已改由他人上」通知，避免兩位老師同時到場或雙方都以為對方會去 */
+export function buildSubstituteReplacedMessage(opts: {
+  date: string;
+  time: string;
+  school: string;
+  courseType: string;
+  role: string;
+  substituteName: string;
+}) {
+  return {
+    type: "flex",
+    altText: `課程異動 ${opts.date} ${opts.school} 已改由 ${opts.substituteName} 代課`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#EEF2F7",
+        paddingAll: "16px",
+        contents: [{ type: "text", text: "課程異動通知", color: "#334155", weight: "bold", size: "xl" }],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#FBFCFA",
+        paddingAll: "16px",
+        spacing: "sm",
+        contents: [
+          { type: "text", text: `以下課程的${opts.role}已改由 ${opts.substituteName} 老師擔任，您不需要前往：`, size: "sm", color: "#52656A", wrap: true },
+          { type: "separator", margin: "md", color: "#E8EEF0" },
+          { type: "text", text: `日期｜${opts.date}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `時間｜${opts.time}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `園所｜${opts.school}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: `課程｜${courseLabel(opts.courseType)}`, size: "sm", color: "#263B40", wrap: true },
+          { type: "text", text: "若這不是您預期的安排，請聯繫行政確認。", size: "xs", color: "#A16207", wrap: true, margin: "md" },
+        ],
+      },
+    },
+  };
+}
+
 export function buildCourseChangeInquiryMessage(opts: {
   requestId: number;
   school: string;

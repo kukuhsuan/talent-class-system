@@ -6,6 +6,7 @@ import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { attendanceHoursOverrideMap, ensureAttendanceHoursOverrideColumn } from "@/lib/attendanceHoursOverride";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
+import { OPEN_LEAVE_STATUSES } from "@/lib/leaveStatus";
 
 // Module-level flag: avoids repeated PRAGMA table_info round-trips within the same process lifetime.
 // (Mirrors the pattern used by coursePayrollColumnReady in payrollHours.ts)
@@ -110,21 +111,38 @@ export async function attendanceScheduledTimeMap(attendanceIds: number[]) {
   return new Map(rows.map((row) => [row.id, isUsableScheduledTime(row.scheduledTime) ? row.scheduledTime ?? "" : ""]));
 }
 
+/**
+ * 把課程時間蓋到指定日期的出勤上（只補還沒填的）。
+ *
+ * 原本的寫法是 `substr("date", 1, 10) IN (?, ?)`，拿去和 "2026-08-05" 這種字串比。
+ * 但 Prisma 在 SQLite/libSQL 把 DateTime 存成整數毫秒，substr(1754352000000, 1, 10)
+ * 得到的是 "1754352000"，永遠不會等於任何一個日期字串 —— 這個 UPDATE 一筆都沒更新過。
+ * scheduledTime 是「這堂課是否已過上課時間、可以回報了」的依據，它填不進去會讓
+ * 待回報判斷、遲到提醒、到校提醒全部變得不可預期。
+ *
+ * 改法：日期比對交給 Prisma（它知道欄位真正的儲存格式），先撈出 id，
+ * 再用原生 SQL 依 id 更新。scheduledTime 是執行期 ALTER TABLE 加的欄位、
+ * 不在 schema.prisma 裡，所以寫入這一段還是得走原生 SQL。
+ */
 export async function stampAttendanceTime(courseId: number, dates: string[], time: string) {
   const unique = [...new Set(dates.map((date) => date.slice(0, 10)).filter(Boolean))];
   if (unique.length === 0) return;
   if (!(await ensureAttendanceScheduledTimeColumn())) return;
 
-  const placeholders = unique.map(() => "?").join(",");
+  const targets = await prisma.attendance.findMany({
+    where: { courseId, date: { in: unique.map((iso) => parseAttendanceDay(iso)) } },
+    select: { id: true },
+  });
+  if (targets.length === 0) return;
+
+  const placeholders = targets.map(() => "?").join(",");
   await prisma.$executeRawUnsafe(
     `UPDATE "Attendance"
      SET "scheduledTime" = ?
-     WHERE "courseId" = ?
-       AND substr("date", 1, 10) IN (${placeholders})
+     WHERE "id" IN (${placeholders})
        AND ("scheduledTime" IS NULL OR "scheduledTime" = '')`,
     time,
-    courseId,
-    ...unique,
+    ...targets.map((row) => row.id),
   );
 }
 
@@ -132,27 +150,37 @@ export async function syncFutureUnreportedAttendanceTime(courseId: number, time:
   void department;
   if (!(await ensureAttendanceScheduledTimeColumn())) return;
   const calculated = coursePayrollHoursForAttendance(payrollHours, time);
-  const futureFromIso = utcStartOfNextIsoDay(fromIso).toISOString().slice(0, 10);
-  // 行政單堂改過時數的課不跟著課程走，否則改課程時間會默默把人工調整蓋掉
+  // 和 stampAttendanceTime 同一個病：substr("date", 1, 10) >= "2026-08-05" 永遠不成立。
+  // 條件交給 Prisma 篩，只有寫入 scheduledTime（執行期欄位）留在原生 SQL。
   await ensureAttendanceHoursOverrideColumn();
+  const candidates = await prisma.attendance.findMany({
+    where: {
+      courseId,
+      date: { gte: utcStartOfNextIsoDay(fromIso) },
+      cancelled: false,
+      isPayrollLocked: false,
+      reportContent: "",
+      reportSentAt: null,
+      studentCount: null,
+      studentCountA: null,
+      studentCountB: null,
+    },
+    select: { id: true },
+  });
+  // 行政單堂改過時數的課不跟著課程走，否則改課程時間會默默把人工調整蓋掉
+  const overrideMap = await attendanceHoursOverrideMap(candidates.map((row) => row.id));
+  const targetIds = candidates.filter((row) => overrideMap.get(row.id) !== true).map((row) => row.id);
+  if (targetIds.length === 0) return;
+
+  const placeholders = targetIds.map(() => "?").join(",");
   await prisma.$executeRawUnsafe(
     `UPDATE "Attendance"
      SET "scheduledTime" = ?,
          "hours" = ?
-     WHERE "courseId" = ?
-       AND substr("date", 1, 10) >= ?
-       AND "cancelled" = 0
-       AND "isPayrollLocked" = 0
-       AND COALESCE("hoursOverridden", 0) = 0
-       AND "reportContent" = ''
-       AND "reportSentAt" IS NULL
-       AND "studentCount" IS NULL
-       AND "studentCountA" IS NULL
-       AND "studentCountB" IS NULL`,
+     WHERE "id" IN (${placeholders})`,
     time,
     calculated.hours,
-    courseId,
-    futureFromIso,
+    ...targetIds,
   );
 }
 
@@ -228,6 +256,9 @@ export async function syncUnreportedWaitingTeacherAttendance(
       reportContent: "",
       reportSentAt: null,
       substitutes: { none: {} },
+      // 核准請假後課會被標成「待排老師」等指派代課。換課程主檔老師時把這些課一起改掉，
+      // 等於在行政不知情的情況下把課塞給新老師，首頁的「待指派代課」提醒也會跟著消失。
+      leaveRequests: { none: { status: { in: OPEN_LEAVE_STATUSES } } },
     },
     data: { actualTeacherId: teacherId },
   });

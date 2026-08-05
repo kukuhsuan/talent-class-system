@@ -53,6 +53,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         role: leave.role,
         confirmed: true,
         notes: `由請假申請 #${leave.id} 確認代課`,
+        // 這支下面自己會送 buildSubstituteConfirmedMessage（含取消代課按鈕），不重複通知
+        notify: false,
       });
     } catch (error) {
       // 建立代課失敗 → 還原狀態，避免卡在「已找到」但實際沒有代課

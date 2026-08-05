@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
+import { requirePortalVerification } from "@/lib/portalAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   try {
     const { token } = await params;
     const { schoolId } = await resolveSchoolPortalParam(token, req);
+    // 成果含照片與回報內容，連結本身不算身分證明
+    const unverified = await requirePortalVerification(req, schoolId);
+    if (unverified) return unverified;
     const { searchParams } = new URL(req.url);
     const now = new Date();
     const year = Math.min(2035, Math.max(2020, Number(searchParams.get("year") ?? now.getFullYear()) || now.getFullYear()));
