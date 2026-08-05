@@ -208,7 +208,9 @@ export default function TeacherLeavesPage() {
 
   async function approve(id: number) {
     try {
-      await action(`/api/teacher-leaves/${id}/approve`, "已核准請假");
+      // 核准不再自動群發詢問，提示要把下一步講出來，
+      // 否則行政會以為系統已經在找人，這堂課就一路空到上課當天沒人去。
+      await action(`/api/teacher-leaves/${id}/approve`, "已核准請假，請接著按「選老師發詢問」安排代課");
     } catch (error) {
       alert((error as Error).message);
     }

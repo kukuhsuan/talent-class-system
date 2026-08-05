@@ -1,9 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { normalizeRegion } from "@/lib/courseMeta";
-import { buildSubstituteInquiryMessage, getLineConfig, pushMessage } from "@/lib/line";
-import type { LineRegion } from "@/lib/line";
-import { LEAVE_STATUS, splitTimeRange, upsertSubstituteInquiry, type TeacherLeaveListItem } from "@/lib/teacherLeaves";
+import { splitTimeRange, type TeacherLeaveListItem } from "@/lib/teacherLeaves";
 import {
   inferCourseSpecialty,
   rankTeacherForSubstitute,
@@ -129,49 +127,6 @@ export async function listSubstituteCandidates(leave: TeacherLeaveListItem): Pro
   return { items, target };
 }
 
-export const AUTO_INQUIRY_LIMIT = 5;
-
-/**
- * 依「地區＋專長」自動挑選代課候選人並發送 LINE 詢問。
- * 規則：排除原請假老師、未綁定 LINE、當日時段衝堂或前後少於 30 分鐘交通緩衝者；
- * 優先詢問地區或專長相符者，若無相符者則退回綜合分數最高者。
- */
-export async function autoSendSubstituteInquiries(leave: TeacherLeaveListItem, limit = AUTO_INQUIRY_LIMIT) {
-  if (leave.isPayrollLocked) return { sent: 0, skipped: 0, asked: [] as string[], reason: "課程已鎖定薪資" };
-  const { items } = await listSubstituteCandidates(leave);
-  const eligible = items.filter((c) => c.hasLineBinding && !c.hasConflict && !c.isOriginalTeacher);
-  const matched = eligible.filter((c) => c.regionMatch || c.specialtyMatch);
-  const picked = (matched.length > 0 ? matched : eligible).slice(0, limit);
-  if (picked.length === 0) return { sent: 0, skipped: 0, asked: [] as string[], reason: "沒有可詢問的代課老師" };
-
-  const sendResults = await Promise.allSettled(picked.map(async (candidate) => {
-    const inquiryId = await upsertSubstituteInquiry(leave.id, leave.attendanceId, candidate.id);
-    const msg = buildSubstituteInquiryMessage({
-      inquiryId,
-      date: leave.leaveDate,
-      time: leave.time,
-      school: leave.school,
-      courseType: leave.courseType,
-      address: leave.address,
-    });
-    await pushMessage(candidate.lineUserId!, [msg], getLineConfig(candidate.lineRegion as LineRegion).token);
-    return candidate.name;
-  }));
-
-  const asked: string[] = [];
-  let skipped = 0;
-  for (const result of sendResults) {
-    if (result.status === "fulfilled") asked.push(result.value);
-    else skipped++;
-  }
-
-  if (asked.length > 0) {
-    await prisma.$executeRawUnsafe(
-      `UPDATE "TeacherLeaveRequest" SET "status" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
-      LEAVE_STATUS.searching,
-      leave.id,
-    );
-  }
-
-  return { sent: asked.length, skipped, asked, reason: "" };
-}
+// 這裡原本有一支 autoSendSubstituteInquiries，核准請假時自動挑最多 5 位老師群發詢問，
+// 已整支移除。排序與標記（listSubstituteCandidates）留著——「選老師發詢問」的候選名單
+// 就是靠它把地區、專長、衝堂算出來給行政參考，只是最後送給誰改由人決定。
