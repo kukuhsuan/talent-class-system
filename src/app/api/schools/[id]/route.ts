@@ -4,6 +4,7 @@ import { normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 import {
   confirmationHistory,
   copyPreviousSchoolStartConfirmation,
+  adminNotesFrom,
   courseConfirmationSummary,
   ensureCourseConfirmationColumn,
   parseConfirmationTerm,
@@ -101,7 +102,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   });
   let courseConfirmation = parseCourseConfirmation(data.courseConfirmation);
   if (data.courseConfirmation) {
-    courseConfirmation = await upsertSchoolStartConfirmation(Number(id), term, data.courseConfirmation, { submit: false });
+    // 只有後台這條路會把 adminNotes 傳進去，園所端那條不傳，所以園所改不到行政備註。
+    courseConfirmation = await upsertSchoolStartConfirmation(Number(id), term, data.courseConfirmation, {
+      submit: false,
+      adminNotes: adminNotesFrom(data.courseConfirmation),
+    });
   }
   if (data.billingProfile && typeof data.billingProfile === "object") {
     const billing = data.billingProfile as Record<string, unknown>;

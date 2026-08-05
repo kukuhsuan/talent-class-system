@@ -237,6 +237,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       semesterWesternLabel,
       termLabel,
       updateConfirmationCounts,
+      withoutAdminNotes,
     } = await import("@/lib/courseConfirmation");
     const { writeAuditLog } = await import("@/lib/auditLog");
     const term = parseConfirmationTerm(body.confirmationTerm ?? body);
@@ -268,7 +269,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     return NextResponse.json({
       ok: true,
-      courseConfirmation,
+      // 這支是老師手機在打的，整包回去會連行政備註一起送到老師端
+      courseConfirmation: withoutAdminNotes(courseConfirmation),
       courseConfirmationSummary: courseConfirmationSummary(courseConfirmation, { multiline: true, teacher: true }),
       confirmationTerm: {
         ...term,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeDepartment, normalizeRegion } from "@/lib/courseMeta";
 import {
+  adminNotesFrom,
   courseConfirmationMapBySchoolIds,
   courseConfirmationSummary,
   ensureCourseConfirmationColumn,
@@ -98,7 +99,11 @@ export async function POST(req: NextRequest) {
   });
   let courseConfirmation = parseCourseConfirmation(data.courseConfirmation);
   if (data.courseConfirmation) {
-    courseConfirmation = await upsertSchoolStartConfirmation(school.id, term, data.courseConfirmation, { submit: false });
+    // 只有後台這條路會把 adminNotes 傳進去，園所端那條不傳，所以園所改不到行政備註。
+    courseConfirmation = await upsertSchoolStartConfirmation(school.id, term, data.courseConfirmation, {
+      submit: false,
+      adminNotes: adminNotesFrom(data.courseConfirmation),
+    });
   }
   await writeAuditLog(req, {
     action: "create",

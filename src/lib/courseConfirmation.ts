@@ -23,6 +23,11 @@ export type ConfirmationTerm = {
 export type SchoolStartConfirmation = CourseConfirmation & ConfirmationTerm & {
   id?: number;
   schoolId?: number;
+  // 行政備註刻意**不放進 CourseConfirmation**。發給老師的內容一律走
+  // courseConfirmationSummary(parseCourseConfirmation(...))，而那條路只認得 CourseConfirmation 的欄位，
+  // 所以把這欄留在型別外面，等於從結構上保證它進不了老師的課前提醒與 LINE 課表——
+  // 不必依賴日後每個改摘要的人都記得「這欄不能送」。
+  adminNotes?: string;
   submittedAt?: string | null;
   reopenedAt?: string | null;
   canSchoolEdit?: boolean;
@@ -135,6 +140,7 @@ export async function ensureCourseConfirmationStorage() {
   `);
   await prisma.$executeRawUnsafe("ALTER TABLE SchoolStartConfirmation ADD COLUMN reopenedAt DATETIME").catch(() => undefined);
   await prisma.$executeRawUnsafe('ALTER TABLE SchoolStartConfirmation ADD COLUMN toddlerClassCount TEXT NOT NULL DEFAULT ""').catch(() => undefined);
+  await prisma.$executeRawUnsafe('ALTER TABLE SchoolStartConfirmation ADD COLUMN adminNotes TEXT NOT NULL DEFAULT ""').catch(() => undefined);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS SchoolStartConfirmationHistory (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -231,6 +237,24 @@ export function parseCourseConfirmation(raw: unknown): CourseConfirmation {
   }
 }
 
+// 從後台表單的 payload 取出行政備註。沒帶就回 undefined，代表「這次不要動這一欄」；
+// 回空字串會被當成使用者清空備註而寫入，兩者不能混為一談——
+// 後台還有別的地方是只送部分欄位的 PATCH，混掉的話備註會在不相干的儲存動作裡消失。
+export function adminNotesFrom(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = (value as Record<string, unknown>).adminNotes;
+  return typeof raw === "string" ? raw.trim() : undefined;
+}
+
+// 老師端與園所端的 API 回應一律經過這裡。摘要函式讀不到 adminNotes 沒錯，但這兩端的路由是
+// 把整包 confirmation 物件直接 NextResponse.json 出去的——備註不會出現在提醒訊息裡，
+// 卻會原封不動躺在 API 回應中，開瀏覽器的開發者工具就看得到。要擋就要在出口剝掉。
+export function withoutAdminNotes<T extends { adminNotes?: string }>(value: T) {
+  const copy = { ...value };
+  delete copy.adminNotes;
+  return copy as Omit<T, "adminNotes">;
+}
+
 export function serializeCourseConfirmation(value: unknown) {
   return JSON.stringify(normalizeCourseConfirmation(value));
 }
@@ -253,6 +277,7 @@ function fromRow(row: ConfirmationRow): SchoolStartConfirmation {
     teachingStyles: parseTeachingStyles(row.teachingStyles).map(cleanText).filter(Boolean),
     classNotes: row.classNotes ?? "",
     otherReminders: row.otherNotes ?? "",
+    adminNotes: row.adminNotes ?? "",
     submittedAt,
     reopenedAt,
     canSchoolEdit: canEditSubmittedConfirmation(submittedAt, reopenedAt),
@@ -282,6 +307,7 @@ type ConfirmationRow = {
   teachingStyles: string;
   classNotes: string;
   otherNotes: string;
+  adminNotes: string | null;
   submittedAt: string | null;
   reopenedAt: string | null;
   createdAt: string;
@@ -313,18 +339,22 @@ export async function upsertSchoolStartConfirmation(
   schoolId: number,
   term: ConfirmationTerm,
   value: unknown,
-  options: { submit?: boolean } = { submit: true },
+  // adminNotes 是獨立參數，不從 value 裡撈。園所端送上來的 body 會整包進 value，
+  // 若讓它跟其他欄位一起寫，園所只要在 JSON 裡多塞一個 adminNotes 就能改掉行政的內部備註。
+  // 現在園所端那條路不傳這個參數，欄位就完全不會被碰到。
+  options: { submit?: boolean; adminNotes?: string } = { submit: true },
 ) {
   await ensureCourseConfirmationStorage();
   const form = normalizeCourseConfirmation(value);
   const styles = JSON.stringify(form.teachingStyles ?? []);
   const submit = options.submit !== false;
+  const writeAdminNotes = typeof options.adminNotes === "string";
   await prisma.$executeRawUnsafe(
     `INSERT INTO SchoolStartConfirmation (
       schoolId, academicYear, semester, toddlerClassCount, smallClassCount, middleClassCount, bigClassCount,
-      classLocation, classLocationOther, rainyDayLocation, teachingStyles, classNotes, otherNotes,
+      classLocation, classLocationOther, rainyDayLocation, teachingStyles, classNotes, otherNotes, adminNotes,
       submittedAt, reopenedAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${submit ? "CURRENT_TIMESTAMP" : "NULL"}, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${submit ? "CURRENT_TIMESTAMP" : "NULL"}, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(schoolId, academicYear, semester) DO UPDATE SET
       toddlerClassCount = excluded.toddlerClassCount,
       smallClassCount = excluded.smallClassCount,
@@ -336,6 +366,7 @@ export async function upsertSchoolStartConfirmation(
       teachingStyles = excluded.teachingStyles,
       classNotes = excluded.classNotes,
       otherNotes = excluded.otherNotes,
+      adminNotes = CASE WHEN ? THEN excluded.adminNotes ELSE SchoolStartConfirmation.adminNotes END,
       submittedAt = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE SchoolStartConfirmation.submittedAt END,
       reopenedAt = CASE WHEN ? THEN NULL ELSE SchoolStartConfirmation.reopenedAt END,
       updatedAt = CURRENT_TIMESTAMP`,
@@ -352,6 +383,8 @@ export async function upsertSchoolStartConfirmation(
     styles,
     form.classNotes ?? "",
     form.otherReminders ?? "",
+    writeAdminNotes ? String(options.adminNotes).trim() : "",
+    writeAdminNotes ? 1 : 0,
     submit ? 1 : 0,
     submit ? 1 : 0,
   );
@@ -366,6 +399,9 @@ export async function upsertSchoolStartConfirmation(
 export async function copyPreviousSchoolStartConfirmation(schoolId: number, term: ConfirmationTerm, options: { submit?: boolean } = { submit: false }) {
   const previous = previousConfirmationTerm(term);
   const previousForm = await getSchoolStartConfirmation(schoolId, previous);
+  // 刻意不帶 adminNotes：「複製上一學期」園所端自己也按得到（school-portal 那條路），
+  // 帶過去等於讓園所的動作去搬行政的內部備註，而且上學期的備註常常是當時的個案處理，
+  // 新學期原封不動沿用反而誤導。要沿用就由行政自己複製貼上。
   return upsertSchoolStartConfirmation(schoolId, term, previousForm, options);
 }
 

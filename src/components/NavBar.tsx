@@ -55,6 +55,7 @@ const GROUPS = [
       { href: "/alerts", label: "異常管理", ownerOnly: true },
       { href: "/users", label: "帳號管理", ownerOnly: true },
       { href: "/admin/audit-logs", label: "操作歷程", ownerOnly: true },
+      { href: "/admin/lesson-sync", label: "教案庫同步", ownerOnly: true },
       { href: "/admin/settings", label: "系統設定", ownerOnly: true },
     ],
   },

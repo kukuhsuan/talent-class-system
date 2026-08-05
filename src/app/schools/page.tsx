@@ -18,6 +18,7 @@ type CourseConfirmation = {
   teachingStyles?: string[];
   classNotes?: string;
   otherReminders?: string;
+  adminNotes?: string;
   submittedAt?: string | null;
   reopenedAt?: string | null;
   canSchoolEdit?: boolean;
@@ -42,6 +43,7 @@ const EMPTY_CONFIRMATION: CourseConfirmation = {
   teachingStyles: [],
   classNotes: "",
   otherReminders: "",
+  adminNotes: "",
 };
 const EMPTY_BILLING_PROFILE = { officialName: "", invoiceTitle: "", taxId: "", billingEmail: "", submittedAt: null };
 const empty: Omit<School, "id" | "courseConfirmationSummary"> = { name: "", type: "", region: "", address: "", phone: "", contact: "", notes: "", lineUserId: "", billingProfile: EMPTY_BILLING_PROFILE, courseConfirmation: EMPTY_CONFIRMATION };
@@ -622,6 +624,25 @@ function SchoolConfirmationEditor({ value, onChange, onCopyPrevious, onReopen, o
       </div>
       <textarea value={value.classNotes ?? ""} onChange={(e) => update({ classNotes: e.target.value })} rows={2} placeholder="班級注意事項，例如：班級較活潑、較害羞、需注意特殊需求幼兒等" className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
       <textarea value={value.otherReminders ?? ""} onChange={(e) => update({ otherReminders: e.target.value })} rows={2} placeholder="其他提醒，例如：入校動線、停車位置、器材擺放、聯絡窗口等" className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+      {/* 以上欄位全部會原文出現在老師的課前提醒與 LINE 課表裡，所以金額、合約、園所私下交代
+          都不能寫在上面——寫了老師就看得到。行政備註是唯一不會外流的地方，樣式刻意跟上面
+          明顯區隔，避免行政在趕時間時把該保密的內容打進最近的那個輸入框。 */}
+      <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-bold text-amber-900">僅行政可見</span>
+          <span className="text-xs font-semibold text-amber-900">行政備註</span>
+        </div>
+        <div className="mt-1 text-[11px] text-amber-800">
+          上面每一欄都會原文發給老師。金額、合約、園所私下交代的事，請寫在這裡——這一欄不會出現在課前提醒、LINE 課表或任何老師看得到的畫面，園所端也看不到、改不到。
+        </div>
+        <textarea
+          value={value.adminNotes ?? ""}
+          onChange={(e) => update({ adminNotes: e.target.value })}
+          rows={3}
+          placeholder="例如：本學期單價、續約時程、園所主任偏好、催款狀況等"
+          className="mt-2 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+        />
+      </div>
     </div>
   );
 }
