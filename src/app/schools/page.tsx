@@ -207,7 +207,9 @@ export default function SchoolsPage() {
 
   async function resetConfirmation() {
     if (editing == null) return;
-    if (!confirm("這會清空目前學期的開課前確認表，園所端會重新變成空白可填。確定清空？")) return;
+    // 清空是整列刪掉，行政備註存在同一列，會一起不見。備註常常是這學期唯一寫下來的
+    // 單價或催款紀錄，刪掉沒有別的地方找得回來，所以要在確認框裡點名。
+    if (!confirm("這會清空目前學期的開課前確認表，園所端會重新變成空白可填。\n\n注意：行政備註也會一併刪除，且無法復原。確定清空？")) return;
     try {
       const res = await fetch(`/api/schools/${editing}`, {
         method: "PATCH",

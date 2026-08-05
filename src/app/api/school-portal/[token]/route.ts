@@ -15,6 +15,7 @@ import {
   listCourseStartConfirmationsBySchool,
   createCourseStartConfirmation,
   updateCourseStartConfirmation,
+  withoutAdminNotes,
 } from "@/lib/courseConfirmation";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { signTeacherCardToken } from "@/lib/publicAccessToken";
@@ -468,7 +469,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         contact: school.contact,
         phone: school.phone,
       },
-      courseConfirmation,
+      // 園所端也不該看到行政備註——那一欄會寫單價、續約時程、催款狀況
+      courseConfirmation: withoutAdminNotes(courseConfirmation),
       courseConfirmationHistory: history,
       confirmationTerm: {
         ...term,
@@ -629,7 +631,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     });
     return NextResponse.json({
       ok: true,
-      courseConfirmation,
+      courseConfirmation: withoutAdminNotes(courseConfirmation),
       courseConfirmationHistory: courseConfirmation.id ? await confirmationHistory(courseConfirmation.id) : [],
       confirmationTerm: {
         ...term,
