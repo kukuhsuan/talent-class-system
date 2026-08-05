@@ -29,6 +29,104 @@ function paletteFor(key: string) {
   return PALETTES[hash % PALETTES.length];
 }
 
+function ParsedActivityDirection({ text, themeColor }: { text: string; themeColor: string }) {
+  const lines = text.replace(/\\n/g, '\n').split('\n').filter(l => l.trim() !== '');
+  
+  const blocks: { type: 'header' | 'step', title?: string, content: string[] }[] = [];
+  let currentBlock: { type: 'header' | 'step', title?: string, content: string[] } = { type: 'header', content: [] };
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // 偵測是否為步驟標題（例如：① 基礎揮桿, 1. 暖身, 步驟 1:）
+    const stepMatch = trimmed.match(/^([①-⑩]|\d+\.|步驟\s*\d+[:：]?)\s*(.*)/);
+    
+    if (stepMatch) {
+      if (currentBlock.content.length > 0 || currentBlock.title) {
+        blocks.push(currentBlock);
+      }
+      currentBlock = { type: 'step', title: trimmed, content: [] };
+    } else {
+      currentBlock.content.push(trimmed);
+    }
+  }
+  if (currentBlock.content.length > 0 || currentBlock.title) {
+    blocks.push(currentBlock);
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+      {blocks.map((block, idx) => {
+        if (block.type === 'header' && block.content.length > 0) {
+          // 步驟開始前的引言或總體說明
+          return (
+            <div key={idx} className="text-[13.5px] leading-relaxed text-slate-600 bg-blue-50/40 p-4 rounded-xl border border-blue-100/50">
+              <div className="font-bold text-slate-700 mb-2 flex items-center gap-1.5 border-b border-blue-100 pb-2">
+                <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                課程簡介與準備
+              </div>
+              <p className="whitespace-pre-wrap">{block.content.join('\n')}</p>
+            </div>
+          );
+        } else if (block.type === 'step') {
+          // 擷取數字或圖示
+          const titleMatch = block.title?.match(/^([①-⑩]|\d+\.|步驟\s*\d+[:：]?)\s*(.*)/);
+          const iconText = titleMatch ? titleMatch[1].replace(/\./g, '').replace(/步驟/g, '').replace(/[:：]/g, '').trim() : "•";
+          const convertedNum = iconText.replace(/[①②③④⑤⑥⑦⑧⑨⑩]/g, (m) => String(m.charCodeAt(0) - 9311));
+          const mainTitle = titleMatch ? titleMatch[2] : block.title;
+          
+          return (
+            <div key={idx} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-shadow hover:shadow-md">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+                <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm" style={{ backgroundColor: themeColor }}>
+                  {convertedNum}
+                </div>
+                <h3 className="font-bold text-slate-800 text-[15px]">{mainTitle}</h3>
+              </div>
+              <div className="p-4 text-[13.5px] leading-relaxed text-slate-600 space-y-2">
+                {block.content.map((line, lineIdx) => {
+                  const isSubHeading = /^(目標|器材|流程|準備|備註|重點|活動|注意事項)[：:]/.test(line) || /^流程[:：]?$/.test(line);
+                  if (isSubHeading) {
+                    const colonIndex = line.indexOf('：') !== -1 ? line.indexOf('：') : line.indexOf(':');
+                    const term = line.slice(0, colonIndex > 0 ? colonIndex + 1 : line.length);
+                    const desc = colonIndex > 0 ? line.slice(colonIndex + 1) : '';
+                    
+                    let icon = "📌";
+                    if (term.includes("目標") || term.includes("重點")) icon = "🎯";
+                    if (term.includes("器材") || term.includes("準備")) icon = "🛠️";
+                    if (term.includes("流程") || term.includes("活動")) icon = "📝";
+                    if (term.includes("注意") || term.includes("備註")) icon = "⚠️";
+
+                    return (
+                      <div key={lineIdx} className="bg-slate-50 rounded-lg p-3 border border-slate-100 mt-2 first:mt-0">
+                        <span className="font-bold text-slate-700 block mb-1">{icon} {term}</span>
+                        {desc.trim() && <span className="block mt-1 whitespace-pre-wrap">{desc.trim()}</span>}
+                      </div>
+                    );
+                  }
+                  const isBullet = line.startsWith('・') || line.startsWith('-') || line.startsWith('•') || line.startsWith('*');
+                  return (
+                    <div key={lineIdx} className={isBullet ? "pl-1.5 flex gap-2" : ""}>
+                      {isBullet ? (
+                        <>
+                          <span className="text-slate-400 select-none">•</span>
+                          <span className="flex-1">{line.substring(1).trim()}</span>
+                        </>
+                      ) : (
+                        <span>{line}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 function PushModal({
   isOpen, onClose, courseType, lessonPlans, palette
 }: {
@@ -265,14 +363,8 @@ export default function LessonPlanPage() {
                         {row.focus || "本堂重點尚未填寫"}
                       </p>
                       {row.activityDirection && (
-                      <div className="mt-3 rounded-lg bg-slate-50/50 px-4 py-3 text-[13.5px] leading-relaxed text-slate-600 border border-slate-100">
-                        <div className="font-bold text-slate-700 mb-2 flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
-                          <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                          教案內容參考
-                        </div>
-                        <p className="whitespace-pre-wrap">{row.activityDirection.replace(/\\n/g, '\n')}</p>
-                      </div>
-                    )}
+                        <ParsedActivityDirection text={row.activityDirection} themeColor={palette.fg} />
+                      )}
                     </div>
                   </div>
                   <button
