@@ -494,7 +494,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const usedCourses = [...new Set([...courseTypesByTeacher.values()].flatMap((set) => [...set]))];
       const { readLessonTemplatesBulk, listLessonTemplates } = await import("@/lib/lessonTemplates");
       // 先用單次唯讀查詢拿全部課別（預覽會頻繁呼叫，不能每次都跑同步）
-      let bulk = new Map<string, Array<{ lesson: number; title: string; focus: string; skills: string[] }>>();
+      let bulk = new Map<string, Array<{ lesson: number; title: string; focus: string; skills: string[]; activityDirection?: string }>>();
       try {
         bulk = await readLessonTemplatesBulk(prisma, usedCourses);
       } catch {

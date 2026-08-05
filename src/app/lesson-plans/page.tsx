@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { listLessonTemplates } from "@/lib/lessonTemplates";
 import Link from "next/link";
 
@@ -5,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function LessonPlansIndexPage() {
   // 抓取所有的教案
-  const templates = await listLessonTemplates();
+  const templates = await listLessonTemplates(prisma);
 
   // 取得所有不重複的課程名稱
   const courseTypes = Array.from(new Set(templates.map(t => t.courseType))).sort();
