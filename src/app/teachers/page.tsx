@@ -75,7 +75,8 @@ export default function TeachersPage() {
   const [role, setRole] = useState("");
   const canSeeBank = BANK_VISIBLE_ROLES.has(role);
 
-  const load = () => fetch("/api/teachers").then((r) => r.json()).then((list: Teacher[]) => {
+  // profile=1：這一頁會顯示「近 90 天授課區域與專長」，是少數真的需要那段掃描的頁面
+  const load = () => fetch("/api/teachers?profile=1").then((r) => r.json()).then((list: Teacher[]) => {
     setTeachers(list);
     // 從 /salary 的「查看教師匯款資料」進來時，直接把搜尋框帶成那位老師
     const target = Number(new URLSearchParams(window.location.search).get("teacherId"));

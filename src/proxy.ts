@@ -115,14 +115,48 @@ function pathIsWriteApi(req: NextRequest) {
     && !["GET", "HEAD", "OPTIONS"].includes(req.method);
 }
 
-async function activeAccountRole(payload: Record<string, unknown>) {
-  const userId = Number(payload.userId);
-  if (!Number.isInteger(userId) || userId <= 0) return String(payload.role ?? "");
+// 這支 middleware 掛在「除了 _next/static 以外的每一個請求」上，而它每次都回資料庫問一次
+// 帳號狀態。開一個頁面實際上不只一個請求：HTML 本身、Next.js 對導覽列 5 條 Link 的預抓、
+// 再加上頁面自己打的 3~4 支 API，等於一次點擊就有 8~10 次 Turso 來回，而且每一次都排在
+// 真正的查詢前面（先問完權限才輪到頁面的資料）。系統變慢最大的一塊就在這裡。
+//
+// 快取 15 秒。停用帳號不再是「下一個請求就失效」，最慢會晚 15 秒——但只晚在唯讀瀏覽上：
+// 下面所有寫入請求與薪資、請款、帳號管理、稽核紀錄這些路徑一律不吃快取，照樣每次問資料庫。
+// 也就是說被停用的人最多還能多看 15 秒的列表，改不了任何東西、也碰不到錢的部分。
+const ROLE_CACHE_TTL_MS = 15_000;
+// 上限存在的理由：middleware 的執行環境會被重複使用，沒有上限的 Map 會隨著登入過的帳號
+// 一直長大，最後把記憶體吃光而不是慢慢變慢。超過就整批丟掉，代價只是下一輪重問一次。
+const ROLE_CACHE_MAX = 500;
+const roleCache = new Map<number, { role: string; expiresAt: number }>();
+
+async function fetchAccountRole(userId: number) {
   const account = await prisma.userAccount.findUnique({
     where: { id: userId },
     select: { isActive: true, role: true },
   });
   return account?.isActive ? account.role : "";
+}
+
+async function activeAccountRole(payload: Record<string, unknown>, allowCache: boolean) {
+  const userId = Number(payload.userId);
+  if (!Number.isInteger(userId) || userId <= 0) return String(payload.role ?? "");
+
+  if (allowCache) {
+    const cached = roleCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.role;
+  }
+
+  const role = await fetchAccountRole(userId);
+  if (roleCache.size >= ROLE_CACHE_MAX) roleCache.clear();
+  roleCache.set(userId, { role, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
+  return role;
+}
+
+// 哪些請求不准吃快取：任何會改到資料的動作，以及錢、帳號、稽核相關的頁面與 API。
+// 這些正是「停用一個帳號之後最怕他還能做的事」，所以寧可每次多一次資料庫來回。
+function roleCacheAllowed(req: NextRequest, path: string) {
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
+  return !isOwnerOnlyPath(path) && !isSalaryPath(path) && !isInvoicePath(path) && !isMaintenancePath(path);
 }
 
 export async function proxy(req: NextRequest) {
@@ -142,7 +176,8 @@ export async function proxy(req: NextRequest) {
     if (!token) return NextResponse.next();
     try {
       const { payload } = await jwtVerify(token, secret);
-      const role = await activeAccountRole(payload);
+      // 登入頁的轉址判斷：判錯的後果只是多看一次登入頁，不是權限外洩，可以吃快取
+      const role = await activeAccountRole(payload, true);
       if (BACKOFFICE_ROLES.has(role)) {
         return NextResponse.redirect(new URL("/", req.url));
       }
@@ -162,7 +197,7 @@ export async function proxy(req: NextRequest) {
     if (!token) return unauthorized();
     try {
       const { payload } = await jwtVerify(token, secret);
-      const role = await activeAccountRole(payload);
+      const role = await activeAccountRole(payload, false);
       if (!OWNER_ROLES.has(role)) {
         return NextResponse.json({ error: "權限不足" }, { status: 403 });
       }
@@ -177,7 +212,7 @@ export async function proxy(req: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token, secret);
-    const role = await activeAccountRole(payload);
+    const role = await activeAccountRole(payload, roleCacheAllowed(req, path));
     if (!BACKOFFICE_ROLES.has(role)) {
       if (path.startsWith("/api/")) {
         return NextResponse.json({ error: "權限不足" }, { status: 403 });

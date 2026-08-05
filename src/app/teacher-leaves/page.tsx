@@ -304,7 +304,8 @@ export default function TeacherLeavesPage() {
 
   async function ensureTeacherOptions() {
     if (teacherOptions.length > 0) return;
-    const data = await fetch("/api/teachers", { cache: "no-store" }).then((res) => res.json());
+    // profile=1：挑代課人選時要看區域與專長，這一頁確實需要那段近 90 天的統計
+    const data = await fetch("/api/teachers?profile=1", { cache: "no-store" }).then((res) => res.json());
     setTeacherOptions(Array.isArray(data) ? data : []);
   }
 

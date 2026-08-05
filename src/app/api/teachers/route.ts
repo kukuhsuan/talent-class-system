@@ -35,9 +35,16 @@ export async function GET(req: NextRequest) {
 
   await ensureTeacherExtendedColumns();
   const teachers = await prisma.teacher.findMany({ orderBy: { name: "asc" } });
-  const profiles = await teacherTeachingProfiles(prisma, teachers.map((teacher) => teacher.id));
+  // teachingProfile（近 90 天授課區域與專長）要掃三個月的出勤，再 join 課程與園所，
+  // 是這支 API 最貴的一段。但畫面上只有老師管理與老師請假兩頁真的在顯示它；
+  // 課程排班、LINE 通知、教案頁抓這份清單只是為了下拉選單的姓名，
+  // 卻一樣在等這段掃描跑完。改成要的人自己加 profile=1，其餘的頁面就不必付這筆錢。
+  const withProfile = req.nextUrl.searchParams.get("profile") === "1";
+  const profiles = withProfile
+    ? await teacherTeachingProfiles(prisma, teachers.map((teacher) => teacher.id))
+    : null;
   return NextResponse.json(teachers.map((row) => {
-    const teachingProfile = profiles.get(row.id);
+    const teachingProfile = profiles?.get(row.id);
     return {
       ...row,
       // 依角色過濾敏感欄位
