@@ -20,6 +20,7 @@ const GROUPS = [
   {
     title: "課務作業",
     items: [
+      { href: "/lesson-plans", label: "教案總覽" },
       { href: "/course-change-requests", label: "課程異動申請" },
       { href: "/progress", label: "課程進度" },
       { href: "/teacher-leaves", label: "老師請假" },
