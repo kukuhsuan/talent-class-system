@@ -9,7 +9,9 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
 
     const csvContent = await file.text();
-    const records = parse(csvContent, { columns: true, skip_empty_lines: true });
+    // csv-parse 的 parse() 回 unknown，不標型別的話底下每個 row.xxx 都是 TS18046，整個專案編不過。
+    // 標成字串字典而不是 any，是因為 CSV 每一格本來就只會是字串，欄位有沒有存在則靠底下的 || "" 兜。
+    const records = parse(csvContent, { columns: true, skip_empty_lines: true }) as Record<string, string>[];
 
     // 依 category 分組，決定 lesson number
     const courseTypeMap = new Map<string, any[]>();
