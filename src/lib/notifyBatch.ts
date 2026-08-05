@@ -286,6 +286,26 @@ function buildAckFlex(label: string, r: BatchRecipientMessage) {
 const LESSONS_PER_BUBBLE = 6;
 const MAX_PLAN_BUBBLES = 10; // LINE carousel 上限 12，保守留餘裕
 
+// 格式化教案內容，讓 LINE 顯示不再擠成一團
+function formatActivityDirection(text: string, themeColor: string) {
+  const lines = text.replace(/\\n/g, '\n').split('\n').filter(l => l.trim() !== '');
+  return lines.map((line, index) => {
+    const trimmed = line.trim();
+    const isMainStep = /^[①-⑩]/.test(trimmed) || /^\d+\./.test(trimmed) || /^步驟\s*\d+/.test(trimmed);
+    const isSubHeading = /^(目標|器材|流程|準備|備註|重點|注意事項)[：:]/.test(trimmed) || /^流程[:：]?$/.test(trimmed);
+    
+    return {
+      type: "text",
+      text: trimmed,
+      size: "xs",
+      color: isMainStep ? themeColor : (isSubHeading ? "#333333" : "#555555"),
+      weight: (isMainStep || isSubHeading) ? "bold" : "regular",
+      wrap: true,
+      margin: index === 0 ? "none" : (isMainStep ? "lg" : (isSubHeading ? "md" : "xs")),
+    };
+  });
+}
+
 function buildLessonPlanFlex(card: LessonPlanCard) {
   const total = card.items.length;
   const pages: LessonPlanCard["items"][] = [];
@@ -329,7 +349,13 @@ function buildLessonPlanFlex(card: LessonPlanCard) {
               ...(row.activityDirection
                 ? [
                     { type: "separator", margin: "md" },
-                    { type: "text", text: row.activityDirection.replace(/\\n/g, '\n'), size: "xs", color: "#4A5568", wrap: true }
+                    { 
+                      type: "box", 
+                      layout: "vertical", 
+                      margin: "md",
+                      spacing: "none",
+                      contents: formatActivityDirection(row.activityDirection, card.color)
+                    }
                   ]
                 : []),
             ],

@@ -38,6 +38,7 @@ function PushModal({
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -46,8 +47,14 @@ function PushModal({
       });
       setSelectedIds([]);
       setMsg("");
+      setSearchTerm("");
     }
   }, [isOpen]);
+
+  const filteredTeachers = useMemo(() => {
+    if (!searchTerm.trim()) return teachers;
+    return teachers.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [teachers, searchTerm]);
 
   async function handlePush() {
     if (selectedIds.length === 0) return;
@@ -94,11 +101,28 @@ function PushModal({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto mb-4 border border-slate-200 rounded-lg p-2 space-y-1">
+        <div className="mb-3">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input 
+              type="text" 
+              placeholder="搜尋教練姓名..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto mb-4 border border-slate-200 rounded-lg p-2 space-y-1 bg-slate-50/50">
           {teachers.length === 0 ? (
             <div className="p-4 text-center text-sm text-slate-400">載入中或無已綁定之教師...</div>
+          ) : filteredTeachers.length === 0 ? (
+            <div className="p-4 text-center text-sm text-slate-400">找不到符合「{searchTerm}」的教練</div>
           ) : (
-            teachers.map(t => (
+            filteredTeachers.map(t => (
               <label key={t.id} className="flex items-center gap-3 rounded-md px-3 py-2 hover:bg-slate-50 cursor-pointer">
                 <input type="checkbox"
                   className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
