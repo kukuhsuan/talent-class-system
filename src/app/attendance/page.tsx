@@ -242,6 +242,22 @@ export default function AttendancePage() {
     }
   };
 
+  const copyReportLink = async (r: Attendance) => {
+    try {
+      const res = await fetch(`/api/attendance/${r.id}/report-link`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("error", data.error ?? "產生課程回報連結失敗");
+        return;
+      }
+      const url = `${window.location.origin}${data.path}`;
+      await navigator.clipboard.writeText(url);
+      showToast("success", "課程回報連結已複製");
+    } catch (error) {
+      showToast("error", (error as Error).message || "複製課程回報連結失敗");
+    }
+  };
+
   const exportAttendance = async () => {
     if (exporting) return;
     setExporting(true);
@@ -747,7 +763,7 @@ export default function AttendancePage() {
                           )}
                           {substitute && <div className="mt-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">代課</div>}
                           {(r.cancelReason || r.notes) && <div className="mt-2 text-xs text-slate-500">{r.cancelReason || r.notes}</div>}
-                          <div className="mt-4 flex justify-end"><AttendanceActions row={r} onEdit={edit} onCopyRating={copyRatingLink} onDelete={del} /></div>
+                          <div className="mt-4 flex justify-end"><AttendanceActions row={r} onEdit={edit} onCopyReport={copyReportLink} onCopyRating={copyRatingLink} onDelete={del} /></div>
                         </div>
                       );
                     })}
@@ -816,7 +832,7 @@ export default function AttendancePage() {
                               </td>
                               <td className="max-w-[220px] truncate px-4 py-4 text-xs text-slate-500" title={r.hoursNeedsReview ? `上課時間需人工確認：${r.hoursReviewReason || ""}` : r.cancelReason || r.notes || ""}>{r.hoursNeedsReview ? "上課時間需人工確認" : r.cancelReason || r.notes || "-"}</td>
                               <td className="px-4 py-4">
-                                <AttendanceActions row={r} onEdit={edit} onCopyRating={copyRatingLink} onDelete={del} />
+                                <AttendanceActions row={r} onEdit={edit} onCopyReport={copyReportLink} onCopyRating={copyRatingLink} onDelete={del} />
                               </td>
                             </tr>
                           );
@@ -839,7 +855,7 @@ export default function AttendancePage() {
   );
 }
 
-function AttendanceActions({ row, onEdit, onCopyRating, onDelete }: { row: Attendance; onEdit: (row: Attendance) => void; onCopyRating: (row: Attendance) => void; onDelete: (id: number) => void }) {
+function AttendanceActions({ row, onEdit, onCopyReport, onCopyRating, onDelete }: { row: Attendance; onEdit: (row: Attendance) => void; onCopyReport: (row: Attendance) => void; onCopyRating: (row: Attendance) => void; onDelete: (id: number) => void }) {
   const run = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
     const menu = event.currentTarget.closest("details");
     if (menu) menu.open = false;
@@ -853,6 +869,7 @@ function AttendanceActions({ row, onEdit, onCopyRating, onDelete }: { row: Atten
       <Link href={`/course-briefings?courseId=${row.course.id}&teacherId=${row.actualTeacher.id}&date=${row.date.slice(0, 10)}`} className={`${item} font-semibold text-indigo-700`}>新增課前交辦</Link>
       <Link href={`/course-change-requests?attendanceId=${row.id}`} className={item}>申請課程異動</Link>
       <a href={`/attendance/sign-in-sheet?id=${row.id}`} target="_blank" rel="noreferrer" className={item}>開啟簽到表</a>
+      <button onClick={(event) => run(event, () => onCopyReport(row))} className={item}>複製課程回報連結</button>
       {(row.course.department ?? "").includes("安親") && <button onClick={(event) => run(event, () => onCopyRating(row))} className={item}>複製評分連結</button>}
       <div className="my-1 border-t border-slate-100" />
       <button onClick={(event) => run(event, () => onDelete(row.id))} className={`${item} text-red-600 hover:bg-red-50`}>刪除紀錄</button>
