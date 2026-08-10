@@ -42,6 +42,7 @@ type ReportInfo = {
   courseEndsAt?: string;
   reportExpiresAt?: string;
   schoolSignatureRequired?: boolean;
+  schoolSignatureAvailable?: boolean;
   schoolVerifierName?: string;
   schoolSignatureData?: string;
   schoolSignedAt?: string | null;
@@ -592,6 +593,15 @@ export default function TeacherReportPage() {
       setError("請由園所老師完成手寫簽名");
       return;
     }
+    const signatureStarted = Boolean(form.schoolVerifierName.trim() || form.schoolSignatureData);
+    if (signatureStarted && !form.schoolVerifierName.trim()) {
+      setError("使用電子簽名時，請填寫園所確認老師姓名");
+      return;
+    }
+    if (signatureStarted && !form.schoolSignatureData) {
+      setError("使用電子簽名時，請由園所老師完成手寫簽名");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -891,16 +901,19 @@ export default function TeacherReportPage() {
           )}
         </section>
 
-        {info.schoolSignatureRequired && (
+        {(info.schoolSignatureAvailable || info.schoolSignatureRequired) && (
           <section className="rounded-2xl border border-[#BFDBFE] bg-[#F8FBFF] p-4 shadow-sm">
-            <div className="text-sm font-bold text-[#1D4ED8]">園所老師確認簽名</div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">請由現場園所老師確認以上回報內容，並在同一支手機完成簽名。</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-bold text-[#1D4ED8]">現場老師電子簽名</div>
+              {!info.schoolSignatureRequired && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-[#BFDBFE]">沒有紙本時使用</span>}
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">若現場沒有紙本點名表，可請幼兒園或安親班老師確認回報內容，並在同一支手機簽名；有紙本時可略過。</p>
             <div className={`mt-3 grid gap-2 text-xs font-semibold text-slate-600 ${needsStudentCount ? "grid-cols-2" : "grid-cols-1"}`}>
               <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">日期：{new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
               {needsStudentCount && <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">實際上課人數：{form.studentCount || "請於上方填寫"}</div>}
             </div>
             <label className="mt-4 block text-sm font-semibold text-slate-700">
-              園所確認老師姓名（請以正楷簽署本名）
+              現場確認老師姓名（請以正楷簽署本名）
               <input value={form.schoolVerifierName} disabled={locked} onChange={(e) => setForm({ ...form, schoolVerifierName: e.target.value })}
                 className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#2563EB]" placeholder="請輸入本名（正楷）" />
             </label>

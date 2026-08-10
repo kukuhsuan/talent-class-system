@@ -1,15 +1,18 @@
 import { prisma } from "@/lib/prisma";
 
 let signatureColumnsReady = false;
-// 手機端簽名開關：安親班回報頁顯示園所簽名欄（關閉時改採每月紙本核對表）。
-const MOBILE_SCHOOL_SIGNATURE_ENABLED = false;
-// 測試白名單：這些老師的課即使開關關閉仍會顯示簽名欄（測試完可清空）
-const SIGNATURE_TEST_TEACHERS = ["咕咕瑄"];
 
-export function requiresSchoolSignature(department: string | null | undefined, teacherName?: string | null) {
-  const name = String(teacherName ?? "");
-  if (name && SIGNATURE_TEST_TEACHERS.some((test) => name.includes(test))) return true;
-  return MOBILE_SCHOOL_SIGNATURE_ENABLED && String(department ?? "").includes("安親");
+/** 幼兒園與安親班可用現場電子簽名取代臨時缺少的紙本點名表。 */
+export function supportsSchoolSignature(department: string | null | undefined) {
+  const value = String(department ?? "");
+  return value.includes("幼兒園") || value.includes("安親");
+}
+
+export function requiresSchoolSignature(_department: string | null | undefined, _teacherName?: string | null) {
+  // 電子簽名是沒有紙本點名表時的備用方案，不強迫每堂課簽名。
+  void _department;
+  void _teacherName;
+  return false;
 }
 
 export async function ensureSchoolSignatureColumns() {

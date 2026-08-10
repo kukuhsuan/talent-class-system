@@ -6,7 +6,7 @@ import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
 import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
-import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, validSignatureData } from "@/lib/schoolSignature";
+import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, supportsSchoolSignature, validSignatureData } from "@/lib/schoolSignature";
 import { readHandoffNotes, writeHandoffNote } from "@/lib/lessonHandoff";
 
 type ReportPayload = {
@@ -195,6 +195,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ? (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? ""
         : "",
       schoolSignatureRequired: requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name),
+      schoolSignatureAvailable: supportsSchoolSignature(attendance.course.department),
       schoolVerifierName: signature?.schoolVerifierName ?? "",
       schoolSignatureData: signature?.schoolSignatureData ?? "",
       schoolSignedAt: signature?.schoolSignedAt instanceof Date ? signature.schoolSignedAt.toISOString() : signature?.schoolSignedAt ?? null,
@@ -332,11 +333,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const signatureRequired = requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name);
     const schoolVerifierName = String(data.schoolVerifierName ?? "").trim();
     const schoolSignatureData = String(data.schoolSignatureData ?? "");
+    const signatureProvided = Boolean(schoolVerifierName || schoolSignatureData);
     if (signatureRequired && !schoolVerifierName) {
       return NextResponse.json({ error: "請填寫園所確認老師姓名" }, { status: 400 });
     }
     if (signatureRequired && !validSignatureData(schoolSignatureData)) {
       return NextResponse.json({ error: "請由園所老師完成手寫簽名" }, { status: 400 });
+    }
+    if (signatureProvided && !schoolVerifierName) {
+      return NextResponse.json({ error: "使用電子簽名時，請填寫園所確認老師姓名" }, { status: 400 });
+    }
+    if (signatureProvided && !validSignatureData(schoolSignatureData)) {
+      return NextResponse.json({ error: "使用電子簽名時，請由園所老師完成手寫簽名" }, { status: 400 });
     }
 
     const incidentChild = String(data.incidentChild ?? "").trim();
@@ -385,7 +393,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
     await writeHandoffNote(attendance.id, handoffNote).catch(() => undefined);
-    if (signatureRequired) await saveSchoolSignature(attendance.id, schoolVerifierName, schoolSignatureData);
+    if (signatureRequired || signatureProvided) await saveSchoolSignature(attendance.id, schoolVerifierName, schoolSignatureData);
     const { writeAuditLog } = await import("@/lib/auditLog");
     await writeAuditLog(req, {
       actorName: attendance.actualTeacher.name,
@@ -403,7 +411,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         studentCount: data.studentCount == null ? attendance.studentCount : Number(data.studentCount),
         reportContent,
         reportSentAt: "now",
-        ...(signatureRequired ? { schoolVerifierName, schoolSignedAt: "now" } : {}),
+        ...(signatureRequired || signatureProvided ? { schoolVerifierName, schoolSignedAt: "now" } : {}),
       },
       diffSummary: `老師送出課後回報：${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
     });
