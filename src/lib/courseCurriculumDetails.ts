@@ -107,9 +107,35 @@ export const TEEBALL_LESSON_DETAILS: CanonicalLessonDetail[] = [
   { lesson: 20, title: "分組對抗賽", focus: "友誼對抗賽綜合投、接、打、跑，練習賽後致意。", skills: ["成果展現", "運動精神"] },
 ];
 
+// 來源：營運提供的「幼兒匹克球 20 堂課程規劃」（中班～大班）。
+// 教學原則：前 5 堂以球感與拍感為主，第 6–12 堂建立技巧，第 13 堂後再進入對打與比賽。
+export const PICKLEBALL_LESSON_DETAILS: CanonicalLessonDetail[] = [
+  { lesson: 1, title: "我的小球拍", focus: "認識球拍、球與場地，學習安全拿拍、放拍與基本準備姿勢。", skills: ["安全意識", "器材認識"] },
+  { lesson: 2, title: "小球不落地", focus: "用球拍托球、停球、拍球，建立基本球感與拍面控制。", skills: ["球感", "拍面控制"] },
+  { lesson: 3, title: "球球彈跳樂", focus: "練習地面反彈後接球、拍一下再接住，認識球的彈跳特性。", skills: ["手眼協調", "彈跳判斷"] },
+  { lesson: 4, title: "小小服務生", focus: "用球拍拍著球前進，繞過角錐，把球安全送到指定位置。", skills: ["移動控制", "平衡協調"] },
+  { lesson: 5, title: "球球走直線", focus: "用球拍將球向前輕推，讓球通過球門或沿指定路線前進。", skills: ["方向控制", "力量控制"] },
+  { lesson: 6, title: "正手擊球初體驗", focus: "認識正手擊球，練習側身、看球、向前揮拍，將球打向大型目標。", skills: ["正手擊球", "手眼協調"] },
+  { lesson: 7, title: "正手小神射手", focus: "挑戰不同顏色與距離的目標區，提升正手擊球方向控制。", skills: ["目標瞄準", "方向控制"] },
+  { lesson: 8, title: "反手也會打", focus: "認識反手動作，練習雙手或單手反手將球送向前方。", skills: ["反手擊球", "雙側協調"] },
+  { lesson: 9, title: "左右小高手", focus: "從左右兩側判斷來球，選擇正手或反手完成擊球。", skills: ["來球判斷", "反應力"] },
+  { lesson: 10, title: "發球小隊長", focus: "練習幼兒簡化版下手發球，將球從指定位置送過球網。", skills: ["下手發球", "動作控制"] },
+  { lesson: 11, title: "發球闖城門", focus: "以不同大小城門挑戰發球，練習方向與力量控制。", skills: ["發球準確", "力量控制"] },
+  { lesson: 12, title: "球網大冒險", focus: "認識球網與兩側場地，練習讓球安全越過球網並落在指定區域。", skills: ["過網控制", "空間判斷"] },
+  { lesson: 13, title: "接球小勇士", focus: "判斷來球方向，移動到球旁後再擊球，建立基本接球概念。", skills: ["移動擊球", "來球判斷"] },
+  { lesson: 14, title: "一拍一接合作賽", focus: "兩人合作，一人餵球、一人擊球，挑戰連續完成指定次數。", skills: ["合作", "輪流等待"] },
+  { lesson: 15, title: "迷你對打初體驗", focus: "使用近距離、低球網進行一拍一回合，體驗基本來回對打。", skills: ["對打概念", "回球控制"] },
+  { lesson: 16, title: "連續對打挑戰", focus: "兩人合作累積連續擊球次數，從 2 拍、3 拍逐步增加。", skills: ["連續擊球", "合作默契"] },
+  { lesson: 17, title: "移動擊球大冒險", focus: "結合前進、後退、左右移動與擊球，挑戰不同位置的來球。", skills: ["移動擊球", "空間判斷"] },
+  { lesson: 18, title: "匹克球闖關王", focus: "綜合托球、發球、正手、反手、過網與瞄準，完成多站式闖關。", skills: ["技巧整合", "自信心"] },
+  { lesson: 19, title: "小小雙打合作賽", focus: "兩人一組學習分工、輪流擊球與互相提醒，進行簡化雙打遊戲。", skills: ["雙打合作", "溝通"] },
+  { lesson: 20, title: "匹克球歡樂盃", focus: "進行發球、瞄準、連續對打及迷你比賽，完成成果挑戰與頒獎。", skills: ["成果展現", "運動精神"] },
+];
+
 export const CANONICAL_LESSON_DETAILS: Record<string, CanonicalLessonDetail[]> = {
   體能: FITNESS_LESSON_DETAILS,
   足球: FOOTBALL_LESSON_DETAILS,
   帶式橄欖球: FLAG_RUGBY_LESSON_DETAILS,
   棒球: TEEBALL_LESSON_DETAILS,
+  匹克球: PICKLEBALL_LESSON_DETAILS,
 };

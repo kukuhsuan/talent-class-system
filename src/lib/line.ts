@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { COURSE_LABEL, courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { equipmentFirstClassText, type EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { signPublicAccessToken } from "@/lib/publicAccessToken";
+import { PICKLEBALL_LESSON_DETAILS } from "@/lib/courseCurriculumDetails";
 
 export { COURSE_LABEL, courseLabel };
 
@@ -12,6 +13,7 @@ function appUrl() {
 
 // Course curriculum data (lesson number → title)
 export const COURSE_CURRICULUM: Record<string, Array<{ lesson: number; title: string }>> = {
+  匹克球: PICKLEBALL_LESSON_DETAILS.map(({ lesson, title }) => ({ lesson, title })),
   足球: [
     { lesson: 1, title: "足球初體驗" },
     { lesson: 2, title: "球感再熟悉" },

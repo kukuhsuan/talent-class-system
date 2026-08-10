@@ -65,18 +65,22 @@ export default function ProgressPage() {
 
   useEffect(() => {
     fetch("/api/teachers?minimal=1").then((r) => r.json()).then(setTeachers);
-    fetch("/api/lesson-templates")
-      .then((r) => r.json())
-      .then((rows: LessonTemplate[]) => {
-        const labels = [...new Set(rows.map((row) => courseLabel(row.courseType)).filter(Boolean))];
-        const options = labels.map((label) => ({ code: label, label }));
-        setCourseOptions(options);
-        setManageCourse((current) =>
-          options.length > 0 && !options.some((option) => option.label === current)
-            ? options[0].label
-            : current
-        );
-      });
+    Promise.all([
+      fetch("/api/lesson-templates").then((r) => r.json()) as Promise<LessonTemplate[]>,
+      fetch("/api/course-options").then((r) => r.json()) as Promise<CourseOption[]>,
+    ]).then(([rows, configuredOptions]) => {
+      const labels = [...new Set([
+        ...configuredOptions.map((option) => courseLabel(option.label || option.code)),
+        ...rows.map((row) => courseLabel(row.courseType)),
+      ].filter(Boolean))];
+      const options = labels.map((label) => ({ code: label, label }));
+      setCourseOptions(options);
+      setManageCourse((current) =>
+        options.length > 0 && !options.some((option) => option.label === current)
+          ? options[0].label
+          : current
+      );
+    });
   }, []);
 
   useEffect(() => {

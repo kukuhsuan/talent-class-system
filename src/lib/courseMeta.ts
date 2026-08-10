@@ -3,6 +3,7 @@ export const COURSE_OPTIONS = [
   { code: "P", label: "體能" },
   { code: "G", label: "高爾夫" },
   { code: "BK", label: "籃球" },
+  { code: "PB", label: "匹克球" },
   { code: "B", label: "棒球" },
   { code: "TR", label: "帶式橄欖球" },
   { code: "D", label: "舞蹈" },
@@ -19,6 +20,9 @@ export const COURSE_LABEL: Record<string, string> = {
   g: "高爾夫",
   BK: "籃球",
   bk: "籃球",
+  PB: "匹克球",
+  pb: "匹克球",
+  匹克球: "匹克球",
   B: "棒球",
   b: "棒球",
   // 樂樂棒球是幼兒版棒球，課程進度與棒球共用一份，統一顯示為「棒球」
