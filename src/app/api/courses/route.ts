@@ -23,7 +23,11 @@ export async function GET(req: NextRequest) {
   const search = (searchParams.get("search") ?? "").trim();
   const teacherFilter = searchParams.get("teacher") ?? "";
   const month = Number(searchParams.get("month") ?? "0") || 0;
-  const year = Number(searchParams.get("year") ?? new Date().getFullYear()) || new Date().getFullYear();
+  const term = (searchParams.get("term") ?? "").trim();
+  const termMatch = term.match(/^(\d{3})-([12])$/);
+  const academicYear = termMatch ? Number(termMatch[1]) : null;
+  const semester = termMatch?.[2] ?? null;
+  const year = academicYear === null ? new Date().getFullYear() : academicYear + (semester === "1" ? 1911 : 1912);
   const includeDates = searchParams.get("includeDates") === "1";
   const includeConfirmation = searchParams.get("includeConfirmation") !== "0";
   if (searchParams.get("nextCode") === "1") {
@@ -38,23 +42,34 @@ export async function GET(req: NextRequest) {
   if (region) where.region = region;
   if (teacherFilter === "unassigned") where.teacher = { is: { name: WAITING_TEACHER_NAME } };
   else if (teacherFilter) where.teacherId = Number(teacherFilter);
-  if (month >= 1 && month <= 12) {
-    where.attendances = {
-      some: {
-        date: {
-          gte: new Date(Date.UTC(year, month - 1, 1)),
-          lt: new Date(Date.UTC(year, month, 1)),
-        },
+  if (academicYear !== null && semester) {
+    const termDateRange = semester === "1"
+      ? { gte: new Date(Date.UTC(academicYear + 1911, 8, 1)), lt: new Date(Date.UTC(academicYear + 1912, 0, 1)) }
+      : { gte: new Date(Date.UTC(academicYear + 1912, 0, 1)), lt: new Date(Date.UTC(academicYear + 1912, 8, 1)) };
+    const selectedDateRange = month >= 1 && month <= 12
+      ? { gte: new Date(Date.UTC(year, month - 1, 1)), lt: new Date(Date.UTC(year, month, 1)) }
+      : termDateRange;
+    const overriddenTermCondition = month >= 1 && month <= 12
+      ? { notes: { contains: `[[TERM:${term}]]` }, attendances: { some: { date: selectedDateRange } } }
+      : { notes: { contains: `[[TERM:${term}]]` } };
+    where.OR = [
+      overriddenTermCondition,
+      {
+        AND: [
+          { OR: [{ notes: null }, { notes: { not: { contains: "[[TERM:" } } }] },
+          { attendances: { some: { date: selectedDateRange } } },
+        ],
       },
-    };
+    ];
   }
   if (search) {
-    where.OR = [
+    const searchConditions = [
       { code: { contains: search } },
       { school: { contains: search } },
       { courseType: { contains: search } },
       { teacher: { is: { name: { contains: search } } } },
     ];
+    where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { OR: searchConditions }];
   }
 
   // 精簡模式：只回傳下拉選單需要的欄位，省掉整包關聯資料（出勤頁選項載入用）

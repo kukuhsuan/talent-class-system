@@ -115,6 +115,15 @@ function academicTermOfDate(iso?: string) {
   return month >= 9 ? `${year - 1911}-1` : `${year - 1912}-2`;
 }
 
+function currentAcademicTerm() {
+  return academicTermOfDate(new Date().toISOString().slice(0, 10));
+}
+
+function academicTermOptions() {
+  const current = Number(currentAcademicTerm().split("-")[0]) || new Date().getFullYear() - 1912;
+  return [`${current + 1}-1`, `${current}-2`, `${current}-1`, `${current - 1}-2`];
+}
+
 function courseTerm(c: Course) {
   if (c.academicTermOverride) return c.academicTermOverride;
   const dates = uniqueSortedDates(c.scheduledDates ?? []);
@@ -192,7 +201,7 @@ export default function CoursesPage() {
   const [filterRegion, setFilterRegion] = useState("");
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
-  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [filterTerm, setFilterTerm] = useState(currentAcademicTerm());
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -225,10 +234,8 @@ export default function CoursesPage() {
       if (effectiveDept) params.set("dept", effectiveDept);
       if (filterRegion) params.set("region", filterRegion);
       if (filterTeacher) params.set("teacher", filterTeacher);
-      if (filterMonth) {
-        params.set("month", filterMonth);
-        params.set("year", String(filterYear));
-      }
+      params.set("term", filterTerm);
+      if (filterMonth) params.set("month", filterMonth);
       if (search.trim()) params.set("search", search.trim());
       setLoadingCourses(true);
       try {
@@ -243,7 +250,7 @@ export default function CoursesPage() {
         setLoadingCourses(false);
       }
     },
-    [dept, filterDepartment, filterMonth, filterRegion, filterTeacher, filterYear, page, search],
+    [dept, filterDepartment, filterMonth, filterRegion, filterTeacher, filterTerm, page, search],
   );
 
   const loadOptions = useCallback(async () => {
@@ -290,12 +297,12 @@ export default function CoursesPage() {
     const queryDept = params.get("dept");
     const queryTeacher = params.get("teacher");
     const queryMonth = params.get("month");
-    const queryYear = params.get("year");
+    const queryTerm = params.get("term");
     queueMicrotask(() => {
       if (queryDept) setFilterDepartment(queryDept);
       if (queryTeacher) setFilterTeacher(queryTeacher);
       if (queryMonth) setFilterMonth(queryMonth);
-      if (queryYear) setFilterYear(Number(queryYear) || new Date().getFullYear());
+      if (queryTerm) setFilterTerm(queryTerm);
     });
   }, []);
 
@@ -853,10 +860,11 @@ export default function CoursesPage() {
           />
           <select value={filterMonth} onChange={(e) => { setFilterMonth(e.target.value); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
             <option value="">全部月份</option>
-            <option value="7">7月</option>
-            <option value="8">8月</option>
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month}月</option>)}
           </select>
-          <input type="number" value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value) || new Date().getFullYear()); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+          <select aria-label="課程期別" value={filterTerm} onChange={(e) => { setFilterTerm(e.target.value); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+            {academicTermOptions().map((term) => <option key={term} value={term}>{term} 期別</option>)}
+          </select>
           {(filterDepartment || filterTeacher || filterMonth) && (
             <button type="button" onClick={() => { setFilterDepartment(""); setFilterTeacher(""); setFilterMonth(""); setPage(1); }}
               className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">
