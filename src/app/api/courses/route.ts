@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
   // 課程清單與出勤頁的課程下拉預設只提供進行中的課程；封存資料仍留在資料庫，
   // 過往出勤則由 /api/attendance 依日期保留查詢。
   const where: Record<string, unknown> = { isActive: true };
+  const andConditions: Prisma.CourseWhereInput[] = [];
   if (dept) where.department = { in: departmentQueryValues(dept) };
   if (region) where.region = region;
   if (teacherFilter === "unassigned") where.teacher = { is: { name: WAITING_TEACHER_NAME } };
@@ -49,8 +50,18 @@ export async function GET(req: NextRequest) {
     const selectedDateRange = month >= 1 && month <= 12
       ? { gte: new Date(Date.UTC(year, month - 1, 1)), lt: new Date(Date.UTC(year, month, 1)) }
       : termDateRange;
-    // 期別清單以實際上課日期為準，避免舊資料沒有人工期別標記時整批消失。
-    where.attendances = { some: { date: selectedDateRange } };
+    // 行政人工標記的期別優先；沒有人工標記的舊課程才依實際上課日期判斷。
+    andConditions.push({
+      OR: [
+        { notes: { contains: `[[TERM:${term}]]` } },
+        {
+          AND: [
+            { notes: { not: { contains: "[[TERM:" } } },
+            { attendances: { some: { date: selectedDateRange } } },
+          ],
+        },
+      ],
+    });
   }
   if (search) {
     const searchConditions = [
@@ -59,8 +70,9 @@ export async function GET(req: NextRequest) {
       { courseType: { contains: search } },
       { teacher: { is: { name: { contains: search } } } },
     ];
-    where.OR = searchConditions;
+    andConditions.push({ OR: searchConditions });
   }
+  if (andConditions.length) where.AND = andConditions;
 
   // 精簡模式：只回傳下拉選單需要的欄位，省掉整包關聯資料（出勤頁選項載入用）
   if (searchParams.get("minimal") === "1") {
