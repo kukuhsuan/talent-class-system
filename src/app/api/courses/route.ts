@@ -49,18 +49,8 @@ export async function GET(req: NextRequest) {
     const selectedDateRange = month >= 1 && month <= 12
       ? { gte: new Date(Date.UTC(year, month - 1, 1)), lt: new Date(Date.UTC(year, month, 1)) }
       : termDateRange;
-    const overriddenTermCondition = month >= 1 && month <= 12
-      ? { notes: { contains: `[[TERM:${term}]]` }, attendances: { some: { date: selectedDateRange } } }
-      : { notes: { contains: `[[TERM:${term}]]` } };
-    where.OR = [
-      overriddenTermCondition,
-      {
-        AND: [
-          { OR: [{ notes: null }, { notes: { not: { contains: "[[TERM:" } } }] },
-          { attendances: { some: { date: selectedDateRange } } },
-        ],
-      },
-    ];
+    // 期別清單以實際上課日期為準，避免舊資料沒有人工期別標記時整批消失。
+    where.attendances = { some: { date: selectedDateRange } };
   }
   if (search) {
     const searchConditions = [
@@ -69,7 +59,7 @@ export async function GET(req: NextRequest) {
       { courseType: { contains: search } },
       { teacher: { is: { name: { contains: search } } } },
     ];
-    where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { OR: searchConditions }];
+    where.OR = searchConditions;
   }
 
   // 精簡模式：只回傳下拉選單需要的欄位，省掉整包關聯資料（出勤頁選項載入用）
