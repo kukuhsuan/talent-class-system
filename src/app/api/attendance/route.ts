@@ -39,6 +39,18 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") ?? "";
 
   const where: Record<string, unknown> = {};
+  // 封存只代表停止後續排課，既有的歷史出勤仍須保留給薪資、請款與稽核查詢。
+  // 因此預設排除封存課程「今天起」的堂次，但仍允許查到封存前的歷史紀錄。
+  // 原本封存只更新 Course.isActive，Attendance 查詢未套用狀態，導致已封存課程
+  // 仍持續出現在未來出缺勤清單。
+  where.AND = [
+    {
+      OR: [
+        { course: { is: { isActive: true } } },
+        { date: { lt: utcStartOfIsoDay(taipeiDateIso()) } },
+      ],
+    },
+  ];
   if (year && month) {
     const start = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
     const end = new Date(Date.UTC(Number(year), Number(month), 1));
