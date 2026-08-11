@@ -28,6 +28,11 @@ export async function GET(req: NextRequest) {
   const academicYear = termMatch ? Number(termMatch[1]) : null;
   const semester = termMatch?.[2] ?? null;
   const year = academicYear === null ? new Date().getFullYear() : academicYear + (semester === "1" ? 1911 : 1912);
+  const termDateRange = academicYear !== null && semester
+    ? semester === "1"
+      ? { gte: new Date(Date.UTC(academicYear + 1911, 8, 1)), lt: new Date(Date.UTC(academicYear + 1912, 0, 1)) }
+      : { gte: new Date(Date.UTC(academicYear + 1912, 0, 1)), lt: new Date(Date.UTC(academicYear + 1912, 8, 1)) }
+    : null;
   const includeDates = searchParams.get("includeDates") === "1";
   const includeConfirmation = searchParams.get("includeConfirmation") !== "0";
   if (searchParams.get("nextCode") === "1") {
@@ -43,21 +48,27 @@ export async function GET(req: NextRequest) {
   if (region) where.region = region;
   if (teacherFilter === "unassigned") where.teacher = { is: { name: WAITING_TEACHER_NAME } };
   else if (teacherFilter) where.teacherId = Number(teacherFilter);
-  if (academicYear !== null && semester) {
-    const termDateRange = semester === "1"
-      ? { gte: new Date(Date.UTC(academicYear + 1911, 8, 1)), lt: new Date(Date.UTC(academicYear + 1912, 0, 1)) }
-      : { gte: new Date(Date.UTC(academicYear + 1912, 0, 1)), lt: new Date(Date.UTC(academicYear + 1912, 8, 1)) };
+  if (academicYear !== null && semester && termDateRange) {
     const selectedDateRange = month >= 1 && month <= 12
       ? { gte: new Date(Date.UTC(year, month - 1, 1)), lt: new Date(Date.UTC(year, month, 1)) }
       : termDateRange;
-    // 行政人工標記的期別優先；沒有人工標記的舊課程才依實際上課日期判斷。
+    const monthAttendanceCondition = month >= 1 && month <= 12
+      ? [{ attendances: { some: { date: selectedDateRange } } }]
+      : [];
+    // 行政人工標記優先；舊課程以第一堂（startDate）歸類，避免跨學期課程同時出現在兩邊。
     andConditions.push({
       OR: [
-        { notes: { contains: `[[TERM:${term}]]` } },
+        { AND: [{ notes: { contains: `[[TERM:${term}]]` } }, ...monthAttendanceCondition] },
         {
           AND: [
             { notes: { not: { contains: "[[TERM:" } } },
-            { attendances: { some: { date: selectedDateRange } } },
+            {
+              OR: [
+                { startDate: termDateRange },
+                { AND: [{ startDate: null }, { attendances: { some: { date: termDateRange } } }] },
+              ],
+            },
+            ...monthAttendanceCondition,
           ],
         },
       ],
@@ -103,7 +114,7 @@ export async function GET(req: NextRequest) {
         gte: new Date(Date.UTC(year, month - 1, 1)),
         lt: new Date(Date.UTC(year, month, 1)),
       }
-    : {
+    : termDateRange ?? {
         gte: new Date(Date.UTC(year, 0, 1)),
         lt: new Date(Date.UTC(year + 1, 0, 1)),
       };
