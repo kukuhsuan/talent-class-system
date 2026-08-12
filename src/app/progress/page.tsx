@@ -183,26 +183,6 @@ export default function ProgressPage() {
     return parseAbilities(value);
   }
 
-  function primaryReportText(value: string | undefined) {
-    if (!value) return "";
-    const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
-    return lines[0] ?? "";
-  }
-
-  // 取出回報中指定段落（例如「成果回報」），到下一個「xx：」標籤為止
-  function reportField(content: string | undefined, label: string) {
-    const lines = (content || "").split("\n");
-    const start = lines.findIndex((line) => line.trim().startsWith(`${label}：`));
-    if (start < 0) return "";
-    const first = lines[start].replace(`${label}：`, "").trim();
-    const rest: string[] = [];
-    for (let index = start + 1; index < lines.length; index += 1) {
-      if (/^[^：:]{2,8}[：:]/.test(lines[index].trim())) break;
-      rest.push(lines[index]);
-    }
-    return [first, ...rest].join("\n").trim();
-  }
-
   async function resendSchoolNotify(id: number) {
     try {
       const res = await fetch(`/api/progress/${id}/notify-school`, { method: "POST" });
@@ -410,15 +390,12 @@ export default function ProgressPage() {
                             園所通知失敗原因：{r.schoolNotifyError}
                           </div>
                         )}
-                        {primaryReportText(r.reportContent) && (
-                          <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg px-3 py-2">
-                            {primaryReportText(r.reportContent)}
-                          </p>
-                        )}
-                        {reportField(r.reportContent, "成果回報") && (
-                          <div className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
-                            <div className="text-xs font-semibold text-indigo-700">成果回報</div>
-                            <p className="mt-0.5 whitespace-pre-wrap">{reportField(r.reportContent, "成果回報")}</p>
+                        {r.reportContent.trim() && (
+                          <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-slate-800">
+                            <div className="mb-1 text-xs font-semibold text-blue-700">
+                              {r.course.department.includes("安親") ? "老師回報內容" : "傳給園所的內容"}
+                            </div>
+                            <p className="whitespace-pre-wrap leading-6">{r.reportContent}</p>
                           </div>
                         )}
                         {(r.photoUrls?.length ?? 0) > 0 && (
