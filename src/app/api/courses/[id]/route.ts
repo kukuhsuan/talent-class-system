@@ -9,6 +9,7 @@ import { recurrenceFields } from "@/lib/courseRecurrence";
 import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
 import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
+import { courseScheduleConflictMessage, findCourseScheduleConflict } from "@/lib/courseScheduleConflict";
 
 // GET /api/courses/[id] — returns single course with scheduledDates (for edit form)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -97,12 +98,29 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const oldPayrollMap = await coursePayrollHoursMap([courseId]);
     const oldPayrollHours = oldPayrollMap.get(courseId) ?? null;
     const currentDates = [...new Set((currentCourse?.attendances ?? []).map((attendance) => attendance.date.toISOString().slice(0, 10)))].sort();
+    const teacherId = Number(data.teacherId);
+    const assistantTeacherId = data.assistantTeacherId ? Number(data.assistantTeacherId) : null;
+    if (assistantTeacherId && assistantTeacherId === teacherId) {
+      return NextResponse.json({ error: "同一位老師不能同時擔任這堂課的主教與助教" }, { status: 409 });
+    }
+    if (data.isActive ?? true) {
+      const conflict = await findCourseScheduleConflict({
+        dates: allScheduled.length > 0 ? allScheduled : currentDates,
+        time: newTime,
+        teacherId,
+        assistantTeacherId,
+        excludeCourseId: courseId,
+      });
+      if (conflict) {
+        return NextResponse.json({ error: courseScheduleConflictMessage(conflict), conflict }, { status: 409 });
+      }
+    }
     const datesChanged = allScheduled.length > 0 && (
       allScheduled.length !== currentDates.length
       || allScheduled.some((date, index) => date !== currentDates[index])
     );
-    const teacherChanged = currentCourse?.teacherId !== Number(data.teacherId);
-    const assistantChanged = (currentCourse?.assistantTeacherId ?? null) !== (data.assistantTeacherId ? Number(data.assistantTeacherId) : null);
+    const teacherChanged = currentCourse?.teacherId !== teacherId;
+    const assistantChanged = (currentCourse?.assistantTeacherId ?? null) !== assistantTeacherId;
     const categoryChanged = normalizeCategory(currentCourse?.category ?? "") !== normalizeCategory(data.category);
     const timeChanged = String(currentCourse?.time ?? "") !== newTime;
     const payrollChanged = (oldPayrollHours ?? null) !== (payrollHours ?? null);
@@ -117,8 +135,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       data: {
         code,
         region: normalizeRegion(selectedSchool.region || data.region),
-        teacherId: Number(data.teacherId),
-        assistantTeacherId: data.assistantTeacherId ? Number(data.assistantTeacherId) : null,
+        teacherId,
+        assistantTeacherId,
         school: selectedSchool.name,
         schoolId: selectedSchool.id,
         courseType: data.courseType ?? "",

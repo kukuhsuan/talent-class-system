@@ -12,6 +12,7 @@ import { recurrenceFields } from "@/lib/courseRecurrence";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
 import { writeAuditLog } from "@/lib/auditLog";
 import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
+import { courseScheduleConflictMessage, findCourseScheduleConflict } from "@/lib/courseScheduleConflict";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -202,13 +203,29 @@ export async function POST(req: NextRequest) {
     const dayOfWeek = allScheduled[0] ? weekdayOfIso(allScheduled[0]) : (data.dayOfWeek ?? "");
     const payrollHours = parsePayrollHours(data.payrollHours);
     const recurrence = recurrenceFields(data, allScheduled);
+    const teacherId = Number(data.teacherId);
+    const assistantTeacherId = data.assistantTeacherId ? Number(data.assistantTeacherId) : null;
+    if (assistantTeacherId && assistantTeacherId === teacherId) {
+      return NextResponse.json({ error: "同一位老師不能同時擔任這堂課的主教與助教" }, { status: 409 });
+    }
+    if (data.isActive ?? true) {
+      const conflict = await findCourseScheduleConflict({
+        dates: allScheduled,
+        time: String(data.time ?? ""),
+        teacherId,
+        assistantTeacherId,
+      });
+      if (conflict) {
+        return NextResponse.json({ error: courseScheduleConflictMessage(conflict), conflict }, { status: 409 });
+      }
+    }
 
     const course = await prisma.course.create({
       data: {
         code,
         region: normalizeRegion(selectedSchool.region || data.region),
-        teacherId: Number(data.teacherId),
-        assistantTeacherId: data.assistantTeacherId ? Number(data.assistantTeacherId) : null,
+        teacherId,
+        assistantTeacherId,
         school: selectedSchool.name,
         schoolId: selectedSchool.id,
         courseType: data.courseType ?? "",
