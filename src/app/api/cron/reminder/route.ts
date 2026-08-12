@@ -113,6 +113,9 @@ export async function GET(req: NextRequest) {
       where: {
         cancelled: false,
         date: { gte: dayStart, lt: dayEnd },
+        // 封存課程會保留既有出勤供歷史、薪資與請款查詢，但不能再進入每日提醒。
+        // 否則同一門課重建後，舊課與新課會各產生一張幾乎相同的 LINE 卡片。
+        course: { isActive: true },
       },
       include: { course: { include: { schoolRel: true } }, actualTeacher: true, assistantTeacher: true },
     }),
