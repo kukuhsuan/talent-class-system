@@ -29,7 +29,7 @@ export const DOC_STATUS_STYLE: Record<string, string> = {
 };
 
 // 行政需核對老師送件，可檢視原檔；客服／唯讀帳號仍不開放。
-const FILE_VIEW_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant"]);
+const FILE_VIEW_ROLES = new Set(["owner", "super_admin", "developer", "admin", "staff", "accountant"]);
 // 最終完成屬財務確認，不能因行政可看原檔而一併放寬。
 const FILE_COMPLETE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
 
