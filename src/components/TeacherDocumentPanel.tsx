@@ -28,8 +28,10 @@ export const DOC_STATUS_STYLE: Record<string, string> = {
   需補件: "bg-red-100 text-red-700",
 };
 
-// 只有這些角色看得到原檔，跟後端 SENSITIVE_FINANCE_ROLES 對齊
-const FILE_VIEW_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
+// 行政需核對老師送件，可檢視原檔；客服／唯讀帳號仍不開放。
+const FILE_VIEW_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant"]);
+// 最終完成屬財務確認，不能因行政可看原檔而一併放寬。
+const FILE_COMPLETE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
 
 function formatDateTime(value: string) {
   if (!value) return "";
@@ -59,6 +61,7 @@ export default function TeacherDocumentPanel({
   const [uploadUrl, setUploadUrl] = useState("");
 
   const canViewFile = FILE_VIEW_ROLES.has(role);
+  const canCompleteFile = FILE_COMPLETE_ROLES.has(role);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/teacher-documents?teacherId=${teacherId}`, { cache: "no-store" });
@@ -239,12 +242,12 @@ export default function TeacherDocumentPanel({
                       檢視原檔
                     </a>
                   )}
-                  {row && !row.filePurgedAt && !canViewFile && <span className="text-xs text-slate-400">原檔僅會計／管理者可檢視</span>}
+                  {row && !row.filePurgedAt && !canViewFile && <span className="text-xs text-slate-400">原檔僅行政／會計／管理者可檢視</span>}
 
                   {row && docType === "mandate" && status === "待審核" && (
                     <button onClick={() => review(row, "行政已確認")} disabled={!!busy} className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:opacity-60">行政已確認</button>
                   )}
-                  {row && canViewFile && status !== "已完成" && (docType === "bankbook" || status === "行政已確認") && (
+                  {row && canCompleteFile && status !== "已完成" && (docType === "bankbook" || status === "行政已確認") && (
                     <button onClick={() => review(row, "已完成")} disabled={!!busy} className="text-sm font-medium text-green-600 hover:text-green-800 disabled:opacity-60">標記已完成</button>
                   )}
                   {row && status !== "需補件" && (

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { SENSITIVE_FINANCE_ROLES, requireRole } from "@/lib/permissions";
+import { TEACHER_DOCUMENT_FILE_ROLES, requireRole } from "@/lib/permissions";
 import { TEACHER_DOC_LABELS, getTeacherDocumentWithUrl } from "@/lib/teacherDocument";
 import { documentDownloadName, readSensitiveDocument } from "@/lib/sensitiveBlob";
 import { writeAuditLogStrict } from "@/lib/auditLog";
@@ -11,7 +11,7 @@ type Params = { id: string } | Promise<{ id: string }>;
 
 // 存摺／委任書原檔的唯一出口。前端永遠只拿得到這個網址，拿不到 blob 原始路徑。
 export async function GET(req: NextRequest, { params }: { params: Params }) {
-  const { user, response } = await requireRole(SENSITIVE_FINANCE_ROLES);
+  const { user, response } = await requireRole(TEACHER_DOCUMENT_FILE_ROLES);
   if (response) return response;
 
   const { id } = await params;
