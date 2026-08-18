@@ -64,6 +64,7 @@ const VAR_DEFS: Array<{ name: string; sample: string; targets: Array<"teacher" |
   { name: "園所連結", sample: "園所專屬看板網址（自動產生，卡片上顯示為按鈕）", targets: ["school"] },
   { name: "開課確認連結", sample: "開課資料填寫網址（人數／場地，安親班不附，卡片上顯示為按鈕）", targets: ["school"] },
   { name: "停課狀態", sample: "上方所選的課程狀態（颱風範本專用）", targets: ["teacher", "school"], typhoonOnly: true },
+  { name: "會議簡報", sample: "發送前填寫的會議簡報連結（卡片上顯示為按鈕）", targets: ["teacher", "school"] },
 ];
 const RESULT_LABEL: Record<string, string> = { success: "成功", failed: "失敗", unbound: "未綁定", skipped: "略過", pending: "處理中" };
 
@@ -288,6 +289,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
   const [boundFilter, setBoundFilter] = useState<"all" | "bound" | "unbound">("all");
   const [customBody, setCustomBody] = useState("");
   const [typhoonStatus, setTyphoonStatus] = useState("");
+  const [slidesUrl, setSlidesUrl] = useState("");
   const [testMode, setTestMode] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
@@ -361,6 +363,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
     // 切換範本時帶入預設內文、清空預覽
     setCustomBody(template?.defaultBody ?? "");
     setTyphoonStatus("");
+    setSlidesUrl("");
     setPreview(null);
     setConfirmed(false);
     setTplMsg("");
@@ -410,6 +413,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
         body: JSON.stringify({
           action: "preview", templateKey, targetType,
           recipientIds: [...selected], customBody, typhoonStatus: typhoonStatus || undefined,
+          slidesUrl: slidesUrl.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -433,6 +437,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
         body: JSON.stringify({
           action: "send", uuid: batchUuid, templateKey, targetType,
           recipientIds: [...selected], customBody, typhoonStatus: typhoonStatus || undefined,
+          slidesUrl: slidesUrl.trim() || undefined,
           testMode, dryRun, confirm: true,
         }),
       });
@@ -523,6 +528,14 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+              {customBody.includes("{會議簡報}") && (
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">會議簡報連結（帶入 {"{會議簡報}"}，卡片上顯示為按鈕）</label>
+                  <input value={slidesUrl} onChange={e => { setSlidesUrl(e.target.value); setPreview(null); setConfirmed(false); }}
+                    placeholder="https://…（留空則自動移除該行）" inputMode="url"
+                    className="border rounded-lg px-3 py-2 text-sm w-full" />
                 </div>
               )}
               <textarea ref={bodyRef} value={customBody} onChange={e => { setCustomBody(e.target.value); setPreview(null); setConfirmed(false); }}

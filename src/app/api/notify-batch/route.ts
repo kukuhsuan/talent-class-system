@@ -32,6 +32,7 @@ type PostBody = {
   recipientIds?: unknown[];
   customBody?: string;
   typhoonStatus?: string;
+  slidesUrl?: string;         // {會議簡報} 帶入的連結（發送前填寫）
   testMode?: boolean;         // 只傳給測試人員
   confirm?: boolean;          // send 必須為 true（我已確認收件人及訊息）
   dryRun?: boolean;           // 模擬發送，不打 LINE API
@@ -82,6 +83,10 @@ export async function POST(req: NextRequest) {
   if (customBody != null && hasDangerousLink(customBody)) {
     return NextResponse.json({ error: "訊息內容包含不允許的連結協定" }, { status: 400 });
   }
+  const slidesUrl = typeof body.slidesUrl === "string" ? body.slidesUrl.trim().slice(0, 500) : undefined;
+  if (slidesUrl && (hasDangerousLink(slidesUrl) || !/^https?:\/\//i.test(slidesUrl))) {
+    return NextResponse.json({ error: "會議簡報連結必須是 http(s) 開頭的網址" }, { status: 400 });
+  }
 
   let recipients;
   try {
@@ -91,6 +96,7 @@ export async function POST(req: NextRequest) {
       recipientIds,
       customBody,
       typhoonStatus: typeof body.typhoonStatus === "string" ? body.typhoonStatus : undefined,
+      slidesUrl,
     });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

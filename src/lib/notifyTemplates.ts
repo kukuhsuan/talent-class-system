@@ -5,7 +5,7 @@ import { resolveCourseTerm } from "@/lib/courseTerm";
 import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 
 // 客服批次通知：範本定義與逐一收件人訊息組裝
-// 變數：{姓名}{園所}{課程}{日期}{星期}{時間}{地址}{課程摘要}{園所連結}{開課確認連結}{停課狀態}
+// 變數：{姓名}{園所}{課程}{日期}{星期}{時間}{地址}{課程摘要}{園所連結}{開課確認連結}{停課狀態}{會議簡報}
 
 export type NotifyTargetType = "teacher" | "school";
 export type NotifyTemplateKey =
@@ -285,7 +285,17 @@ function weekdayLabel(iso: string) {
 }
 
 export function renderTemplate(body: string, vars: Record<string, string>) {
-  return body.replace(/\{(姓名|園所|課程|日期|星期|時間|地址|課程摘要|園所連結|開課確認連結|停課狀態|確認連結)\}/g, (_, key: string) => vars[key] ?? "");
+  return body.replace(/\{(姓名|園所|課程|日期|星期|時間|地址|課程摘要|園所連結|開課確認連結|停課狀態|確認連結|會議簡報)\}/g, (_, key: string) => vars[key] ?? "");
+}
+
+// {會議簡報}：批次層級的會議簡報連結（每批同一個）。在變數替換／按鈕抽取之前先換成實際網址，
+// 之後就與內文寫死的會議連結走完全相同的路徑（自動抽成 Flex 卡片按鈕）。
+// 未填連結時移除含此變數的整行，避免卡片留下「會議簡報：」空標籤。
+export function applySlidesUrl(body: string, slidesUrl?: string) {
+  if (!body.includes("{會議簡報}")) return body;
+  const url = (slidesUrl ?? "").trim();
+  if (!url) return body.split("\n").filter((line) => !line.includes("{會議簡報}")).join("\n");
+  return body.split("{會議簡報}").join(url);
 }
 
 // 摺疊多餘空行並修整前後空白（變數為空時避免留下大段空白）
@@ -397,6 +407,7 @@ type BuildOptions = {
   recipientIds: number[];
   customBody?: string;
   typhoonStatus?: string;
+  slidesUrl?: string;  // {會議簡報} 帶入的連結（發送前填寫，整批共用）
 };
 
 const MAX_MESSAGE_LENGTH = 4500; // LINE text 上限 5000，保留緩衝
@@ -426,7 +437,9 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
   const template = getTemplate(opts.templateKey);
   if (!template) throw new Error("範本不存在");
   if (template.target !== opts.targetType) throw new Error("範本與收件對象類型不符");
-  const body = (template.editable && opts.customBody?.trim()) ? opts.customBody.trim() : template.defaultBody;
+  const rawBody = (template.editable && opts.customBody?.trim()) ? opts.customBody.trim() : template.defaultBody;
+  // 先把 {會議簡報} 換成實際網址（整批同一個），之後即與內文寫死的連結走相同路徑
+  const body = applySlidesUrl(rawBody, opts.slidesUrl);
   if (template.needsTyphoonStatus) {
     if (!TYPHOON_STATUS_OPTIONS.includes((opts.typhoonStatus ?? "") as (typeof TYPHOON_STATUS_OPTIONS)[number])) {
       throw new Error("請先選擇課程狀態（停課／照常上課／等待園所確認）");
