@@ -273,6 +273,39 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
+// PATCH /api/courses/[id] — 還原（取消封存）已封存課程，重新設為進行中。
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const courseId = Number(id);
+    const body = await req.json().catch(() => ({}));
+    if (body?.action !== "restore") {
+      return NextResponse.json({ error: "不支援的操作" }, { status: 400 });
+    }
+    const before = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: { teacher: { select: { id: true, name: true } }, assistantTeacher: { select: { id: true, name: true } } },
+    });
+    if (!before) return NextResponse.json({ error: "找不到課程" }, { status: 404 });
+    if (before.isActive) return NextResponse.json({ ok: true, restored: false, alreadyActive: true });
+    await prisma.course.update({ where: { id: courseId }, data: { isActive: true } });
+    await writeAuditLog(req, {
+      action: "restore",
+      targetType: "Course",
+      targetId: courseId,
+      targetLabel: `${before.code} ${before.school} ${before.courseType}`,
+      beforeData: before,
+      afterData: { ...before, isActive: true },
+      diffSummary: `還原課程：${before.code} ${before.school} ${before.courseType}（重新設為進行中）`,
+      sensitive: true,
+    });
+    return NextResponse.json({ ok: true, restored: true });
+  } catch (e) {
+    console.error("course restore failed", e);
+    return NextResponse.json({ error: `課程還原失敗：${(e as Error).message}` }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;

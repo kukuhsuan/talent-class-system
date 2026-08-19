@@ -43,7 +43,11 @@ export async function GET(req: NextRequest) {
 
   // 課程清單與出勤頁的課程下拉預設只提供進行中的課程；封存資料仍留在資料庫，
   // 過往出勤則由 /api/attendance 依日期保留查詢。
-  const where: Record<string, unknown> = { isActive: true };
+  // status=all 同時列出封存課程（供「顯示封存課程」查找／還原），status=archived 只列封存。
+  const statusParam = searchParams.get("status") ?? "active";
+  const where: Record<string, unknown> = {};
+  if (statusParam === "archived") where.isActive = false;
+  else if (statusParam !== "all") where.isActive = true;
   const andConditions: Prisma.CourseWhereInput[] = [];
   if (dept) where.department = { in: departmentQueryValues(dept) };
   if (region) where.region = region;

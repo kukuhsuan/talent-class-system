@@ -202,6 +202,7 @@ export default function CoursesPage() {
   const [filterTeacher, setFilterTeacher] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [filterTerm, setFilterTerm] = useState(currentAcademicTerm());
+  const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -236,6 +237,7 @@ export default function CoursesPage() {
       if (filterTeacher) params.set("teacher", filterTeacher);
       params.set("term", filterTerm);
       if (filterMonth) params.set("month", filterMonth);
+      if (showArchived) params.set("status", "all");
       if (search.trim()) params.set("search", search.trim());
       setLoadingCourses(true);
       try {
@@ -250,7 +252,7 @@ export default function CoursesPage() {
         setLoadingCourses(false);
       }
     },
-    [dept, filterDepartment, filterMonth, filterRegion, filterTeacher, filterTerm, page, search],
+    [dept, filterDepartment, filterMonth, filterRegion, filterTeacher, filterTerm, page, search, showArchived],
   );
 
   const loadOptions = useCallback(async () => {
@@ -443,6 +445,22 @@ export default function CoursesPage() {
     const res = await fetch(`/api/courses/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const message = await readErrorMessage(res, "課程封存失敗");
+      alert(message);
+      if (message.includes("登入狀態")) window.location.href = "/login";
+      return;
+    }
+    void loadCourses();
+  };
+
+  const restore = async (id: number, code: string) => {
+    if (!confirm(`確定還原課程「${code}」？\n\n還原後會重新出現在進行中課程與各項排課／通知流程。`)) return;
+    const res = await fetch(`/api/courses/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restore" }),
+    });
+    if (!res.ok) {
+      const message = await readErrorMessage(res, "課程還原失敗");
       alert(message);
       if (message.includes("登入狀態")) window.location.href = "/login";
       return;
@@ -863,8 +881,13 @@ export default function CoursesPage() {
             {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month}月</option>)}
           </select>
           <select aria-label="課程期別" value={filterTerm} onChange={(e) => { setFilterTerm(e.target.value); setPage(1); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+            <option value="">全部學期</option>
             {academicTermOptions().map((term) => <option key={term} value={term}>{term} 期別</option>)}
           </select>
+          <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 cursor-pointer select-none">
+            <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }} className="h-4 w-4" />
+            顯示封存課程
+          </label>
           {(filterDepartment || filterTeacher || filterMonth) && (
             <button type="button" onClick={() => { setFilterDepartment(""); setFilterTeacher(""); setFilterMonth(""); setPage(1); }}
               className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">
@@ -897,7 +920,7 @@ export default function CoursesPage() {
                 {normalizeRegion(c.region) && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-600">{normalizeRegion(c.region)}</span>}
                 <span className={`rounded-full px-2 py-1 font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span>
               </div>
-              <div className="mt-4"><CourseActions course={c} onEdit={edit} onDelete={del} /></div>
+              <div className="mt-4"><CourseActions course={c} onEdit={edit} onDelete={del} onRestore={restore} /></div>
             </div>
           ))}
           {filtered.length === 0 && <div className="py-8 text-center text-slate-400">{loadingCourses ? "課程載入中…" : "尚無課程資料"}</div>}
@@ -945,7 +968,7 @@ export default function CoursesPage() {
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS[normalizeCategory(c.category)]}`}>{normalizeCategory(c.category)}</span></td>
                   <td className="px-4 py-3"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${c.isActive && !courseEnded(c) ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{!c.isActive ? "停課" : courseEnded(c) ? "學期結束" : "開課"}</span></td>
                   <td className="px-4 py-3">
-                    <CourseActions course={c} onEdit={edit} onDelete={del} />
+                    <CourseActions course={c} onEdit={edit} onDelete={del} onRestore={restore} />
                   </td>
                 </tr>
               ))}
@@ -960,7 +983,7 @@ export default function CoursesPage() {
   );
 }
 
-function CourseActions({ course, onEdit, onDelete }: { course: Course; onEdit: (course: Course) => void; onDelete: (id: number, code: string) => void }) {
+function CourseActions({ course, onEdit, onDelete, onRestore }: { course: Course; onEdit: (course: Course) => void; onDelete: (id: number, code: string) => void; onRestore: (id: number, code: string) => void }) {
   const closeAndRun = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
     const menu = event.currentTarget.closest("details");
     if (menu) menu.open = false;
@@ -976,7 +999,9 @@ function CourseActions({ course, onEdit, onDelete }: { course: Course; onEdit: (
         <button onClick={(event) => closeAndRun(event, () => onEdit(course))} className={itemClass}>編輯課程</button>
         <Link href={`/course-change-requests?courseId=${course.id}`} className={itemClass}>申請課程異動</Link>
         <div className="my-1 border-t border-slate-100" />
-        <button onClick={(event) => closeAndRun(event, () => onDelete(course.id, course.code))} className={`${itemClass} text-amber-700 hover:bg-amber-50`}>封存課程</button>
+        {course.isActive
+          ? <button onClick={(event) => closeAndRun(event, () => onDelete(course.id, course.code))} className={`${itemClass} text-amber-700 hover:bg-amber-50`}>封存課程</button>
+          : <button onClick={(event) => closeAndRun(event, () => onRestore(course.id, course.code))} className={`${itemClass} text-emerald-700 hover:bg-emerald-50`}>還原課程</button>}
       </div>
     </details>
   );
