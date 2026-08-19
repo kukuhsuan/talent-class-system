@@ -172,7 +172,7 @@ async function arrivalColumnMap(ids: number[]) {
   return new Map(rows.map((row) => [row.id, row]));
 }
 
-async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; dept?: string; createMissing?: boolean }) {
+async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; dept?: string; createMissing?: boolean; activeCourseOnly?: boolean }) {
   const { start, end } = dayBounds(input.dateIso);
   const dayName = dayNameOfIso(input.dateIso);
   const courseWindow = courseDateWindowWhere(input.dateIso);
@@ -219,7 +219,11 @@ async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; 
       ...attendanceTeacherFilter,
       // 當天出勤紀錄一旦明確建立，就應視為實際排課依據。
       // 課程主檔後來結束、停用或起訖日不含該天，都不應讓老師無法打卡。
-      ...(Object.keys(deptFilter).length > 0 ? { course: deptFilter } : {}),
+      // 但發提醒時例外：封存課程會保留既有出勤供歷史查詢，不能再進入每日提醒，
+      // 否則同一門課重建後，舊課（已封存）與新課會各發一次到校提醒。
+      ...(input.activeCourseOnly
+        ? { course: { isActive: true, ...deptFilter } }
+        : (Object.keys(deptFilter).length > 0 ? { course: deptFilter } : {})),
     },
     include: {
       course: { include: { schoolRel: true } },
@@ -233,7 +237,7 @@ async function arrivalRowsForDate(input: { dateIso: string; teacherId?: number; 
 export async function arrivalDetailsForDate(input: { dateIso?: string; teacherId?: number; dept?: string; createMissing?: boolean; now?: Date }) {
   const dateIso = input.dateIso ?? taipeiDateIso(input.now);
   const nowParts = taipeiParts(input.now);
-  const rows = await arrivalRowsForDate({ dateIso, teacherId: input.teacherId, dept: input.dept, createMissing: input.createMissing });
+  const rows = await arrivalRowsForDate({ dateIso, teacherId: input.teacherId, dept: input.dept, createMissing: input.createMissing, activeCourseOnly: true });
   const columnMap = await arrivalColumnMap(rows.map((row) => row.id));
 
   return rows
