@@ -21,6 +21,7 @@ type ArrivalColumns = {
   teacherArrivedAt: Date | string | null;
   arrivalReminderSentAt: Date | string | null;
   arrivalLateReminderSentAt: Date | string | null;
+  assistantArrivedAt: Date | string | null;
 };
 
 type TeacherLite = {
@@ -81,6 +82,9 @@ export async function ensureArrivalColumns() {
     'ALTER TABLE Attendance ADD COLUMN arrivalReminderSentAt DATETIME',
     'ALTER TABLE Attendance ADD COLUMN arrivalLateReminderSentAt DATETIME',
     'ALTER TABLE Attendance ADD COLUMN lastArrivalClickAt DATETIME',
+    // 助教到校獨立記錄，不與主教共用，避免助教打卡蓋掉主教到校或影響主教提醒。
+    'ALTER TABLE Attendance ADD COLUMN assistantArrivedAt DATETIME',
+    'ALTER TABLE Attendance ADD COLUMN assistantLastArrivalClickAt DATETIME',
   ];
   for (const statement of statements) {
     await prisma.$executeRawUnsafe(statement).catch(() => undefined);
@@ -155,6 +159,18 @@ function responsibleTeacher(row: ArrivalRow): TeacherLite {
   return row.actualTeacher;
 }
 
+// 判斷某位老師在這筆出勤紀錄裡是主教還是助教（主教優先）。
+// 助教到校記在自己的欄位，才不會蓋掉主教到校或影響主教的到校提醒。
+function arrivalRoleForTeacher(row: ArrivalRow, teacher: { id: number; name: string }): "main" | "assistant" | null {
+  const main = responsibleTeacher(row);
+  if (main.id === teacher.id || main.name.trim() === teacher.name.trim()) return "main";
+  const assistant = row.assistantTeacher;
+  if (row.assistantTeacherId === teacher.id || (assistant?.name?.trim() && assistant.name.trim() === teacher.name.trim())) {
+    return "assistant";
+  }
+  return null;
+}
+
 // 已建立的出勤紀錄可能有當天專屬時間（例如補課或行政調整），
 // 打卡必須優先採用該筆紀錄，不能只看之後可能已被修改的課程主檔。
 function arrivalTime(row: ArrivalRow) {
@@ -166,7 +182,7 @@ async function arrivalColumnMap(ids: number[]) {
   if (ids.length === 0) return new Map<number, ArrivalColumns>();
   const placeholders = ids.map(() => "?").join(",");
   const rows = await prisma.$queryRawUnsafe<ArrivalColumns[]>(
-    `SELECT id, teacherArrivedAt, arrivalReminderSentAt, arrivalLateReminderSentAt FROM Attendance WHERE id IN (${placeholders})`,
+    `SELECT id, teacherArrivedAt, arrivalReminderSentAt, arrivalLateReminderSentAt, assistantArrivedAt FROM Attendance WHERE id IN (${placeholders})`,
     ...ids,
   );
   return new Map(rows.map((row) => [row.id, row]));
@@ -306,7 +322,7 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
   const rows = rowsById.length > 0
     ? rowsById
     : (await arrivalRowsForDate({ dateIso, createMissing: false }))
-      .filter((row) => responsibleTeacher(row).name.trim() === teacher.name.trim());
+      .filter((row) => arrivalRoleForTeacher(row, teacher) !== null);
   const columnMap = await arrivalColumnMap(rows.map((row) => row.id));
   const candidates = rows
     .map((row) => {
@@ -315,10 +331,8 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
       const end = parseCourseEndMinutes(time) ?? (start === null ? null : start + 90);
       return { row, start, end };
     })
-    .filter((item) => {
-      const responsible = responsibleTeacher(item.row);
-      return responsible.id === teacher.id || responsible.name.trim() === teacher.name.trim();
-    })
+    // 主教或助教皆可打卡；不再只認主教。
+    .filter((item) => arrivalRoleForTeacher(item.row, teacher) !== null)
     .filter((item) => item.start !== null)
     .filter((item) => nowParts.minutes >= (item.start ?? 0) - 120 && nowParts.minutes <= (item.end ?? (item.start ?? 0) + 90) + 60)
     .sort((a, b) => Math.abs(nowParts.minutes - (a.start ?? 0)) - Math.abs(nowParts.minutes - (b.start ?? 0)));
@@ -328,14 +342,18 @@ export async function recordTeacherArrival(lineUserId: string, now = new Date())
     return { ok: false as const, message: `${teacher.name} 老師，目前找不到可打卡的今日課程。若課程資料有誤，請聯絡行政確認。` };
   }
 
-  const existing = columnMap.get(selected.id)?.teacherArrivedAt ?? null;
+  const role = arrivalRoleForTeacher(selected, teacher) ?? "main";
+  const columns = columnMap.get(selected.id);
+  const existing = (role === "assistant" ? columns?.assistantArrivedAt : columns?.teacherArrivedAt) ?? null;
   const startMinutes = parseCourseStartMinutes(arrivalTime(selected)) ?? nowParts.minutes;
   const expectedMinutes = startMinutes - ARRIVAL_GRACE_MINUTES;
   const arrivedMinutes = existing ? localMinutesOfDate(existing) ?? nowParts.minutes : nowParts.minutes;
   const lateMinutes = Math.max(0, arrivedMinutes - startMinutes);
 
+  const arrivedColumn = role === "assistant" ? "assistantArrivedAt" : "teacherArrivedAt";
+  const clickColumn = role === "assistant" ? "assistantLastArrivalClickAt" : "lastArrivalClickAt";
   await prisma.$executeRawUnsafe(
-    "UPDATE Attendance SET teacherArrivedAt = COALESCE(teacherArrivedAt, ?), lastArrivalClickAt = ? WHERE id = ?",
+    `UPDATE Attendance SET ${arrivedColumn} = COALESCE(${arrivedColumn}, ?), ${clickColumn} = ? WHERE id = ?`,
     now,
     now,
     selected.id,
