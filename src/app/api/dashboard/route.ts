@@ -87,7 +87,9 @@ export async function GET(req: NextRequest) {
       where: {
         cancelled: false,
         date: { gte: pendingStart, lt: tomorrowStart },
-        ...(dept ? { course: { department: { in: departmentQueryValues(dept) } } } : {}),
+        // 封存課程不再進入待回報（例如同一時段重建、舊課停課後留下的出勤），
+        // 否則老師會被一直催回報一堂已經停掉的課；歷史出勤仍可在出勤紀錄頁查到。
+        course: { isActive: true, ...(dept ? { department: { in: departmentQueryValues(dept) } } : {}) },
       },
       select: {
         id: true, date: true, cancelled: true, studentCount: true, studentCountA: true, studentCountB: true, reportContent: true, reportSentAt: true, isPayrollLocked: true, category: true, hours: true,

@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
   await ensureTeacherReportReminderDeliveryTable();
   const [attendances, recipients] = await Promise.all([
     prisma.attendance.findMany({
-      where: { date: { gte: pendingFromIso, lt: end }, cancelled: false },
+      // 封存課程不再發回報提醒，否則停課／重建後的舊課仍會一直催老師回報。
+      where: { date: { gte: pendingFromIso, lt: end }, cancelled: false, course: { isActive: true } },
       include: { course: true, actualTeacher: true },
       orderBy: { scheduledTime: "asc" },
     }),
