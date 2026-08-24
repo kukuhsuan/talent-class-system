@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
 import { courseLabel, normalizeCategory, normalizeRegion } from "@/lib/courseMeta";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
+import { visibleOperationalAttendanceWhere } from "@/lib/attendanceVisibility";
 
 function contentDisposition(year: number, month: number) {
   const paddedMonth = String(month).padStart(2, "0");
@@ -24,7 +25,10 @@ export async function GET(req: NextRequest) {
 
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
-  const where: Record<string, unknown> = { date: { gte: start, lt: end } };
+  const where: Record<string, unknown> = {
+    date: { gte: start, lt: end },
+    AND: [visibleOperationalAttendanceWhere()],
+  };
   const courseFilter: Record<string, unknown> = {};
   if (school) courseFilter.school = school;
   if (dept) courseFilter.department = dept;

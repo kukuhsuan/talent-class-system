@@ -14,6 +14,7 @@ import { expectedStudentCountMap, parseExpectedStudentCount, setExpectedStudentC
 import { writeAuditLog } from "@/lib/auditLog";
 import { schoolSignatureMap } from "@/lib/schoolSignature";
 import { WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
+import { visibleOperationalAttendanceWhere } from "@/lib/attendanceVisibility";
 
 // 待回報清單往回看幾天：要和首頁 /api/dashboard 的 PENDING_REPORT_LOOKBACK_DAYS 一致，
 // 不然首頁的數字和點進來看到的筆數會對不起來。
@@ -39,18 +40,9 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") ?? "";
 
   const where: Record<string, unknown> = {};
-  // 封存只代表停止後續排課，既有的歷史出勤仍須保留給薪資、請款與稽核查詢。
-  // 因此預設排除封存課程「今天起」的堂次，但仍允許查到封存前的歷史紀錄。
-  // 原本封存只更新 Course.isActive，Attendance 查詢未套用狀態，導致已封存課程
-  // 仍持續出現在未來出缺勤清單。
-  where.AND = [
-    {
-      OR: [
-        { course: { is: { isActive: true } } },
-        { date: { lt: utcStartOfIsoDay(taipeiDateIso()) } },
-      ],
-    },
-  ];
+  // 封存後隱藏尚未執行的空白預排堂次；已回報、已填人數、已停課或已鎖薪資的
+  // 真實歷史仍完整保留，避免薪資／請款／稽核資料消失。
+  where.AND = [visibleOperationalAttendanceWhere()];
   if (year && month) {
     const start = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
     const end = new Date(Date.UTC(Number(year), Number(month), 1));

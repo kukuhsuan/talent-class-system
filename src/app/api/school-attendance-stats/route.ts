@@ -5,6 +5,7 @@ import { courseLabel, normalizeCategory, normalizeDepartment } from "@/lib/cours
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 import { attendanceHoursOverrideMap } from "@/lib/attendanceHoursOverride";
+import { visibleOperationalAttendanceWhere } from "@/lib/attendanceVisibility";
 
 export const runtime = "nodejs";
 
@@ -181,6 +182,7 @@ export async function GET(req: NextRequest) {
     where: {
       cancelled: false,
       date: { gte: start, lt: end },
+      AND: [visibleOperationalAttendanceWhere()],
       course: {
         ...(school ? { school } : {}),
         ...(courseType ? { courseType } : {}),
