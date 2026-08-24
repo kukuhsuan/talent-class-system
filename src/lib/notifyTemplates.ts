@@ -58,7 +58,7 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsAck: true,
-    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、開課日期、時間、地點與報名人數，並依課程類別接著送出「整學期教學課表」卡片（可左右滑動、不用另開連結），以卡片發送並附「確認收到」按鈕",
+    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、開課日期、時間、地點與報名人數，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "{姓名} 老師您好：",
       "",
@@ -74,8 +74,6 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "",
       "⏰ 請準時到校，勿遲到早退",
       "🙂 請保持禮貌與專業態度",
-      "",
-      "📗 整學期每堂課的教學重點與能力培養，會接在這則通知後面直接送出，可左右滑動查看。",
       "",
       "若課表、人數或地點有誤，請立即與行政聯繫，謝謝！",
     ].join("\n"),
@@ -377,8 +375,6 @@ const MAX_LINK_BUTTONS = 3;
 const LINE_BUTTON_LABEL_MAX = 20; // LINE button label 上限
 
 const MAX_LABEL_SOURCE = 14; // 說明文字太長就不拿來當按鈕文字
-const MAX_LESSON_PLAN_CARDS = 3; // LINE 單次 push 最多 5 則訊息，主卡片外保留餘裕
-
 export function extractLinkButtons(body: string): { body: string; buttons: FlexLinkButton[] } {
   const buttons: FlexLinkButton[] = [];
   const kept: string[] = [];
@@ -457,8 +453,6 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
 
     // 課程摘要素材（文字版供紀錄／備援；色塊版供 Flex 卡片）
     const itemsByTeacher = new Map<number, Array<{ text: string; block: FlexBlock }>>();
-    // 第一堂課通知：老師教哪些課程類別 → 附上該課別的整學期教學課表按鈕
-    const courseTypesByTeacher = new Map<number, Set<string>>();
     const dateIso = taipeiDateStr(0);
     if (opts.templateKey === "new_term" || opts.templateKey === "first_class") {
       const courses = await prisma.course.findMany({
@@ -487,48 +481,12 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
           ];
           return { text: [`◆ ${title}`, ...lines].join("\n"), block: { title, lines, color: palette.fg, bg: palette.bg } };
         };
-        const markCourseType = (teacherId: number) => {
-          (courseTypesByTeacher.get(teacherId) ?? courseTypesByTeacher.set(teacherId, new Set()).get(teacherId)!).add(label);
-        };
         if (ids.includes(c.teacherId)) {
           (itemsByTeacher.get(c.teacherId) ?? itemsByTeacher.set(c.teacherId, []).get(c.teacherId)!).push(entry("主教"));
-          markCourseType(c.teacherId);
         }
         if (c.assistantTeacherId && ids.includes(c.assistantTeacherId)) {
           (itemsByTeacher.get(c.assistantTeacherId) ?? itemsByTeacher.set(c.assistantTeacherId, []).get(c.assistantTeacherId)!).push(entry("助教"));
-          markCourseType(c.assistantTeacherId);
         }
-      }
-    }
-
-    // 第一堂課通知：一次撈齊本批次用到的課別課表（同課別只查一次）
-    const lessonPlanByCourse = new Map<string, LessonPlanItem[]>();
-    if (opts.templateKey === "first_class") {
-      const usedCourses = [...new Set([...courseTypesByTeacher.values()].flatMap((set) => [...set]))];
-      const { readLessonTemplatesBulk, listLessonTemplates } = await import("@/lib/lessonTemplates");
-      // 先用單次唯讀查詢拿全部課別（預覽會頻繁呼叫，不能每次都跑同步）
-      let bulk = new Map<string, Array<{ lesson: number; title: string; focus: string; skills: string[]; activityDirection?: string }>>();
-      try {
-        bulk = await readLessonTemplatesBulk(prisma, usedCourses);
-      } catch {
-        bulk = new Map();
-      }
-      for (const courseName of usedCourses) {
-        let rows = bulk.get(courseName) ?? [];
-        // 尚未建立過課表的課別才退回同步版（會從 canonical 種資料補齊）
-        if (rows.length === 0) {
-          try {
-            rows = await listLessonTemplates(prisma, courseName);
-          } catch {
-            rows = [];
-          }
-        }
-        lessonPlanByCourse.set(
-          courseName,
-          rows
-            .map((row) => ({ lesson: Number(row.lesson), title: row.title, focus: row.focus, skills: row.skills, activityDirection: row.activityDirection ?? undefined }))
-            .sort((a, b) => a.lesson - b.lesson),
-        );
       }
     }
 
@@ -556,22 +514,6 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const { body: teacherBody, buttons: linkButtons } = asCard
         ? extractLinkButtons(body)
         : { body, buttons: [] as FlexLinkButton[] };
-      // 第一堂課通知：依老師教的課別，附上整學期教學課表卡片（直接在 LINE 顯示）
-      const lessonPlans = opts.templateKey === "first_class"
-        ? [...(courseTypesByTeacher.get(id) ?? new Set<string>())]
-            .sort()
-            .slice(0, MAX_LESSON_PLAN_CARDS)
-            .map((courseName) => {
-              const palette = blockColor(courseName);
-              return {
-                courseName,
-                color: palette.fg,
-                bg: palette.bg,
-                items: lessonPlanByCourse.get(courseName) ?? [],
-              };
-            })
-            .filter((card) => card.items.length > 0)
-        : [];
       // 課程色塊：卡片內每堂課一塊、依課程配色
       const flexParts = items.length > 0 ? buildFlexParts(teacherBody, vars) : null;
       return {
@@ -579,7 +521,6 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         message: finalizeMessage(teacherBody, vars), ackToken, ackUrl,
         ...(flexParts ? { ...flexParts, flexBlocks: items.map((i) => i.block) } : {}),
         ...(linkButtons.length > 0 ? { linkButtons } : {}),
-        ...(lessonPlans.length > 0 ? { lessonPlans } : {}),
       };
     });
   }
