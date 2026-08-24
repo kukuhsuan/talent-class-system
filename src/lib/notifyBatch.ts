@@ -281,10 +281,10 @@ function buildAckFlex(label: string, r: BatchRecipientMessage) {
   };
 }
 
-// 整學期教學課表：直接在 LINE 以 Flex carousel 呈現（不另開連結）
-// 版面沿用營運班表：色頭 + 淡色列 + 頁碼，一張 bubble 放 6 堂，可左右滑動
-const LESSONS_PER_BUBBLE = 6;
-const MAX_PLAN_BUBBLES = 10; // LINE carousel 上限 12，保守留餘裕
+// 整學期教學課表：直接在 LINE 以 Flex carousel 呈現（不另開連結）。
+// LINE 對單一 carousel JSON 設有 50 KB 上限。每堂各自一張 bubble，
+// 再以每則最多 5 堂分批，避免完整教案把單一 carousel 撐爆。
+const LESSONS_PER_PLAN_MESSAGE = 5;
 
 // 格式化教案內容，讓 LINE 顯示不再擠成一團
 function formatActivityDirection(text: string, themeColor: string) {
@@ -306,26 +306,26 @@ function formatActivityDirection(text: string, themeColor: string) {
   });
 }
 
-function buildLessonPlanFlex(card: LessonPlanCard) {
+function buildLessonPlanFlexMessages(card: LessonPlanCard) {
   const total = card.items.length;
   const pages: LessonPlanCard["items"][] = [];
-  for (let i = 0; i < total; i += LESSONS_PER_BUBBLE) {
-    pages.push(card.items.slice(i, i + LESSONS_PER_BUBBLE));
+  for (let i = 0; i < total; i += LESSONS_PER_PLAN_MESSAGE) {
+    pages.push(card.items.slice(i, i + LESSONS_PER_PLAN_MESSAGE));
   }
-  const shown = pages.slice(0, MAX_PLAN_BUBBLES);
-  const bubbles = shown.map((rows, pageIndex) => ({
+  return pages.map((rows, pageIndex) => {
+    const bubbles = rows.map((row) => ({
     type: "bubble",
     size: "mega",
     header: {
       type: "box", layout: "vertical", backgroundColor: card.color, paddingAll: "18px", spacing: "sm",
       contents: [
-        { type: "text", text: `${card.courseName}教學課表`, color: "#FFFFFF", weight: "bold", size: "xl", wrap: true },
-        { type: "text", text: `本學期預計 ${total} 堂，實際堂數依園所安排`, color: "#EAF2FF", size: "sm", wrap: true },
+        { type: "text", text: `${card.courseName}教學課表（${pageIndex + 1}/${pages.length}）`, color: "#FFFFFF", weight: "bold", size: "xl", wrap: true },
+        { type: "text", text: `第 ${row.lesson} 堂｜本學期預計 ${total} 堂`, color: "#EAF2FF", size: "sm", wrap: true },
       ],
     },
     body: {
       type: "box", layout: "vertical", backgroundColor: "#FFFFFF", paddingAll: "14px", spacing: "sm",
-      contents: rows.map((row) => ({
+      contents: [{
         type: "box", layout: "horizontal", backgroundColor: card.bg, cornerRadius: "10px", paddingAll: "11px", spacing: "md",
         contents: [
           {
@@ -361,21 +361,28 @@ function buildLessonPlanFlex(card: LessonPlanCard) {
             ],
           },
         ],
-      })),
+      }],
     },
     footer: {
       type: "box", layout: "horizontal", backgroundColor: "#FAFBFC", paddingAll: "12px",
       contents: [
         { type: "text", text: "實際進度依園所安排，如需調整請聯繫行政", size: "xxs", color: "#8391A3", flex: 8, wrap: true },
-        { type: "text", text: `${pageIndex + 1}/${shown.length}`, size: "xxs", color: "#8391A3", align: "end", flex: 2 },
+        { type: "text", text: `${pageIndex + 1}/${pages.length}`, size: "xxs", color: "#8391A3", align: "end", flex: 2 },
       ],
     },
-  }));
-  return {
-    type: "flex",
-    altText: `${card.courseName}教學課表（預計 ${total} 堂）`,
-    contents: bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles },
-  };
+    }));
+    return {
+      type: "flex",
+      altText: `${card.courseName}教學課表（${pageIndex + 1}/${pages.length}）`,
+      contents: bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles },
+    };
+  });
+}
+
+function chunkLineMessages(messages: object[], size = 5) {
+  const chunks: object[][] = [];
+  for (let i = 0; i < messages.length; i += size) chunks.push(messages.slice(i, i + size));
+  return chunks;
 }
 
 // 清洗錯誤訊息：不外洩 token/secret
@@ -447,24 +454,38 @@ export async function runNotifyBatch(opts: RunOptions) {
     // 依收件人各自的 LINE 官方帳號分組取 token（不共用同一組）
     const { token } = getLineConfig(r.lineRegion);
     let lastError = "";
-    for (let attempt = 0; attempt < 2; attempt++) { // 最多重試 1 次
+    for (let attempt = 0; attempt < 1; attempt++) { // 每一小批會各自重試，避免重送已成功的小批
       try {
         const payload: object[] = r.ackToken || r.flexBlocks?.length || r.linkButtons?.length
           ? [buildAckFlex(opts.templateLabel || "通知", r)]
           : [{ type: "text", text: r.message }];
-        // 教學課表接在主卡片後面直接送出；LINE 單次 push 最多 5 則
+        // 教學課表接在主卡片後面；每則最多 5 堂並依 LINE 單次最多 5 則分批送出。
         for (const card of r.lessonPlans ?? []) {
-          if (payload.length >= 5) break;
           if (card.items.length === 0) continue;
-          payload.push(buildLessonPlanFlex(card));
+          payload.push(...buildLessonPlanFlexMessages(card));
         }
-        await pushMessage(r.lineUserId, payload, token);
+        const payloadChunks = chunkLineMessages(payload);
+        for (let chunkIndex = 0; chunkIndex < payloadChunks.length; chunkIndex++) {
+          let chunkError: unknown;
+          for (let chunkAttempt = 0; chunkAttempt < 2; chunkAttempt++) {
+            try {
+              await pushMessage(r.lineUserId, payloadChunks[chunkIndex], token);
+              chunkError = undefined;
+              break;
+            } catch (e) {
+              chunkError = e;
+              if (chunkAttempt === 0) await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+          }
+          if (chunkError) throw chunkError;
+          // 避免同一收件人的連續請求瞬間打到 LINE rate limit。
+          if (chunkIndex < payloadChunks.length - 1) await new Promise((resolve) => setTimeout(resolve, 350));
+        }
         success++;
         await setStatus(r.id, "success");
         return;
       } catch (e) {
         lastError = sanitizeError((e as Error).message);
-        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
     failed++;
