@@ -4,7 +4,7 @@ import { SALARY_ROLES, SENSITIVE_FINANCE_ROLES, requireRole, sameOriginOk } from
 import { maskBankAccount } from "@/lib/bankMask";
 import { ensureTeacherExtendedColumns } from "@/lib/teacherColumns";
 import { bankbookStatusOf, listTeacherDocuments } from "@/lib/teacherDocument";
-import { bankChangedAtMap, teacherPayoutReadiness } from "@/lib/teacherPayoutReadiness";
+import { bankChangedAtMap, payrollHistoryByTeacher, teacherPayoutReadiness } from "@/lib/teacherPayoutReadiness";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
@@ -32,22 +32,27 @@ export async function GET() {
   });
 
   const ids = teachers.map((teacher) => teacher.id);
-  const [documents, changedMap] = await Promise.all([
+  const [documents, changedMap, payrollHistory] = await Promise.all([
     listTeacherDocuments(ids).catch(() => []),
     bankChangedAtMap(ids).catch(() => new Map<number, Date>()),
+    payrollHistoryByTeacher().catch(() => new Map()),
   ]);
 
   const rows = teachers.map((teacher) => {
     const bankbookStatus = bankbookStatusOf(documents, teacher.id);
+    const historical = payrollHistory.get(teacher.id);
+    const firstPaidMonth = teacher.firstPaidMonth || historical?.firstPaidMonth || "";
+    const lastPaidMonth = teacher.lastPaidMonth || historical?.lastPaidMonth || "";
+    const lastPaidAt = teacher.lastPaidAt || historical?.lastPaidAt || null;
     const readiness = teacherPayoutReadiness({
       bankName: teacher.bankName ?? "",
       bankAccountNumber: teacher.bankAccountNumber ?? "",
       bankAccountName: teacher.bankAccountName ?? "",
-      firstPaidMonth: teacher.firstPaidMonth ?? "",
-      lastPaidMonth: teacher.lastPaidMonth ?? "",
+      firstPaidMonth,
+      lastPaidMonth,
       bankbookStatus,
       bankChangedAt: changedMap.get(teacher.id) ?? null,
-      lastPaidAt: teacher.lastPaidAt ?? null,
+      lastPaidAt,
       bankHeldOfflineAt: teacher.bankHeldOfflineAt ?? null,
       bankHeldOfflineBy: teacher.bankHeldOfflineBy ?? "",
       bankHeldOfflineNote: teacher.bankHeldOfflineNote ?? "",
@@ -61,8 +66,8 @@ export async function GET() {
       bankAccountName: teacher.bankAccountName ?? "",
       bankRemitNotes: teacher.bankRemitNotes ?? "",
       bankbookStatus,
-      firstPaidMonth: teacher.firstPaidMonth ?? "",
-      lastPaidMonth: teacher.lastPaidMonth ?? "",
+      firstPaidMonth,
+      lastPaidMonth,
       readiness,
     };
   });

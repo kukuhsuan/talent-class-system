@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensurePayrollRunTable, type PayrollRunRow } from "@/lib/payrollRun";
 
 // 發薪前提醒的唯一判斷來源。/salary、/accounting-center、Excel 匯出三處都呼叫這一支，
 // 不要各自寫一份，否則畫面說可以匯、匯出檔說不能匯。
@@ -31,6 +32,44 @@ export type PayoutReadinessInput = {
   bankHeldOfflineBy?: string;
   bankHeldOfflineNote?: string;
 };
+
+export type TeacherPayoutHistory = {
+  firstPaidMonth: string;
+  lastPaidMonth: string;
+  lastPaidAt: Date | null;
+};
+
+// 舊月份可能已有結算／匯款快照，但 Teacher 的匯款基準欄位尚未回填。
+// 薪資頁直接以既有快照補足判斷，避免每到新月份又把舊老師誤判為首次匯款。
+export async function payrollHistoryByTeacher(): Promise<Map<number, TeacherPayoutHistory>> {
+  await ensurePayrollRunTable();
+  const runs = await prisma.$queryRawUnsafe<PayrollRunRow[]>(
+    'SELECT * FROM "PayrollRun" ORDER BY "payoutMonth" ASC',
+  );
+  const history = new Map<number, TeacherPayoutHistory>();
+
+  for (const run of runs) {
+    let parsed: { results?: Array<{ teacher?: { id?: number }; total?: number }> } | null = null;
+    try {
+      parsed = JSON.parse(run.snapshot || "{}");
+    } catch {
+      continue;
+    }
+    const paidAt = run.finalizedAt ? new Date(run.finalizedAt) : null;
+    for (const row of parsed?.results ?? []) {
+      const teacherId = Number(row?.teacher?.id);
+      if (!Number.isFinite(teacherId) || !(Number(row?.total ?? 0) > 0)) continue;
+      const current = history.get(teacherId);
+      history.set(teacherId, {
+        firstPaidMonth: current?.firstPaidMonth || run.payoutMonth,
+        lastPaidMonth: run.payoutMonth,
+        lastPaidAt: paidAt && !Number.isNaN(paidAt.getTime()) ? paidAt : current?.lastPaidAt ?? null,
+      });
+    }
+  }
+
+  return history;
+}
 
 function formatDate(value: Date) {
   return value.toLocaleDateString("zh-TW");
