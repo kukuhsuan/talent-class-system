@@ -8,6 +8,7 @@ type PublicTokenPayload = {
   teacherId?: number;
   // 連結世代，目前只有 teacher_document 用；比對 Teacher.docLinkEpoch 做作廢
   epoch?: number;
+  reportRole?: "lead" | "assistant";
   exp: number;
 };
 
@@ -15,6 +16,42 @@ const encoder = new TextEncoder();
 
 function secret() {
   return requiredAuthSecret();
+}
+
+export function signReportAccessToken(
+  attendanceId: number,
+  reportRole: "lead" | "assistant" = "lead",
+  maxAgeDays = 90,
+) {
+  const payload: PublicTokenPayload = {
+    type: "report",
+    attendanceId,
+    reportRole,
+    exp: Math.floor(Date.now() / 1000) + maxAgeDays * 24 * 60 * 60,
+  };
+  const encodedPayload = base64url(JSON.stringify(payload));
+  return `${encodedPayload}.${signPayload(encodedPayload)}`;
+}
+
+export function verifyReportAccessToken(token: string) {
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature) throw new Error("Invalid token");
+
+  const expectedSignature = signPayload(encodedPayload);
+  const actual = Buffer.from(signature);
+  const expected = Buffer.from(expectedSignature);
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
+    throw new Error("Invalid token");
+  }
+
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as PublicTokenPayload;
+  if (payload.type !== "report" || !Number.isFinite(payload.attendanceId)) throw new Error("Invalid token");
+  if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) throw new Error("Expired token");
+  return {
+    attendanceId: Number(payload.attendanceId),
+    // 舊連結沒有角色欄位，維持完整回報權限，避免已發出的主教連結失效。
+    reportRole: payload.reportRole === "assistant" ? "assistant" as const : "lead" as const,
+  };
 }
 
 function base64url(value: string | Buffer) {

@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { COURSE_LABEL, courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { equipmentFirstClassText, type EquipmentReminderData } from "@/lib/equipmentReminderCore";
-import { signPublicAccessToken } from "@/lib/publicAccessToken";
+import { signReportAccessToken } from "@/lib/publicAccessToken";
 import { PICKLEBALL_LESSON_DETAILS } from "@/lib/courseCurriculumDetails";
 
 export { COURSE_LABEL, courseLabel };
@@ -368,6 +368,7 @@ export function buildReminderMessage(opts: {
     studentCountA?: number | null;
     studentCountB?: number | null;
     expectedStudentCount?: number | null;
+    reportRole?: "lead" | "assistant";
   }>;
 }) {
   const courses = opts.courses?.length ? opts.courses : [{
@@ -455,7 +456,11 @@ export function buildReminderMessage(opts: {
           }] : []),
           {
             type: "button", style: "primary", color: "#2C82B8", height: "sm",
-            action: { type: "uri", label: "課後回報", uri: course.reportUrl || `${appUrl()}/report/${encodeURIComponent(signPublicAccessToken("report", course.attendanceId!))}` },
+            action: {
+              type: "uri",
+              label: course.reportRole === "assistant" ? "填寫出席人數" : "課後回報",
+              uri: course.reportUrl || `${appUrl()}/report/${encodeURIComponent(signReportAccessToken(course.attendanceId!, course.reportRole ?? "lead"))}`,
+            },
           },
           // 器材確認按鈕（postback）
           ...(course.attendanceId && course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly) ? [{
@@ -483,6 +488,7 @@ export function buildReportRequestMessage(opts: {
   courseType: string;
   attendanceId: number;
   category?: string | null;
+  reportRole?: "lead" | "assistant";
 }) {
   const label = courseLabel(opts.courseType);
   const countRequired = requiresStudentCount(opts.category);
@@ -490,7 +496,7 @@ export function buildReportRequestMessage(opts: {
   const taskDescription = countRequired
     ? "請填寫本堂實際上課人數"
     : "請填寫本堂完成的課程進度";
-  const reportToken = signPublicAccessToken("report", opts.attendanceId);
+  const reportToken = signReportAccessToken(opts.attendanceId, opts.reportRole ?? "lead");
   // 風格與 buildReminderMessage（今日課程提醒）一致：藍灰標題、資訊區塊、藍色按鈕
   return {
     type: "flex",

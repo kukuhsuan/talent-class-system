@@ -19,7 +19,7 @@ import { buildLessonRecapFlex, previousLessonRecapMap, type LessonRecap } from "
 const MAX_RECAP_CARDS = 3;
 
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
-type ReminderCourse = { attendanceId?: number; courseId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null };
+type ReminderCourse = { attendanceId?: number; courseId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null; reportRole?: "lead" | "assistant" };
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -171,7 +171,12 @@ export async function GET(req: NextRequest) {
       studentCount: att.studentCount,
       studentCountA: att.studentCountA,
       studentCountB: att.studentCountB,
-      teachers: [att.actualTeacher, ...(att.assistantTeacher && att.assistantTeacher.id !== att.actualTeacher.id ? [att.assistantTeacher] : [])],
+      recipients: [
+        { teacher: att.actualTeacher, reportRole: "lead" as const },
+        ...(att.assistantTeacher && att.assistantTeacher.id !== att.actualTeacher.id
+          ? [{ teacher: att.assistantTeacher, reportRole: "assistant" as const }]
+          : []),
+      ],
     })),
     ...weekdayWithAttendance.map((course) => ({
       attendanceId: course.attendanceId,
@@ -184,7 +189,12 @@ export async function GET(req: NextRequest) {
       studentCount: course.attStudentCount,
       studentCountA: course.attStudentCountA,
       studentCountB: course.attStudentCountB,
-      teachers: [course.teacher, ...(course.assistantTeacher && course.assistantTeacher.id !== course.teacher.id ? [course.assistantTeacher] : [])],
+      recipients: [
+        { teacher: course.teacher, reportRole: "lead" as const },
+        ...(course.assistantTeacher && course.assistantTeacher.id !== course.teacher.id
+          ? [{ teacher: course.assistantTeacher, reportRole: "assistant" as const }]
+          : []),
+      ],
     })),
   ];
 
@@ -211,7 +221,7 @@ export async function GET(req: NextRequest) {
 
   const byTeacher = new Map<number, { teacher: ReminderTeacher; courses: ReminderCourse[] }>();
   for (const course of courses) {
-    for (const teacher of course.teachers) {
+    for (const { teacher, reportRole } of course.recipients) {
       const item = byTeacher.get(teacher.id) ?? { teacher, courses: [] };
       item.courses.push({
         attendanceId: course.attendanceId,
@@ -225,6 +235,7 @@ export async function GET(req: NextRequest) {
         confirmationSummary: course.confirmationSummary,
         equipment: course.attendanceId ? equipmentMap.get(course.attendanceId) ?? null : null,
         expectedStudentCount: course.attendanceId ? expectedMap.get(course.attendanceId) ?? null : null,
+        reportRole,
       });
       byTeacher.set(teacher.id, item);
     }

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { normalizeAbilities } from "@/lib/abilityMap";
 import { normalizeClassStatus, safeJsonArray } from "@/lib/teachingReport";
-import { signPublicAccessToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
+import { signPublicAccessToken, verifyReportAccessToken } from "@/lib/publicAccessToken";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
 import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, supportsSchoolSignature, validSignatureData } from "@/lib/schoolSignature";
@@ -107,7 +107,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   try {
     await ensureSchoolSignatureColumns();
     const { id } = await params;
-    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
+    const { attendanceId, reportRole } = verifyReportAccessToken(decodeURIComponent(id));
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { course: true, actualTeacher: true },
@@ -158,6 +158,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       department: attendance.course.department,
       category: attendance.course.category || attendance.category,
       reportMode: isKindergarten(attendance.course.department) ? "kindergarten" : "simple",
+      reportRole,
       courseName: normalizedCourseType,
       className: attendance.course.enrollCount,
       teacherName: attendance.actualTeacher.name,
@@ -219,7 +220,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
+    const { attendanceId } = verifyReportAccessToken(decodeURIComponent(id));
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
       include: { course: true, actualTeacher: true },
@@ -292,10 +293,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     await ensureSchoolSignatureColumns();
     const { id } = await params;
-    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
+    const { attendanceId, reportRole } = verifyReportAccessToken(decodeURIComponent(id));
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { course: true, actualTeacher: true },
+      include: { course: true, actualTeacher: true, assistantTeacher: true },
     });
 
     if (!attendance) {
@@ -325,6 +326,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const needsStudentCount = requiresStudentCount(attendance.course.category || attendance.category);
     if (needsStudentCount && data.studentCount == null) {
       return NextResponse.json({ error: "請填寫今日出席人數" }, { status: 400 });
+    }
+    if (reportRole === "assistant") {
+      if (!needsStudentCount) {
+        return NextResponse.json({ error: "這堂課不需要助教另外填寫人數" }, { status: 400 });
+      }
+      const studentCount = Math.max(0, Number(data.studentCount));
+      if (!Number.isFinite(studentCount)) {
+        return NextResponse.json({ error: "請填寫正確的出席人數" }, { status: 400 });
+      }
+      await prisma.attendance.update({ where: { id: attendance.id }, data: { studentCount } });
+      const { writeAuditLog } = await import("@/lib/auditLog");
+      await writeAuditLog(req, {
+        actorName: attendance.assistantTeacher?.name ?? "助教",
+        actorRole: "teacher",
+        action: "update",
+        targetType: "Attendance",
+        targetId: attendance.id,
+        targetLabel: `${attendance.date.toISOString().slice(0, 10)} ${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
+        beforeData: { studentCount: attendance.studentCount },
+        afterData: { studentCount },
+        diffSummary: "助教回填出席人數（併入主教同一筆出勤）",
+      });
+      return NextResponse.json({ ok: true, studentCount, assistantCountOnly: true });
     }
     const kindergarten = isKindergarten(attendance.course.department);
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";

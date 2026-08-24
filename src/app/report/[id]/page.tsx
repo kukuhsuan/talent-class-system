@@ -12,6 +12,7 @@ type ReportInfo = {
   department: string;
   category: string;
   reportMode: "kindergarten" | "simple";
+  reportRole?: "lead" | "assistant";
   courseName: string;
   className: string;
   teacherName: string;
@@ -571,29 +572,30 @@ export default function TeacherReportPage() {
     if (saving) return;
     const kindergarten = info?.reportMode === "kindergarten";
     const needsStudentCount = requiresStudentCount(info?.category);
+    const assistantCountOnly = info?.reportRole === "assistant";
     if (needsStudentCount && !form.studentCount) {
       setError("請填寫今日出席人數");
       return;
     }
-    if (!needsStudentCount && !form.progress.trim()) {
+    if (!assistantCountOnly && !needsStudentCount && !form.progress.trim()) {
       setError(kindergarten ? "請選擇或填寫今日課程進度" : "請填寫今天訓練什麼");
       return;
     }
     // 特殊事件必填：這是事件紀錄，不可留空送出
-    if (form.incident) {
+    if (!assistantCountOnly && form.incident) {
       if (!form.incidentChild.trim()) { setError("特殊事件請填寫孩子姓名"); return; }
       if (!form.incidentProcess.trim()) { setError("特殊事件請填寫發生經過"); return; }
       if (!form.incidentAction.trim()) { setError("特殊事件請填寫處理方式"); return; }
     }
-    if (info?.schoolSignatureRequired && !form.schoolVerifierName.trim()) {
+    if (!assistantCountOnly && info?.schoolSignatureRequired && !form.schoolVerifierName.trim()) {
       setError("請填寫園所確認老師姓名");
       return;
     }
-    if (info?.schoolSignatureRequired && !form.schoolSignatureData) {
+    if (!assistantCountOnly && info?.schoolSignatureRequired && !form.schoolSignatureData) {
       setError("請由園所老師完成手寫簽名");
       return;
     }
-    const signatureStarted = Boolean(form.schoolVerifierName.trim() || form.schoolSignatureData);
+    const signatureStarted = !assistantCountOnly && Boolean(form.schoolVerifierName.trim() || form.schoolSignatureData);
     if (signatureStarted && !form.schoolVerifierName.trim()) {
       setError("使用電子簽名時，請填寫園所確認老師姓名");
       return;
@@ -636,6 +638,8 @@ export default function TeacherReportPage() {
   if (!info) return <div className="mx-auto max-w-md py-16 text-center text-red-500">{error || "找不到表單"}</div>;
   const isKindergarten = info.reportMode === "kindergarten";
   const needsStudentCount = requiresStudentCount(info.category);
+  const assistantCountOnly = info.reportRole === "assistant";
+  const assistantNeedsNoCount = assistantCountOnly && !needsStudentCount;
   const locked = Boolean(info.reportLocked);
   const photoLocked = Boolean(info.reportPhotoLocked);
   const showAssessmentEntry = Boolean(assessmentUrl && info.shouldAskAssessment);
@@ -643,10 +647,10 @@ export default function TeacherReportPage() {
   // 缺項提示：常駐顯示還缺什麼，不用按送出才發現
   const missingItems = [
     needsStudentCount && !form.studentCount ? "出席人數" : "",
-    !needsStudentCount && !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
-    form.incident && (!form.incidentChild.trim() || !form.incidentProcess.trim() || !form.incidentAction.trim()) ? "特殊事件內容" : "",
-    info.schoolSignatureRequired && !form.schoolVerifierName.trim() ? "園所老師姓名" : "",
-    info.schoolSignatureRequired && !form.schoolSignatureData ? "園所簽名" : "",
+    !assistantCountOnly && !needsStudentCount && !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
+    !assistantCountOnly && form.incident && (!form.incidentChild.trim() || !form.incidentProcess.trim() || !form.incidentAction.trim()) ? "特殊事件內容" : "",
+    !assistantCountOnly && info.schoolSignatureRequired && !form.schoolVerifierName.trim() ? "園所老師姓名" : "",
+    !assistantCountOnly && info.schoolSignatureRequired && !form.schoolSignatureData ? "園所簽名" : "",
   ].filter(Boolean);
 
   // 48 小時補填期限倒數
@@ -678,7 +682,7 @@ export default function TeacherReportPage() {
 
       {done && (
         <div className="mb-4 rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-700">
-          <div className="font-semibold">已送出回報，教學紀錄已整理完成。</div>
+          <div className="font-semibold">{info.reportRole === "assistant" ? "出席人數已更新到同一筆課程紀錄，不會另外新增明細。" : "已送出回報，教學紀錄已整理完成。"}</div>
           {notifyStatus && (
             <div className={`mt-2 rounded-xl px-3 py-2 text-xs ${notifyStatus === "通知成功" ? "bg-white text-green-700" : "bg-white text-amber-700"}`}>
               園所通知狀態：{notifyStatus}
@@ -710,6 +714,16 @@ export default function TeacherReportPage() {
         </div>
       )}
       {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
+      {assistantCountOnly && !done && (
+        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-800">
+          <div className="font-bold">{assistantNeedsNoCount ? "這堂課由主教回報課程進度" : "助教只需填寫本堂出席人數"}</div>
+          <div className="mt-1 text-xs text-blue-700">
+            {assistantNeedsNoCount
+              ? "課內課程不需填寫人數，助教不用另外送出回報。"
+              : "人數會併入主教的同一筆課程紀錄，後台與園所明細不會另外列出第二筆。"}
+          </div>
+        </div>
+      )}
       {locked && (
         <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-600">
           {info.reportNotStarted
@@ -734,6 +748,8 @@ export default function TeacherReportPage() {
             </div>
           </section>
         )}
+
+        <div className={assistantCountOnly ? "hidden" : "contents"}>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <label className="text-sm font-semibold text-slate-800">{isKindergarten ? "今日課程進度" : "今天訓練什麼"}</label>
@@ -922,16 +938,17 @@ export default function TeacherReportPage() {
             {info.schoolSignedAt && <div className="mt-3 text-xs text-slate-500">確認時間：{new Date(info.schoolSignedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div>}
           </section>
         )}
+        </div>
 
         {!locked && !done && missingItems.length > 0 && (
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-500">
             尚未完成：{missingItems.join("、")}
           </div>
         )}
-        {!locked && (
+        {!locked && !assistantNeedsNoCount && (
           <button onClick={submit} disabled={saving}
             className="sticky bottom-4 w-full rounded-2xl bg-[#1D4ED8] px-5 py-4 text-base font-bold text-white shadow-lg shadow-blue-900/15 disabled:cursor-not-allowed disabled:opacity-60">
-            {saving ? "送出中..." : "送出課程回報"}
+            {saving ? "送出中..." : assistantCountOnly ? "送出出席人數" : "送出課程回報"}
           </button>
         )}
       </div>
