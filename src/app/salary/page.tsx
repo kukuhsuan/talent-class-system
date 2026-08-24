@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { courseLabel, normalizeCategory } from "@/lib/courseMeta";
 
 type Teacher = { id: number; name: string; rateAfterSchool: number; travelFee: number };
@@ -57,6 +58,9 @@ export default function SalaryPage() {
   const [adjustment, setAdjustment] = useState({ teacherId: 0, targetMonth: "", type: "補發", amount: "", reason: "", notes: "" });
   const [payout, setPayout] = useState<Record<number, PayoutRow>>({});
   const [revealed, setRevealed] = useState<Record<number, string>>({});
+  const [teacherSearch, setTeacherSearch] = useState("");
+  const [copyingBank, setCopyingBank] = useState<number | null>(null);
+  const [copiedBank, setCopiedBank] = useState<number | null>(null);
 
   const loadPayout = useCallback(async () => {
     const res = await fetch("/api/salary/payout-readiness", { cache: "no-store" });
@@ -71,13 +75,47 @@ export default function SalaryPage() {
   useEffect(() => { void loadPayout(); }, [loadPayout]);
 
   // 明碼一次只解一列，後端會寫稽核紀錄。不做整頁明碼。
-  const revealBank = async (teacherId: number) => {
-    if (revealed[teacherId]) return;
+  const getRevealedBankAccount = async (teacherId: number) => {
+    if (revealed[teacherId]) return revealed[teacherId];
     const res = await fetch(`/api/teachers/${teacherId}?reveal=1`);
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) return alert(json.error ?? "無法顯示帳號");
-    if (!json.bankAccountNumber) return alert("此角色無法檢視帳號明碼");
-    setRevealed((current) => ({ ...current, [teacherId]: String(json.bankAccountNumber) }));
+    if (!res.ok) throw new Error(json.error ?? "無法顯示帳號");
+    if (!json.bankAccountNumber) throw new Error("此角色無法檢視帳號明碼");
+    const accountNumber = String(json.bankAccountNumber);
+    setRevealed((current) => ({ ...current, [teacherId]: accountNumber }));
+    return accountNumber;
+  };
+
+  const revealBank = async (teacherId: number) => {
+    try {
+      await getRevealedBankAccount(teacherId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "無法顯示帳號");
+    }
+  };
+
+  const copyBankDetails = async (row: SalaryRow) => {
+    const bank = payout[row.teacher.id];
+    if (!bank) return;
+    setCopyingBank(row.teacher.id);
+    try {
+      const accountNumber = await getRevealedBankAccount(row.teacher.id);
+      const text = [
+        `老師：${row.teacher.name}`,
+        `銀行：${bank.bankLine || "未填"}`,
+        `戶名：${bank.bankAccountName || "未填"}`,
+        `帳號：${accountNumber}`,
+        `本月應付：$${row.total.toLocaleString("zh-TW")}`,
+        ...(bank.bankRemitNotes ? [`備註：${bank.bankRemitNotes}`] : []),
+      ].join("\n");
+      await navigator.clipboard.writeText(text);
+      setCopiedBank(row.teacher.id);
+      window.setTimeout(() => setCopiedBank((current) => current === row.teacher.id ? null : current), 2500);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "複製匯款資料失敗");
+    } finally {
+      setCopyingBank(null);
+    }
   };
 
   const load = useCallback(async () => {
@@ -250,7 +288,16 @@ export default function SalaryPage() {
   };
 
   const active = data?.results.filter((r) => r.hasActivity) ?? [];
-  const displayed = showAll ? (data?.results ?? []) : active;
+  const teacherOptions = useMemo(() => (data?.results ?? []).map((row) => ({
+    value: row.teacher.id,
+    label: row.teacher.name,
+    searchText: row.teacher.name,
+  })), [data?.results]);
+  const searchKeyword = teacherSearch.trim().toLocaleLowerCase("zh-TW");
+  const unsearched = showAll ? (data?.results ?? []) : active;
+  const displayed = searchKeyword
+    ? unsearched.filter((row) => row.teacher.name.toLocaleLowerCase("zh-TW").includes(searchKeyword))
+    : unsearched;
   const grandTotal = active.reduce((s, r) => s + r.total, 0);
   // 只看本月有課的老師，沒課的人不需要在發薪前提醒裡佔版面
   const activePayout = active.map((r) => payout[r.teacher.id]).filter(Boolean) as PayoutRow[];
@@ -320,7 +367,19 @@ export default function SalaryPage() {
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-5 mb-6">
           <h2 className="font-semibold text-slate-800 mb-3">新增 {year}年{month}月發放的薪資調整</h2>
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
-            <div><label className="block text-xs text-slate-600 mb-1">老師</label><select value={adjustment.teacherId} onChange={(e) => setAdjustment({ ...adjustment, teacherId: Number(e.target.value) })} className="w-full border rounded-lg px-3 py-2 text-sm"><option value={0}>請選擇</option>{data.results.map((row) => <option key={row.teacher.id} value={row.teacher.id}>{row.teacher.name}</option>)}</select></div>
+            <div>
+              <label className="block text-xs text-slate-600 mb-1" htmlFor="salary-adjustment-teacher">老師</label>
+              <SearchableSelect
+                id="salary-adjustment-teacher"
+                options={teacherOptions}
+                value={adjustment.teacherId || null}
+                onChange={(value) => setAdjustment({ ...adjustment, teacherId: Number(value ?? 0) })}
+                allowEmpty={false}
+                placeholder="搜尋老師姓名"
+                emptyText="查無符合的老師"
+                inputClassName="w-full min-h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-amber-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+              />
+            </div>
             <div><label className="block text-xs text-slate-600 mb-1">歸屬月份</label><input type="month" value={adjustment.targetMonth} onChange={(e) => setAdjustment({ ...adjustment, targetMonth: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
             <div><label className="block text-xs text-slate-600 mb-1">類型</label><select value={adjustment.type} onChange={(e) => setAdjustment({ ...adjustment, type: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm"><option>補發</option><option>扣款</option><option>獎金</option><option>其他</option></select></div>
             <div><label className="block text-xs text-slate-600 mb-1">金額（扣款填負數）</label><input type="number" step="1" value={adjustment.amount} onChange={(e) => setAdjustment({ ...adjustment, amount: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
@@ -371,9 +430,20 @@ export default function SalaryPage() {
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center flex-wrap gap-2">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center flex-wrap gap-3">
               <span className="font-semibold text-slate-700">{year}年 {month}月 薪資明細</span>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex flex-1 items-center justify-end gap-2 flex-wrap">
+                <div className="relative w-full sm:w-64">
+                  <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">⌕</span>
+                  <input
+                    type="search"
+                    value={teacherSearch}
+                    onChange={(event) => setTeacherSearch(event.target.value)}
+                    placeholder="搜尋老師姓名"
+                    aria-label="搜尋薪資明細中的老師"
+                    className="w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
                 <button onClick={emailAll}
                   className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm transition-colors">
                   一鍵寄送 Email
@@ -453,7 +523,14 @@ export default function SalaryPage() {
                       {payout[r.teacher.id].bankRemitNotes && (
                         <span className="text-amber-700">備註：{payout[r.teacher.id].bankRemitNotes}</span>
                       )}
-                      <a href={`/teachers?teacherId=${r.teacher.id}`} className="ml-auto font-semibold text-blue-600 hover:text-blue-800">查看匯款資料 →</a>
+                      <button
+                        type="button"
+                        onClick={() => copyBankDetails(r)}
+                        disabled={copyingBank === r.teacher.id || !payout[r.teacher.id].bankAccountMasked}
+                        className="ml-auto rounded-lg border border-blue-200 bg-white px-3 py-1.5 font-semibold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {copyingBank === r.teacher.id ? "取得帳號中…" : copiedBank === r.teacher.id ? "✓ 已複製匯款資料" : "複製匯款資料"}
+                      </button>
                     </div>
                   )}
 
@@ -523,11 +600,16 @@ export default function SalaryPage() {
                   )}
                 </div>
               ))}
+              {displayed.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center text-sm text-slate-500">
+                  {teacherSearch.trim() ? `找不到符合「${teacherSearch.trim()}」的老師` : "本月尚無薪資資料"}
+                </div>
+              )}
             </div>
 
             {active.length > 0 && (
               <div className="border-t-2 border-slate-300 bg-slate-50 px-4 py-3 flex justify-between font-bold">
-                <span>{active.length} 位老師</span>
+                <span>{teacherSearch.trim() ? `顯示 ${displayed.length} 位老師（本月有課 ${active.length} 位）` : `${active.length} 位老師`}</span>
                 <span className="text-blue-700">${fmt(grandTotal)}</span>
               </div>
             )}

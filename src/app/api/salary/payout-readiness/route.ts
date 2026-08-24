@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SALARY_ROLES, SENSITIVE_FINANCE_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { maskBankAccount } from "@/lib/bankMask";
 import { ensureTeacherExtendedColumns } from "@/lib/teacherColumns";
-import { DOC_STATUS, bankbookStatusOf, listTeacherDocuments } from "@/lib/teacherDocument";
+import { bankbookStatusOf, listTeacherDocuments } from "@/lib/teacherDocument";
 import { bankChangedAtMap, teacherPayoutReadiness } from "@/lib/teacherPayoutReadiness";
 import { writeAuditLog } from "@/lib/auditLog";
 
@@ -100,17 +100,15 @@ export async function POST(req: NextRequest) {
   });
   if (teachers.length === 0) return NextResponse.json({ error: "找不到老師資料" }, { status: 404 });
 
-  // 存摺沒審過或帳號不齊就不該標記已匯款，否則提醒機制自己就先失效了
-  const documents = await listTeacherDocuments(teachers.map((teacher) => teacher.id)).catch(() => []);
+  // 存摺不是匯款必要條件；銀行資料齊全即可標記已匯款。
   const blocked = teachers.filter((teacher) => {
     // 已註記「匯款資料在會計端」的老師，資料本來就不在系統，照樣可以記錄匯款事實
     if (teacher.bankHeldOfflineAt) return false;
-    const missingBank = !teacher.bankName?.trim() || !teacher.bankAccountNumber?.trim() || !teacher.bankAccountName?.trim();
-    return missingBank || bankbookStatusOf(documents, teacher.id) !== DOC_STATUS.done;
+    return !teacher.bankName?.trim() || !teacher.bankAccountNumber?.trim() || !teacher.bankAccountName?.trim();
   });
   if (blocked.length > 0) {
     return NextResponse.json(
-      { error: `以下老師的匯款資料或存摺尚未完成，不能標記已匯款：${blocked.map((teacher) => teacher.name).join("、")}` },
+      { error: `以下老師的銀行匯款資料尚未完成，不能標記已匯款：${blocked.map((teacher) => teacher.name).join("、")}` },
       { status: 400 },
     );
   }

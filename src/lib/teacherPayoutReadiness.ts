@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { DOC_STATUS } from "@/lib/teacherDocument";
 
 // 發薪前提醒的唯一判斷來源。/salary、/accounting-center、Excel 匯出三處都呼叫這一支，
 // 不要各自寫一份，否則畫面說可以匯、匯出檔說不能匯。
@@ -50,7 +49,7 @@ export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadi
   // 0. 系統上線前就在匯款的老師：帳號與存摺都在會計手上，系統沒有也不需要有。
   //    這種人不是「資料缺漏」而是「資料不在系統」，每個月拿 ❌ 提醒他只會讓人習慣忽略紅字。
   //    但也不能當成完全沒事——標記者與時間要一直掛在畫面上，才追得回是誰說可以匯的。
-  if (heldOffline && (!bankName || !accountNumber || !accountName || String(input.bankbookStatus ?? "") !== DOC_STATUS.done)) {
+  if (heldOffline && (!bankName || !accountNumber || !accountName)) {
     const by = String(input.bankHeldOfflineBy ?? "").trim();
     const note = String(input.bankHeldOfflineNote ?? "").trim();
     return {
@@ -91,23 +90,12 @@ export function teacherPayoutReadiness(input: PayoutReadinessInput): PayoutReadi
     };
   }
 
-  // 3. 存摺沒審過就等於帳號沒人核對過，不能只靠打字的那一份
-  if (String(input.bankbookStatus ?? "") !== DOC_STATUS.done) {
-    const status = String(input.bankbookStatus ?? "") || DOC_STATUS.none;
-    return {
-      level: "block",
-      code: "missing_bankbook",
-      label: "❌ 尚未上傳存摺",
-      detail: `存摺封面目前狀態為「${status}」，請請老師上傳並完成審核後再匯款。`,
-    };
-  }
-
-  // 4. 資料齊全但從未匯過款，第一次仍提醒會計確認。
+  // 3. 存摺不是匯款必要條件；銀行資料齊全即可進行首次匯款確認。
   return {
     level: "warn",
     code: "first_time",
     label: "⚠️ 首次匯款，請確認資料",
-    detail: "系統沒有這位老師的匯款紀錄，請在匯款前再核對一次存摺與帳號。",
+    detail: "系統沒有這位老師的匯款紀錄，請在匯款前再核對一次銀行帳號。",
   };
 }
 
