@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { attendanceHoursOverrideMap } from "@/lib/attendanceHoursOverride";
 import { normalizeCategory } from "@/lib/courseMeta";
@@ -54,7 +55,7 @@ type AttendanceRow = {
   category: string; hours: number; notes: string; isPayrollLocked: boolean; reportContent: string; reportSentAt: Date | null;
   studentCount: number | null; studentCountA: number | null; studentCountB: number | null;
   scheduledTime: string | null;
-  course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string; time: string; payrollHours: number | null };
+  course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string; time: string; payrollHours: number | null; isActive: boolean };
 };
 
 export type SalaryResult = {
@@ -76,10 +77,17 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   const end = new Date(Date.UTC(year, month, 1));
   const payoutMonth = `${year}-${String(month).padStart(2, "0")}`;
   const teacherWhere = options.teacherId ? { id: options.teacherId } : undefined;
-  const attendanceWhere = {
+  const attendanceWhere: Prisma.AttendanceWhereInput = {
     date: { gte: start, lt: end },
     cancelled: false,
-    ...(options.teacherId ? { OR: [{ actualTeacherId: options.teacherId }, { assistantTeacherId: options.teacherId }] } : {}),
+    AND: [
+      // 封存代表不再參與日常排班與自動計薪。只有已由會計鎖定的歷史薪資
+      // 可以繼續保留，避免封存後的重複預排堂次再次出現在薪資與 Excel。
+      { OR: [{ course: { is: { isActive: true } } }, { isPayrollLocked: true }] },
+      ...(options.teacherId
+        ? [{ OR: [{ actualTeacherId: options.teacherId }, { assistantTeacherId: options.teacherId }] }]
+        : []),
+    ],
   };
 
   const [teachersRaw, rowsRaw, adjustmentsRaw] = await Promise.all([
@@ -131,6 +139,7 @@ export async function calculateSalaryMonth(year: number, month: number, options:
             department: true,
             time: true,
             payrollHours: true,
+            isActive: true,
           },
         },
       },
