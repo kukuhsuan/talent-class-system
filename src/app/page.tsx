@@ -52,6 +52,20 @@ type AutomationHealth = {
   details: string;
   ranAt: string;
 };
+type AttendanceVerificationSummary = {
+  year: number;
+  months: number[];
+  counts: { total: number; notCreated: number; pending: number; confirmed: number; issue: number; stale: number };
+  items: Array<{
+    schoolId: number;
+    schoolName: string;
+    status: "not_created" | "pending" | "confirmed" | "issue" | "stale";
+    confirmerName: string;
+    confirmerNote: string;
+    confirmedAt: string | null;
+    classCount: number;
+  }>;
+};
 
 const EMPTY_STATS: DashboardStats = {
   todayCourseCount: 0,
@@ -73,6 +87,7 @@ export default function Home() {
   const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
   const [briefingItems, setBriefingItems] = useState<BriefingItem[]>([]);
   const [automationHealth, setAutomationHealth] = useState<AutomationHealth[]>([]);
+  const [verificationSummary, setVerificationSummary] = useState<AttendanceVerificationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [reminding, setReminding] = useState<number | null>(null);
   const [remindedIds, setRemindedIds] = useState<Set<number>>(new Set());
@@ -92,10 +107,13 @@ export default function Home() {
       const params = new URLSearchParams({ year: String(year), month: String(month), today: todayStr });
       if (dept) params.set("dept", dept);
       const briefingTo = taipeiDateIso(new Date(Date.now() + 15 * 86400000));
-      const [data, briefings] = await Promise.all([
+      const verificationMonths = month >= 7 && month <= 8 ? "7,8" : String(month);
+      const [data, briefings, verificationResponse] = await Promise.all([
         fetch(`/api/dashboard?${params}`, { cache: "no-store" }).then((r) => r.json()),
         fetch(`/api/course-briefings?from=${todayStr}&to=${briefingTo}`, { cache: "no-store" })
           .then((r) => r.ok ? r.json() : []),
+        fetch(`/api/school-attendance-verifications?summary=1&year=${year}&months=${verificationMonths}`, { cache: "no-store" })
+          .then((r) => r.ok ? r.json() : null),
       ]);
       if (cancelled) return;
 
@@ -113,6 +131,7 @@ export default function Home() {
       setEquipmentItems(Array.isArray(data.equipment?.items) ? data.equipment.items : []);
       setBriefingItems(Array.isArray(briefings) ? briefings.filter((item: BriefingItem) => item.status === "pending").slice(0, 5) : []);
       setAutomationHealth(Array.isArray(data.automationHealth) ? data.automationHealth : []);
+      setVerificationSummary(verificationResponse?.items ? verificationResponse : null);
       setSeeded(Number(data.teacherCount ?? 0) > 0);
       setLoading(false);
     }
@@ -242,6 +261,55 @@ export default function Home() {
           ))}
         </div>
       </div>
+
+      {verificationSummary && verificationSummary.counts.total > 0 && (
+        <div className="mt-6 rounded-xl border border-sky-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-sky-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="font-semibold text-slate-800">暑期人數核對總覽</h2>
+              <p className="mt-1 text-sm text-slate-500">{verificationSummary.year} 年 {verificationSummary.months.join("、")} 月｜有問題與需重核的園所優先顯示。</p>
+            </div>
+            <Link href="/school-invoices" className="text-sm font-semibold text-sky-700">前往園所請款單 →</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-2 p-4 md:grid-cols-5">
+            {([
+              ["有問題", verificationSummary.counts.issue, "bg-rose-50 text-rose-700"],
+              ["需重新核對", verificationSummary.counts.stale, "bg-orange-50 text-orange-700"],
+              ["等待園所確認", verificationSummary.counts.pending, "bg-amber-50 text-amber-700"],
+              ["尚未產生連結", verificationSummary.counts.notCreated, "bg-slate-100 text-slate-700"],
+              ["已確認", verificationSummary.counts.confirmed, "bg-emerald-50 text-emerald-700"],
+            ] as const).map(([label, value, className]) => (
+              <div key={String(label)} className={`rounded-lg px-3 py-3 ${className}`}>
+                <div className="text-xs font-semibold">{label}</div>
+                <div className="mt-1 text-2xl font-bold">{value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">
+            {verificationSummary.items.filter((item) => item.status !== "confirmed").slice(0, 8).map((item) => {
+              const labels = {
+                issue: ["園所回報有問題", "err"],
+                stale: ["人數更新，需重核", "warn"],
+                pending: ["等待園所確認", "warn"],
+                not_created: ["尚未產生連結", "idle"],
+                confirmed: ["已確認", "ok"],
+              } as const;
+              const [label, tone] = labels[item.status];
+              return (
+                <Link key={item.schoolId} href={`/school-invoices?schoolId=${item.schoolId}&year=${verificationSummary.year}&months=${verificationSummary.months.join(",")}`} className="grid gap-2 px-4 py-3 hover:bg-sky-50/50 md:grid-cols-[1fr_auto_1.5fr_auto] md:items-center">
+                  <div className="font-semibold text-slate-800">{item.schoolName}</div>
+                  <StatusTag tone={tone} size="sm">{label}</StatusTag>
+                  <div className="text-sm text-slate-500">{item.confirmerName ? `填寫人：${item.confirmerName}` : `${item.classCount} 堂待核對`}{item.confirmerNote ? `｜${item.confirmerNote}` : ""}</div>
+                  <span className="text-sm font-semibold text-sky-700">處理 →</span>
+                </Link>
+              );
+            })}
+            {verificationSummary.items.every((item) => item.status === "confirmed") && (
+              <div className="px-4 py-6 text-center text-sm font-medium text-emerald-700">所有園所皆已完成確認</div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 rounded-xl border border-emerald-100 bg-white shadow-sm">
         <div className="border-b border-emerald-50 px-4 py-4">

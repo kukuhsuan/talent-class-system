@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSchoolAttendanceVerification, latestSchoolAttendanceVerification, normalizeVerificationMonths } from "@/lib/schoolAttendanceVerification";
+import { createSchoolAttendanceVerification, latestSchoolAttendanceVerification, normalizeVerificationMonths, schoolAttendanceVerificationSummary } from "@/lib/schoolAttendanceVerification";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const dynamic = "force-dynamic";
@@ -7,10 +7,14 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const params = req.nextUrl.searchParams;
-    const schoolId = Number(params.get("schoolId"));
     const year = Number(params.get("year"));
-    if (!schoolId || !year) throw new Error("缺少園所或年份");
+    if (!year) throw new Error("缺少年份");
     const months = normalizeVerificationMonths(params.get("months"));
+    if (params.get("summary") === "1") {
+      return NextResponse.json(await schoolAttendanceVerificationSummary({ year, months }));
+    }
+    const schoolId = Number(params.get("schoolId"));
+    if (!schoolId) throw new Error("缺少園所");
     return NextResponse.json(await latestSchoolAttendanceVerification({ schoolId, year, months }));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "核對狀態讀取失敗" }, { status: 400 });

@@ -38,6 +38,16 @@ export type VerificationRow = {
   updatedAt: string;
 };
 
+export type SchoolAttendanceVerificationSummaryItem = {
+  schoolId: number;
+  schoolName: string;
+  status: "not_created" | "pending" | "confirmed" | "issue" | "stale";
+  confirmerName: string;
+  confirmerNote: string;
+  confirmedAt: string | null;
+  classCount: number;
+};
+
 let storageReady = false;
 
 export async function ensureSchoolAttendanceVerificationStorage() {
@@ -186,5 +196,103 @@ export async function latestSchoolAttendanceVerification(input: { schoolId: numb
     confirmedAt: row.confirmedAt,
     expiresAt: row.expiresAt,
     stale: row.snapshotHash !== current.hash,
+  };
+}
+
+function attendanceStudentCount(row: { studentCount: number | null; studentCountA: number | null; studentCountB: number | null }) {
+  if (row.studentCount !== null) return row.studentCount;
+  if (row.studentCountA !== null && row.studentCountB !== null) return row.studentCountA + row.studentCountB;
+  return row.studentCountA ?? row.studentCountB ?? null;
+}
+
+export async function schoolAttendanceVerificationSummary(input: { year: number; months: number[] }) {
+  await ensureSchoolAttendanceVerificationStorage();
+  const months = normalizeVerificationMonths(input.months);
+  const monthsKey = JSON.stringify(months);
+  const ranges = months.map((month) => ({
+    start: new Date(Date.UTC(input.year, month - 1, 1)),
+    end: new Date(Date.UTC(input.year, month, 1)),
+  }));
+
+  const attendances = await prisma.attendance.findMany({
+    where: {
+      OR: ranges.map(({ start, end }) => ({ date: { gte: start, lt: end } })),
+      cancelled: false,
+      course: { schoolId: { not: null } },
+    },
+    select: {
+      id: true,
+      studentCount: true,
+      studentCountA: true,
+      studentCountB: true,
+      category: true,
+      course: {
+        select: {
+          schoolId: true,
+          category: true,
+          department: true,
+          schoolRel: { select: { id: true, name: true, type: true } },
+        },
+      },
+    },
+  });
+
+  const schools = new Map<number, { schoolName: string; lessons: Map<number, number | null> }>();
+  for (const attendance of attendances) {
+    const school = attendance.course.schoolRel;
+    if (!school) continue;
+    const isAfterSchool = attendance.course.department === "安親班" || school.type === "安親班" || school.type.includes("安親");
+    const isDemo = String(attendance.category || attendance.course.category).toLowerCase() === "demo";
+    if (!isAfterSchool || isDemo) continue;
+    const entry = schools.get(school.id) ?? { schoolName: school.name, lessons: new Map<number, number | null>() };
+    entry.lessons.set(attendance.id, attendanceStudentCount(attendance));
+    schools.set(school.id, entry);
+  }
+
+  const rows = await prisma.$queryRaw<VerificationRow[]>`
+    SELECT verification.*
+    FROM "SchoolAttendanceVerification" verification
+    INNER JOIN (
+      SELECT "schoolId", MAX("id") AS "latestId"
+      FROM "SchoolAttendanceVerification"
+      WHERE "year" = ${input.year} AND "months" = ${monthsKey}
+      GROUP BY "schoolId"
+    ) latest ON latest."latestId" = verification."id"
+  `;
+  const latestBySchool = new Map(rows.map((row) => [row.schoolId, row]));
+
+  const items: SchoolAttendanceVerificationSummaryItem[] = [...schools.entries()].map(([schoolId, school]) => {
+    const row = latestBySchool.get(schoolId);
+    if (!row) {
+      return { schoolId, schoolName: school.schoolName, status: "not_created", confirmerName: "", confirmerNote: "", confirmedAt: null, classCount: school.lessons.size };
+    }
+    const stored = parseSnapshot(row);
+    const storedLessons = new Map(stored.lessons.map((lesson) => [lesson.attendanceId, lesson.studentCount]));
+    const stale = storedLessons.size !== school.lessons.size
+      || [...school.lessons].some(([attendanceId, count]) => storedLessons.get(attendanceId) !== count);
+    return {
+      schoolId,
+      schoolName: school.schoolName,
+      status: stale ? "stale" : row.status === "confirmed" ? "confirmed" : row.status === "issue" ? "issue" : "pending",
+      confirmerName: row.confirmerName,
+      confirmerNote: row.confirmerNote,
+      confirmedAt: row.confirmedAt,
+      classCount: school.lessons.size,
+    };
+  });
+  const priority = { issue: 0, stale: 1, pending: 2, not_created: 3, confirmed: 4 } as const;
+  items.sort((a, b) => priority[a.status] - priority[b.status] || a.schoolName.localeCompare(b.schoolName, "zh-Hant"));
+  return {
+    year: input.year,
+    months,
+    counts: {
+      total: items.length,
+      notCreated: items.filter((item) => item.status === "not_created").length,
+      pending: items.filter((item) => item.status === "pending").length,
+      confirmed: items.filter((item) => item.status === "confirmed").length,
+      issue: items.filter((item) => item.status === "issue").length,
+      stale: items.filter((item) => item.status === "stale").length,
+    },
+    items,
   };
 }

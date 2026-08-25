@@ -102,6 +102,23 @@ export default function SchoolInvoicesPage() {
   const [verificationBusy, setVerificationBusy] = useState(false);
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedSchoolId = params.get("schoolId");
+    const linkedYear = Number(params.get("year"));
+    const linkedMonths = (params.get("months") || "")
+      .split(",")
+      .map(Number)
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 12);
+    if (linkedSchoolId) setSchoolId(linkedSchoolId);
+    if (linkedYear >= 2000 && linkedYear <= 2100) setYear(linkedYear);
+    if (linkedMonths.length) {
+      const uniqueMonths = [...new Set(linkedMonths)].sort((a, b) => a - b);
+      setSelectedMonths(uniqueMonths);
+      setMonth(uniqueMonths.at(-1) ?? current.getMonth() + 1);
+    }
+  }, []);
+
   const selectedSchool = useMemo(() => schools.find((school) => String(school.id) === schoolId), [schoolId, schools]);
   const filteredSchools = useMemo(() => {
     const keyword = schoolSearch.trim().toLowerCase();
