@@ -6,6 +6,7 @@ import { useDepartment, DEPARTMENTS } from "@/lib/departmentContext";
 
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
+const SCHOOL_INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant", "staff"]);
 const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff", "customer_service"]);
 
 const PRIMARY = [
@@ -44,7 +45,7 @@ const GROUPS = [
     items: [
       { href: "/schools", label: "園所管理" },
       { href: "/school-stats", label: "園所人數" },
-      { href: "/school-invoices", label: "園所請款單", invoiceOnly: true },
+      { href: "/school-invoices", label: "園所請款單", schoolInvoiceOnly: true },
       { href: "/notify", label: "LINE 通知" },
       { href: "/ratings", label: "安親班評分" },
     ],
@@ -109,6 +110,7 @@ export default function NavBar() {
     items: group.items.filter((item) => {
       if ("ownerOnly" in item && item.ownerOnly && !OWNER_ROLES.has(currentRole)) return false;
       if ("invoiceOnly" in item && item.invoiceOnly && !INVOICE_ROLES.has(currentRole)) return false;
+      if ("schoolInvoiceOnly" in item && item.schoolInvoiceOnly && !SCHOOL_INVOICE_ROLES.has(currentRole)) return false;
       if ("salaryOnly" in item && item.salaryOnly && !SALARY_ROLES.has(currentRole)) return false;
       return true;
     }),

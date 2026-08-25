@@ -34,8 +34,10 @@ const BACKOFFICE_ROLES = new Set(["owner", "super_admin", "developer", "admin", 
 const OWNER_ROLES = new Set(["owner", "super_admin", "developer"]);
 // 薪資計算供營運人員核對；唯讀帳號不開放。
 const SALARY_ROLES = new Set(["owner", "super_admin", "developer", "admin", "accountant", "staff", "customer_service"]);
-// 園所請款資料只開放會計；最高權限保留維運與緊急處理能力。
+// 月底會計包仍只開放會計；最高權限保留維運與緊急處理能力。
 const INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant"]);
+// 一般員工可協助建立、核對及列印園所請款單，但不因此取得月底會計包權限。
+const SCHOOL_INVOICE_ROLES = new Set(["owner", "super_admin", "developer", "accountant", "staff"]);
 
 function isPublicPath(path: string) {
   return PUBLIC_EXACT.includes(path) || PUBLIC_PREFIX.some((prefix) => path.startsWith(prefix));
@@ -84,8 +86,11 @@ function isInvoicePath(path: string) {
   return path === "/accounting"
     || path.startsWith("/accounting/")
     || path === "/api/accounting-month-end"
-    || path.startsWith("/api/accounting-month-end/")
-    || path === "/school-invoices"
+    || path.startsWith("/api/accounting-month-end/");
+}
+
+function isSchoolInvoicePath(path: string) {
+  return path === "/school-invoices"
     || path.startsWith("/school-invoices/")
     || path === "/api/school-invoices"
     || path.startsWith("/api/school-invoices/")
@@ -226,6 +231,10 @@ export async function proxy(req: NextRequest) {
     }
     if (isInvoicePath(path) && !INVOICE_ROLES.has(role)) {
       if (path.startsWith("/api/")) return NextResponse.json({ error: "園所請款單僅限會計人員使用" }, { status: 403 });
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+    if (isSchoolInvoicePath(path) && !SCHOOL_INVOICE_ROLES.has(role)) {
+      if (path.startsWith("/api/")) return NextResponse.json({ error: "權限不足" }, { status: 403 });
       return NextResponse.redirect(new URL("/", req.url));
     }
     if (isSalaryPath(path) && !SALARY_ROLES.has(role)) {
