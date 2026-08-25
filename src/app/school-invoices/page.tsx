@@ -40,6 +40,16 @@ type SchoolInvoiceSnapshot = {
   }>;
 };
 type SavedInvoice = Omit<SchoolInvoiceSnapshot, "items"> & { id: number; createdAt?: string; updatedAt?: string };
+type AttendanceVerification = {
+  id?: number;
+  status: "pending" | "confirmed" | "issue";
+  stale?: boolean;
+  confirmerName?: string | null;
+  confirmerNote?: string | null;
+  confirmedAt?: string | null;
+  expiresAt?: string | null;
+  url?: string;
+};
 
 const current = new Date();
 
@@ -88,6 +98,8 @@ export default function SchoolInvoicesPage() {
   const [invoices, setInvoices] = useState<SavedInvoice[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verification, setVerification] = useState<AttendanceVerification | null>(null);
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const [message, setMessage] = useState("");
 
   const selectedSchool = useMemo(() => schools.find((school) => String(school.id) === schoolId), [schoolId, schools]);
@@ -115,6 +127,45 @@ export default function SchoolInvoicesPage() {
 
   useEffect(() => { void Promise.resolve().then(loadSchools); }, [loadSchools]);
   useEffect(() => { void Promise.resolve().then(loadInvoices); }, [loadInvoices]);
+
+  async function loadVerificationStatus() {
+    if (!schoolId) return setVerification(null);
+    const params = new URLSearchParams({
+      schoolId,
+      year: String(year),
+      months: selectedMonths.join(","),
+    });
+    const res = await fetch(`/api/school-attendance-verifications?${params}`);
+    const data = await res.json();
+    if (res.ok) setVerification(data?.id ? data : null);
+  }
+
+  async function generateVerificationLink() {
+    if (!schoolId) return;
+    setVerificationBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/school-attendance-verifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolId: Number(schoolId), year, months: selectedMonths }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "核對連結產生失敗");
+      setVerification(data);
+      setMessage("已產生園所人數核對連結");
+    } catch (error) {
+      setMessage((error as Error).message || "核對連結產生失敗");
+    } finally {
+      setVerificationBusy(false);
+    }
+  }
+
+  async function copyVerificationLink() {
+    if (!verification?.url) return;
+    await navigator.clipboard.writeText(verification.url);
+    setMessage("已複製園所人數核對連結");
+  }
 
   async function loadPreview(nextPrices = unitPrices, nextBillingTypes = billingTypes, nextMinChargeCounts = minChargeCounts) {
     if (!schoolId) {
@@ -144,6 +195,7 @@ export default function SchoolInvoicesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "請款單預覽失敗");
       setPreview(data);
+      await loadVerificationStatus();
       if (!brandName && data.brandName) setBrandName(data.brandName);
       setUnitPrices((currentPrices) => {
         const next = { ...currentPrices };
@@ -507,6 +559,47 @@ export default function SchoolInvoicesPage() {
                   </div>
                 </div>
               ))}
+
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 md:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-slate-900">請園所先核對暑期人數</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      產生專屬連結給園所，逐堂確認 7、8 月上課人數。園所按下確認後，這裡會留下姓名、時間與確認狀態。
+                    </p>
+                    {verification && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                        {verification.stale ? (
+                          <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-800">人數有更新，需要重新核對</span>
+                        ) : verification.status === "confirmed" ? (
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-800">園所已確認人數正確</span>
+                        ) : verification.status === "issue" ? (
+                          <span className="rounded-full bg-red-100 px-3 py-1 font-semibold text-red-700">園所回報人數有問題</span>
+                        ) : (
+                          <span className="rounded-full bg-blue-100 px-3 py-1 font-semibold text-blue-700">等待園所確認</span>
+                        )}
+                        {verification.confirmerName && <span className="text-slate-600">填寫人：{verification.confirmerName}</span>}
+                        {verification.confirmerNote && <span className="text-slate-600">備註：{verification.confirmerNote}</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => void generateVerificationLink()} disabled={verificationBusy} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50">
+                      {verificationBusy ? "產生中..." : verification ? "重新產生核對連結" : "產生核對連結"}
+                    </button>
+                    {verification?.url && (
+                      <button type="button" onClick={() => void copyVerificationLink()} className="rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-bold text-sky-700 hover:bg-sky-100">
+                        複製連結
+                      </button>
+                    )}
+                    {verification && !verification.url && (
+                      <button type="button" onClick={() => void loadVerificationStatus()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        更新狀態
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               <button onClick={createInvoice} disabled={saving} className="rounded-lg bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
                 {saving ? "產生中..." : "產生請款單並開啟 PDF"}
