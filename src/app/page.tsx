@@ -262,51 +262,30 @@ export default function Home() {
         </div>
       </div>
 
-      {verificationSummary && verificationSummary.counts.total > 0 && (
-        <div className="mt-6 rounded-xl border border-sky-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-sky-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
+      {verificationSummary && verificationSummary.counts.confirmed > 0 && (
+        <div className="mt-6 rounded-xl border border-emerald-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-emerald-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="font-semibold text-slate-800">暑期人數核對總覽</h2>
-              <p className="mt-1 text-sm text-slate-500">{verificationSummary.year} 年 {verificationSummary.months.join("、")} 月｜有問題與需重核的園所優先顯示。</p>
+              <h2 className="font-semibold text-slate-800">已完成人數核對</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {verificationSummary.year} 年 {verificationSummary.months.join("、")} 月｜共 {verificationSummary.counts.confirmed} 間園所已確認。
+              </p>
             </div>
-            <Link href="/school-invoices" className="text-sm font-semibold text-sky-700">前往園所請款單 →</Link>
+            <Link href="/school-invoices" className="text-sm font-semibold text-emerald-700">查看園所請款單 →</Link>
           </div>
-          <div className="grid grid-cols-2 gap-2 p-4 md:grid-cols-5">
-            {([
-              ["有問題", verificationSummary.counts.issue, "bg-rose-50 text-rose-700"],
-              ["需重新核對", verificationSummary.counts.stale, "bg-orange-50 text-orange-700"],
-              ["等待園所確認", verificationSummary.counts.pending, "bg-amber-50 text-amber-700"],
-              ["尚未產生連結", verificationSummary.counts.notCreated, "bg-slate-100 text-slate-700"],
-              ["已確認", verificationSummary.counts.confirmed, "bg-emerald-50 text-emerald-700"],
-            ] as const).map(([label, value, className]) => (
-              <div key={String(label)} className={`rounded-lg px-3 py-3 ${className}`}>
-                <div className="text-xs font-semibold">{label}</div>
-                <div className="mt-1 text-2xl font-bold">{value}</div>
-              </div>
+          <div className="divide-y divide-emerald-50">
+            {verificationSummary.items.filter((item) => item.status === "confirmed").map((item) => (
+              <Link key={item.schoolId} href={`/school-invoices?schoolId=${item.schoolId}&year=${verificationSummary.year}&months=${verificationSummary.months.join(",")}`} className="grid gap-2 px-4 py-3 hover:bg-emerald-50/60 md:grid-cols-[1fr_auto_1.5fr_auto] md:items-center">
+                <div className="font-semibold text-slate-800">{item.schoolName}</div>
+                <StatusTag tone="ok" size="sm">已確認</StatusTag>
+                <div className="text-sm text-slate-500">
+                  {item.confirmerName ? `填寫人：${item.confirmerName}` : "園所已確認"}
+                  {item.confirmedAt ? `｜${new Date(item.confirmedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                  {item.confirmerNote ? `｜${item.confirmerNote}` : ""}
+                </div>
+                <span className="text-sm font-semibold text-emerald-700">查看 →</span>
+              </Link>
             ))}
-          </div>
-          <div className="divide-y divide-slate-100 border-t border-slate-100">
-            {verificationSummary.items.filter((item) => item.status !== "confirmed").slice(0, 8).map((item) => {
-              const labels = {
-                issue: ["園所回報有問題", "err"],
-                stale: ["人數更新，需重核", "warn"],
-                pending: ["等待園所確認", "warn"],
-                not_created: ["尚未產生連結", "idle"],
-                confirmed: ["已確認", "ok"],
-              } as const;
-              const [label, tone] = labels[item.status];
-              return (
-                <Link key={item.schoolId} href={`/school-invoices?schoolId=${item.schoolId}&year=${verificationSummary.year}&months=${verificationSummary.months.join(",")}`} className="grid gap-2 px-4 py-3 hover:bg-sky-50/50 md:grid-cols-[1fr_auto_1.5fr_auto] md:items-center">
-                  <div className="font-semibold text-slate-800">{item.schoolName}</div>
-                  <StatusTag tone={tone} size="sm">{label}</StatusTag>
-                  <div className="text-sm text-slate-500">{item.confirmerName ? `填寫人：${item.confirmerName}` : `${item.classCount} 堂待核對`}{item.confirmerNote ? `｜${item.confirmerNote}` : ""}</div>
-                  <span className="text-sm font-semibold text-sky-700">處理 →</span>
-                </Link>
-              );
-            })}
-            {verificationSummary.items.every((item) => item.status === "confirmed") && (
-              <div className="px-4 py-6 text-center text-sm font-medium text-emerald-700">所有園所皆已完成確認</div>
-            )}
           </div>
         </div>
       )}
