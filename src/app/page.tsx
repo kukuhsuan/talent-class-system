@@ -262,7 +262,7 @@ export default function Home() {
         </div>
       </div>
 
-      {verificationSummary && (verificationSummary.counts.confirmed > 0 || verificationSummary.counts.issue > 0) && (
+      {verificationSummary && (
         <div className="mt-6 rounded-xl border border-emerald-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-emerald-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -274,6 +274,11 @@ export default function Home() {
             <Link href="/school-invoices" className="text-sm font-semibold text-emerald-700">查看園所請款單 →</Link>
           </div>
           <div className="divide-y divide-emerald-50">
+            {verificationSummary.counts.confirmed === 0 && verificationSummary.counts.issue === 0 && (
+              <div className="px-4 py-7 text-center text-sm text-slate-500">
+                目前尚無已確認或回報有問題的園所
+              </div>
+            )}
             {verificationSummary.items.filter((item) => item.status === "confirmed" || item.status === "issue").map((item) => (
               <Link key={item.schoolId} href={`/school-invoices?schoolId=${item.schoolId}&year=${verificationSummary.year}&months=${verificationSummary.months.join(",")}`} className={`grid gap-2 px-4 py-3 md:grid-cols-[1fr_auto_1.5fr_auto] md:items-center ${item.status === "issue" ? "bg-rose-50/60 hover:bg-rose-50" : "hover:bg-emerald-50/60"}`}>
                 <div className="font-semibold text-slate-800">{item.schoolName}</div>
