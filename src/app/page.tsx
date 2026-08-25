@@ -262,22 +262,22 @@ export default function Home() {
         </div>
       </div>
 
-      {verificationSummary && verificationSummary.counts.confirmed > 0 && (
+      {verificationSummary && (verificationSummary.counts.confirmed > 0 || verificationSummary.counts.issue > 0) && (
         <div className="mt-6 rounded-xl border border-emerald-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-emerald-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="font-semibold text-slate-800">已完成人數核對</h2>
+              <h2 className="font-semibold text-slate-800">人數核對結果</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {verificationSummary.year} 年 {verificationSummary.months.join("、")} 月｜共 {verificationSummary.counts.confirmed} 間園所已確認。
+                {verificationSummary.year} 年 {verificationSummary.months.join("、")} 月｜已確認 {verificationSummary.counts.confirmed} 間{verificationSummary.counts.issue > 0 ? `，有問題 ${verificationSummary.counts.issue} 間` : ""}。
               </p>
             </div>
             <Link href="/school-invoices" className="text-sm font-semibold text-emerald-700">查看園所請款單 →</Link>
           </div>
           <div className="divide-y divide-emerald-50">
-            {verificationSummary.items.filter((item) => item.status === "confirmed").map((item) => (
-              <Link key={item.schoolId} href={`/school-invoices?schoolId=${item.schoolId}&year=${verificationSummary.year}&months=${verificationSummary.months.join(",")}`} className="grid gap-2 px-4 py-3 hover:bg-emerald-50/60 md:grid-cols-[1fr_auto_1.5fr_auto] md:items-center">
+            {verificationSummary.items.filter((item) => item.status === "confirmed" || item.status === "issue").map((item) => (
+              <Link key={item.schoolId} href={`/school-invoices?schoolId=${item.schoolId}&year=${verificationSummary.year}&months=${verificationSummary.months.join(",")}`} className={`grid gap-2 px-4 py-3 md:grid-cols-[1fr_auto_1.5fr_auto] md:items-center ${item.status === "issue" ? "bg-rose-50/60 hover:bg-rose-50" : "hover:bg-emerald-50/60"}`}>
                 <div className="font-semibold text-slate-800">{item.schoolName}</div>
-                <StatusTag tone="ok" size="sm">已確認</StatusTag>
+                <StatusTag tone={item.status === "issue" ? "err" : "ok"} size="sm">{item.status === "issue" ? "有問題" : "已確認"}</StatusTag>
                 <div className="text-sm text-slate-500">
                   {item.confirmerName ? `填寫人：${item.confirmerName}` : "園所已確認"}
                   {item.confirmedAt ? `｜${new Date(item.confirmedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
