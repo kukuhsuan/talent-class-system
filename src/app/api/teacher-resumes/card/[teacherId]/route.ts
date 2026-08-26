@@ -49,5 +49,14 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const profiles = await teacherTeachingProfiles(prisma, [id]);
   // 卡片是給園所看的：不回傳老師電話/Email 等聯絡個資
   const { teacherPhone: _phone, teacherEmail: _email, ...publicResume } = resume;
-  return NextResponse.json({ ...publicResume, teachingProfile: profiles.get(id) ?? null });
+  const photoQuery = token ? `?t=${encodeURIComponent(token)}` : "";
+  return NextResponse.json({
+    ...publicResume,
+    // 不把 Blob 原始網址交給瀏覽器；由有權限檢查的同站端點代讀，
+    // 同時避免跨來源圖片讓簡歷圖檔產生失敗。
+    photoUrl: publicResume.photoUrl
+      ? `/api/teacher-resumes/card/${id}/photo${photoQuery}`
+      : "",
+    teachingProfile: profiles.get(id) ?? null,
+  });
 }

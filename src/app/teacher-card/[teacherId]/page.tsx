@@ -105,6 +105,7 @@ export default function TeacherCardPage() {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [downloadUrl, setDownloadUrl] = useState("");
+  const [photoFailed, setPhotoFailed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   async function downloadImage() {
@@ -122,6 +123,8 @@ export default function TeacherCardPage() {
         pixelRatio: 2,
         backgroundColor: "#f3f7ff",
         cacheBust: true,
+        // 舊照片若已失效，不應連帶讓整張簡歷無法下載。
+        imagePlaceholder: "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=",
       });
       const imageBlob = dataUrlToBlob(dataUrl);
       const objectUrl = URL.createObjectURL(imageBlob);
@@ -133,7 +136,8 @@ export default function TeacherCardPage() {
       link.click();
       link.remove();
     } catch (err) {
-      setDownloadError((err as Error).message || "圖檔產生失敗，請再試一次");
+      console.error("teacher card image export failed", err);
+      setDownloadError("圖檔產生失敗，請重新整理後再試一次");
     } finally {
       setDownloading(false);
     }
@@ -225,8 +229,8 @@ export default function TeacherCardPage() {
           <div className="-mt-14 grid gap-5 px-5 pb-6 md:grid-cols-[240px_1fr] md:px-8">
             <div className="relative">
               <div className="mx-auto h-52 w-52 overflow-hidden rounded-full border-8 border-white bg-blue-50 shadow-sm md:mx-0">
-                {resume.photoUrl
-                  ? <img src={resume.photoUrl} alt={resume.teacherName} crossOrigin="anonymous" className="h-full w-full object-cover" />
+                {resume.photoUrl && !photoFailed
+                  ? <img src={resume.photoUrl} alt={resume.teacherName} onError={() => setPhotoFailed(true)} className="h-full w-full object-cover" />
                   : <div className="flex h-full w-full items-center justify-center text-6xl font-black text-blue-200">{initials(resume.teacherName)}</div>}
               </div>
               <div className="mt-4 grid gap-2 text-center">
