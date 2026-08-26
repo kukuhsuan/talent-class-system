@@ -139,6 +139,13 @@ export default function NavBar() {
 
   return (
     <header className="sticky top-0 z-50 bg-blue-900 text-white shadow-lg">
+      <div
+        role="status"
+        className="border-b border-amber-200/70 bg-amber-50 px-3 py-1.5 text-center text-[11px] font-medium leading-5 text-amber-900 sm:text-xs"
+      >
+        <span className="font-bold">【測試版 Beta】</span>
+        本系統目前僅供內部測試與功能驗證使用，尚未作為正式營運服務。
+      </div>
       <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-2 md:px-4 md:py-3">
         <Link href="/" className="mr-1 whitespace-nowrap md:mr-3">
           <span className="block text-base font-bold leading-tight">WaysLeader AI</span>
