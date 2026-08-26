@@ -175,13 +175,20 @@ function SignaturePad({ value, disabled, onChange }: { value: string; disabled: 
         <div className="fixed inset-0 z-[100] flex h-[100dvh] touch-none flex-col overflow-hidden overscroll-none bg-slate-900 p-3 text-white sm:p-5">
           <div className="flex items-center justify-between gap-3 pb-3">
             <div>
-              <div className="text-base font-bold">園所老師簽名</div>
-              <div className="mt-0.5 text-xs text-slate-300">請在下方白色區域簽名，手機橫放會更好寫</div>
+              <div className="text-base font-bold">園所／安親班現場老師簽名</div>
+              <div className="mt-0.5 text-xs text-slate-300">請由現場老師本人簽名，教練請勿代簽；手機橫放會更好寫</div>
             </div>
             <button type="button" onClick={() => setOpen(false)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold">取消</button>
           </div>
-          <canvas ref={canvasRef} width={1200} height={600} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}
-            style={{ touchAction: "none", overscrollBehavior: "none" }} className="min-h-0 flex-1 touch-none select-none rounded-2xl bg-white shadow-inner" />
+          <div className="relative min-h-0 flex-1">
+            <canvas ref={canvasRef} width={1200} height={600} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}
+              style={{ touchAction: "none", overscrollBehavior: "none" }} className="h-full w-full touch-none select-none rounded-2xl bg-white shadow-inner" />
+            {!hasInk && (
+              <div className="pointer-events-none absolute inset-x-5 bottom-5 text-center text-sm font-semibold text-slate-300">
+                園所／安親班老師填寫・教練請勿簽名
+              </div>
+            )}
+          </div>
           <div className="flex gap-3 pt-3">
             <button type="button" disabled={!hasInk} onClick={clear} className="flex-1 rounded-xl border border-slate-600 px-4 py-3 text-sm font-bold disabled:opacity-40">清除</button>
             <button type="button" disabled={!hasInk} onClick={complete} className="flex-[2] rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-40">完成簽名</button>
@@ -920,20 +927,20 @@ export default function TeacherReportPage() {
         {(info.schoolSignatureAvailable || info.schoolSignatureRequired) && (
           <section className="rounded-2xl border border-[#BFDBFE] bg-[#F8FBFF] p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-bold text-[#1D4ED8]">現場老師電子簽名</div>
+              <div className="text-sm font-bold text-[#1D4ED8]">園所／安親班現場老師電子簽名</div>
               {!info.schoolSignatureRequired && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-[#BFDBFE]">沒有紙本時使用</span>}
             </div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">若現場沒有紙本點名表，可請幼兒園或安親班老師確認回報內容，並在同一支手機簽名；有紙本時可略過。</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">若現場沒有紙本點名表，請由園所／安親班老師確認回報內容，並在同一支手機簽名；教練請勿填寫或代簽。有紙本時可略過。</p>
             <div className={`mt-3 grid gap-2 text-xs font-semibold text-slate-600 ${needsStudentCount ? "grid-cols-2" : "grid-cols-1"}`}>
               <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">日期：{new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
               {needsStudentCount && <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-[#BFDBFE]">實際上課人數：{form.studentCount || "請於上方填寫"}</div>}
             </div>
             <label className="mt-4 block text-sm font-semibold text-slate-700">
-              現場確認老師姓名（請以正楷簽署本名）
+              園所／安親班老師姓名（教練請勿填寫）
               <input value={form.schoolVerifierName} disabled={locked} onChange={(e) => setForm({ ...form, schoolVerifierName: e.target.value })}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#2563EB]" placeholder="請輸入本名（正楷）" />
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base outline-none focus:border-[#2563EB]" placeholder="請由園所／安親班老師輸入本名" />
             </label>
-            <div className="mt-4 text-sm font-semibold text-slate-700">手寫簽名（請以正楷簽署本名）</div>
+            <div className="mt-4 text-sm font-semibold text-slate-700">園所／安親班老師手寫簽名</div>
             <SignaturePad value={form.schoolSignatureData} disabled={locked} onChange={(schoolSignatureData) => setForm((current) => ({ ...current, schoolSignatureData }))} />
             {info.schoolSignedAt && <div className="mt-3 text-xs text-slate-500">確認時間：{new Date(info.schoolSignedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div>}
           </section>
