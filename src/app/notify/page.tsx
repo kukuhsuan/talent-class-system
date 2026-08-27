@@ -294,6 +294,8 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
   const [dryRun, setDryRun] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
+  // 卡片內容區有高度上限，切換收件人時 React 會沿用同一個節點 → 手動捲回最上方，避免課表被藏在上緣外
+  const previewBodyRef = useRef<HTMLDivElement | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [batchUuid, setBatchUuid] = useState("");
   const [busy, setBusy] = useState<"" | "preview" | "send">("");
@@ -454,6 +456,10 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
   }
 
   const previewRecipient = preview?.recipients[previewIndex];
+
+  useEffect(() => {
+    if (previewBodyRef.current) previewBodyRef.current.scrollTop = 0;
+  }, [preview, previewIndex]);
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -636,7 +642,7 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                 <div className="space-y-3">
                 <div className="rounded-2xl border shadow-sm overflow-hidden max-w-sm bg-white">
                   <div className="bg-[#2C5DA8] px-4 py-3 text-white text-sm font-bold">{preview.template.label}</div>
-                  <div className="p-4 space-y-3 text-sm text-slate-800 max-h-72 overflow-y-auto">
+                  <div ref={previewBodyRef} className="p-4 space-y-3 text-sm text-slate-800 max-h-96 overflow-y-auto">
                     {(previewRecipient?.flexBlocks?.length ?? 0) > 0 ? (
                       <>
                         {previewRecipient?.flexPre && <pre className="whitespace-pre-wrap font-sans">{previewRecipient.flexPre}</pre>}

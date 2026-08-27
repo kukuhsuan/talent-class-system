@@ -454,6 +454,9 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
 
     // 課程摘要素材（文字版供紀錄／備援；色塊版供 Flex 卡片）
     const itemsByTeacher = new Map<number, Array<{ text: string; block: FlexBlock }>>();
+    // 第一堂課通知：主卡片之後另外附整學期教學課表卡片（每位老師只列他實際帶的課程）
+    const lessonPlanByCourse = new Map<string, LessonPlanCard>();
+    const lessonPlanCoursesByTeacher = new Map<number, Set<string>>();
     const dateIso = taipeiDateStr(0);
     if (opts.templateKey === "new_term" || opts.templateKey === "first_class") {
       const courses = await prisma.course.findMany({
@@ -471,13 +474,31 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
           prisma,
           courses.map((course) => course.courseType),
         );
-        for (const [courseType, lessons] of lessonTemplates) {
+        // readLessonTemplatesBulk 回傳的 key 已是 courseLabel()，與下方 label 同一組鍵值
+        for (const [courseName, lessons] of lessonTemplates) {
           const firstLessonTitle = lessons
             .find((lesson) => lesson.lesson === 1)
             ?.title.trim();
           if (firstLessonTitle) {
-            firstLessonTitleByCourse.set(courseType, firstLessonTitle);
+            firstLessonTitleByCourse.set(courseName, firstLessonTitle);
           }
+          const planItems: LessonPlanItem[] = [...lessons]
+            .sort((a, b) => a.lesson - b.lesson)
+            .map((lesson) => ({
+              lesson: lesson.lesson,
+              title: lesson.title.trim(),
+              focus: lesson.focus.trim(),
+              skills: lesson.skills.map((s) => s.trim()).filter(Boolean),
+              ...(lesson.activityDirection.trim() ? { activityDirection: lesson.activityDirection.trim() } : {}),
+            }));
+          if (planItems.length === 0) continue;
+          const planPalette = blockColor(courseName);
+          lessonPlanByCourse.set(courseName, {
+            courseName,
+            color: planPalette.fg,
+            bg: planPalette.bg,
+            items: planItems,
+          });
         }
       }
       for (const c of courses) {
@@ -500,11 +521,18 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
           ];
           return { text: [`◆ ${title}`, ...lines].join("\n"), block: { title, lines, color: palette.fg, bg: palette.bg } };
         };
+        const trackLessonPlan = (teacherId: number) => {
+          const set = lessonPlanCoursesByTeacher.get(teacherId) ?? new Set<string>();
+          set.add(label);
+          lessonPlanCoursesByTeacher.set(teacherId, set);
+        };
         if (ids.includes(c.teacherId)) {
           (itemsByTeacher.get(c.teacherId) ?? itemsByTeacher.set(c.teacherId, []).get(c.teacherId)!).push(entry("主教"));
+          trackLessonPlan(c.teacherId);
         }
         if (c.assistantTeacherId && ids.includes(c.assistantTeacherId)) {
           (itemsByTeacher.get(c.assistantTeacherId) ?? itemsByTeacher.set(c.assistantTeacherId, []).get(c.assistantTeacherId)!).push(entry("助教"));
+          trackLessonPlan(c.assistantTeacherId);
         }
       }
     }
@@ -535,11 +563,18 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         : { body, buttons: [] as FlexLinkButton[] };
       // 課程色塊：卡片內每堂課一塊、依課程配色
       const flexParts = items.length > 0 ? buildFlexParts(teacherBody, vars) : null;
+      // 第一堂課通知：主卡片之後附上該老師每門課的整學期教學課表
+      const lessonPlans = opts.templateKey === "first_class"
+        ? [...(lessonPlanCoursesByTeacher.get(id) ?? [])]
+            .map((courseName) => lessonPlanByCourse.get(courseName))
+            .filter((card): card is LessonPlanCard => Boolean(card))
+        : [];
       return {
         id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north",
         message: finalizeMessage(teacherBody, vars), ackToken, ackUrl,
         ...(flexParts ? { ...flexParts, flexBlocks: items.map((i) => i.block) } : {}),
         ...(linkButtons.length > 0 ? { linkButtons } : {}),
+        ...(lessonPlans.length > 0 ? { lessonPlans } : {}),
       };
     });
   }
