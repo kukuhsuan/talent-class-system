@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { resolveCourseTerm } from "@/lib/courseTerm";
+import { readLessonTemplatesBulk } from "@/lib/lessonTemplates";
 import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 
 // 客服批次通知：範本定義與逐一收件人訊息組裝
@@ -58,7 +59,7 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsAck: true,
-    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、開課日期、時間、地點與報名人數，以卡片發送並附「確認收到」按鈕",
+    description: "自動帶入老師第一堂課所需的園所、課程、主教／助教身分、第一堂課程進度、開課日期、時間、地點與報名人數，以卡片發送並附「確認收到」按鈕",
     defaultBody: [
       "{姓名} 老師您好：",
       "",
@@ -464,6 +465,21 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         },
         orderBy: [{ school: "asc" }],
       });
+      const firstLessonTitleByCourse = new Map<string, string>();
+      if (opts.templateKey === "first_class") {
+        const lessonTemplates = await readLessonTemplatesBulk(
+          prisma,
+          courses.map((course) => course.courseType),
+        );
+        for (const [courseType, lessons] of lessonTemplates) {
+          const firstLessonTitle = lessons
+            .find((lesson) => lesson.lesson === 1)
+            ?.title.trim();
+          if (firstLessonTitle) {
+            firstLessonTitleByCourse.set(courseType, firstLessonTitle);
+          }
+        }
+      }
       for (const c of courses) {
         // 新學期通知只列 115-1；舊課即使仍為啟用狀態也不顯示。
         if (resolveCourseTerm(c) !== "115-1") continue;
@@ -475,6 +491,9 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
           const title = `${label}（${roleLabel}）`;
           const lines = [
             c.school,
+            ...(opts.templateKey === "first_class"
+              ? [`課程進度：第 1 堂｜${firstLessonTitleByCourse.get(label) || "尚未設定"}`]
+              : []),
             `${start}每${day} ${c.time || "時間未填"}`,
             ...(c.address ? [c.address] : []),
             ...(opts.templateKey === "first_class" ? [`報名／預計人數：${c.enrollCount.trim() || "尚未提供"}`] : []),
