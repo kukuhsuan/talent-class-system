@@ -181,6 +181,25 @@ export async function readLessonTemplatesBulk(prisma: PrismaClient, courseTypes:
     ...courses,
   );
   for (const row of rows) map.get(row.courseType)?.push(rowToTemplate(row));
+  // 通知預覽是唯讀高頻路徑，不在這裡逐堂寫入資料庫；但標準課綱仍應立即生效。
+  // 用 canonical 的堂數／標題／重點／能力覆蓋舊版資料，同時保留行政填寫的活動細節與 AI 風格。
+  for (const course of courses) {
+    const canonicalRows = CANONICAL_LESSON_DETAILS[course] ?? [];
+    if (canonicalRows.length === 0) continue;
+    const existingByLesson = new Map((map.get(course) ?? []).map((row) => [row.lesson, row]));
+    map.set(course, canonicalRows.map((row) => {
+      const existing = existingByLesson.get(row.lesson);
+      return {
+        courseType: course,
+        lesson: row.lesson,
+        title: row.title,
+        focus: row.focus,
+        skills: row.skills,
+        activityDirection: existing?.activityDirection ?? "",
+        aiStyle: existing?.aiStyle ?? "",
+      };
+    }));
+  }
   return map;
 }
 
