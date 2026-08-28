@@ -307,7 +307,10 @@ export type FlexBlock = { title: string; lines: string[]; color: string; bg: str
 export type FlexLinkButton = { label: string; url: string; primary?: boolean };
 // 整學期教學課表（第一堂課通知：直接在 LINE 以獨立卡片列出，不用另開連結）
 export type LessonPlanItem = { lesson: number; title: string; focus: string; skills: string[]; activityDirection?: string };
-export type LessonPlanCard = { courseName: string; color: string; bg: string; items: LessonPlanItem[] };
+// detail：一堂一張 bubble、含完整教案（教案推播用）
+// summary：多堂併成一張 bubble、只留標題與重點（第一堂課通知用，避免塞爆老師的聊天室）
+export type LessonPlanLayout = "detail" | "summary";
+export type LessonPlanCard = { courseName: string; color: string; bg: string; items: LessonPlanItem[]; layout?: LessonPlanLayout };
 
 export type BatchRecipientMessage = {
   id: number;
@@ -558,6 +561,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         for (const [courseName, lessons] of lessonTemplates) {
           const sorted = [...lessons].sort((a, b) => a.lesson - b.lesson);
           const { from, to } = lessonRangeOf(courseName, sorted.length);
+          // 通知只給課表概覽，完整教案走 /lesson-plan 的教案推播
           const planItems: LessonPlanItem[] = sorted
             .filter((lesson) => lesson.lesson >= from && lesson.lesson <= to)
             .map((lesson) => ({
@@ -565,7 +569,6 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
               title: lesson.title.trim(),
               focus: lesson.focus.trim(),
               skills: lesson.skills.map((s) => s.trim()).filter(Boolean),
-              ...(lesson.activityDirection.trim() ? { activityDirection: lesson.activityDirection.trim() } : {}),
             }));
           if (planItems.length === 0) continue;
           const startLesson = planItems[0];
@@ -578,6 +581,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
             color: planPalette.fg,
             bg: planPalette.bg,
             items: planItems,
+            layout: "summary",
           });
         }
       }

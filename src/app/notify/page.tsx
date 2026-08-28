@@ -19,6 +19,15 @@ type Template = {
   defaultBody: string; builtinBody: string; customized: boolean; customizedBy: string;
 };
 
+// 與 notifyBatch.ts 的 LESSONS_PER_SUMMARY_BUBBLE 一致，預覽才會跟 LINE 上看到的一樣
+const LESSONS_PER_PLAN_CARD = 5;
+
+function chunkLessons<T>(items: T[], size: number) {
+  const pages: T[][] = [];
+  for (let i = 0; i < items.length; i += size) pages.push(items.slice(i, i + size));
+  return pages;
+}
+
 type CourseOption = {
   id: number; school: string; courseName: string; startDateIso: string;
   dayLabel: string; time: string; isPast: boolean; teacherNames: string[];
@@ -821,36 +830,50 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                   )}
                 </div>
 
-                {/* 接續送出的整學期教學課表卡片（LINE 上可左右滑動） */}
-                {(previewRecipient?.lessonPlans ?? []).map((plan) => (
-                  <div key={plan.courseName} className="rounded-2xl border shadow-sm overflow-hidden max-w-sm bg-white">
-                    <div className="px-4 py-3 text-white" style={{ backgroundColor: plan.color }}>
-                      <div className="text-sm font-bold">{plan.courseName}教學課表</div>
-                      <div className="text-xs opacity-90">本學期預計 {plan.items.length} 堂，實際堂數依園所安排</div>
-                    </div>
-                    <div className="max-h-72 space-y-2 overflow-y-auto p-3">
-                      {plan.items.map((row) => (
-                        <div key={row.lesson} className="flex gap-3 rounded-xl p-3" style={{ backgroundColor: plan.bg }}>
-                          <div className="w-8 shrink-0 text-center leading-none" style={{ color: plan.color }}>
-                            <div className="text-[10px]">第</div>
-                            <div className="text-lg font-bold">{row.lesson}</div>
-                            <div className="text-[10px]">堂</div>
+                {/* 接續送出的教學課表：預覽照 LINE 的分頁方式呈現（每 5 堂一張、整份一則訊息） */}
+                {(previewRecipient?.lessonPlans ?? []).map((plan) => {
+                  const pages = chunkLessons(plan.items, LESSONS_PER_PLAN_CARD);
+                  return (
+                    <div key={plan.courseName} className="space-y-1">
+                      <div className="text-[11px] text-slate-400">
+                        {plan.courseName}教學課表：1 則訊息、{pages.length} 張卡片（共 {plan.items.length} 堂），LINE 上左右滑動
+                      </div>
+                      <div className="flex gap-2 overflow-x-auto pb-2">
+                        {pages.map((rows, pageIndex) => (
+                          <div key={pageIndex} className="w-64 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm">
+                            <div className="px-4 py-3 text-white" style={{ backgroundColor: plan.color }}>
+                              <div className="text-sm font-bold">{plan.courseName}教學課表</div>
+                              <div className="text-xs opacity-90">
+                                {rows.length > 1
+                                  ? `第 ${rows[0].lesson}–${rows[rows.length - 1].lesson} 堂`
+                                  : `第 ${rows[0].lesson} 堂`}｜共 {plan.items.length} 堂
+                              </div>
+                            </div>
+                            <div className="space-y-2 p-3">
+                              {rows.map((row) => (
+                                <div key={row.lesson} className="flex gap-2 rounded-xl p-2.5" style={{ backgroundColor: plan.bg }}>
+                                  <div className="w-6 shrink-0 text-center text-lg font-bold leading-tight" style={{ color: plan.color }}>
+                                    {row.lesson}
+                                  </div>
+                                  <div className="min-w-0 flex-1 space-y-0.5">
+                                    <div className="text-xs font-bold text-slate-800">{row.title || "（未填標題）"}</div>
+                                    {row.skills.length > 0 && (
+                                      <div className="text-[10px]" style={{ color: plan.color }}>能力培養：{row.skills.join("、")}</div>
+                                    )}
+                                    {row.focus && <div className="text-[11px] text-slate-500">{row.focus}</div>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="bg-slate-50 px-4 py-2 text-right text-[11px] text-slate-400">
+                              {pageIndex + 1}/{pages.length}
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="text-sm font-bold text-slate-800">{row.title || "（未填標題）"}</div>
-                            {row.skills.length > 0 && (
-                              <div className="text-[11px]" style={{ color: plan.color }}>能力培養：{row.skills.join("、")}</div>
-                            )}
-                            {row.focus && <div className="text-xs text-slate-500">{row.focus}</div>}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                    <div className="bg-slate-50 px-4 py-2 text-[11px] text-slate-400">
-                      LINE 上每 6 堂一頁，可左右滑動
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 </div>
               )}
             </div>

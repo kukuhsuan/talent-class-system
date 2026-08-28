@@ -285,6 +285,9 @@ function buildAckFlex(label: string, r: BatchRecipientMessage) {
 // LINE 對單一 carousel JSON 設有 50 KB 上限。每堂各自一張 bubble，
 // 再以每則最多 5 堂分批，避免完整教案把單一 carousel 撐爆。
 const LESSONS_PER_PLAN_MESSAGE = 5;
+// 概覽版：一張 bubble 放幾堂、一則訊息最多幾張 bubble（LINE carousel 上限 12）
+const LESSONS_PER_SUMMARY_BUBBLE = 5;
+const BUBBLES_PER_CAROUSEL = 12;
 
 // 格式化教案內容，讓 LINE 顯示不再擠成一團
 function formatActivityDirection(text: string, themeColor: string) {
@@ -306,7 +309,75 @@ function formatActivityDirection(text: string, themeColor: string) {
   });
 }
 
+// 概覽版：多堂併成一張 bubble、整份課表只發一則訊息，老師左右滑就能看完
+function buildLessonPlanSummaryMessages(card: LessonPlanCard) {
+  const total = card.items.length;
+  const groups: LessonPlanCard["items"][] = [];
+  for (let i = 0; i < total; i += LESSONS_PER_SUMMARY_BUBBLE) {
+    groups.push(card.items.slice(i, i + LESSONS_PER_SUMMARY_BUBBLE));
+  }
+  const bubbles = groups.map((rows, index) => ({
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: card.color, paddingAll: "16px", spacing: "xs",
+      contents: [
+        { type: "text", text: `${card.courseName}教學課表`, color: "#FFFFFF", weight: "bold", size: "lg", wrap: true },
+        {
+          type: "text",
+          text: rows.length > 1
+            ? `第 ${rows[0].lesson}–${rows[rows.length - 1].lesson} 堂｜共 ${total} 堂`
+            : `第 ${rows[0].lesson} 堂｜共 ${total} 堂`,
+          color: "#EAF2FF", size: "sm", wrap: true,
+        },
+      ],
+    },
+    body: {
+      type: "box", layout: "vertical", backgroundColor: "#FFFFFF", paddingAll: "12px", spacing: "sm",
+      contents: rows.map((row) => ({
+        type: "box", layout: "horizontal", backgroundColor: card.bg, cornerRadius: "8px", paddingAll: "10px", spacing: "md",
+        contents: [
+          {
+            type: "text", text: String(row.lesson), size: "lg", weight: "bold",
+            color: card.color, flex: 1, align: "center", gravity: "center",
+          },
+          {
+            type: "box", layout: "vertical", flex: 9, spacing: "xs",
+            contents: [
+              { type: "text", text: row.title || "（未填標題）", size: "sm", weight: "bold", color: "#263548", wrap: true },
+              ...(row.skills.length > 0
+                ? [{ type: "text", text: `能力培養：${row.skills.join("、")}`, size: "xxs", color: card.color, wrap: true }]
+                : []),
+              ...(row.focus
+                ? [{ type: "text", text: row.focus, size: "xs", color: "#68778A", wrap: true }]
+                : []),
+            ],
+          },
+        ],
+      })),
+    },
+    footer: {
+      type: "box", layout: "horizontal", backgroundColor: "#FAFBFC", paddingAll: "12px",
+      contents: [
+        { type: "text", text: "實際進度依園所安排，如需調整請聯繫行政", size: "xxs", color: "#8391A3", flex: 8, wrap: true },
+        { type: "text", text: `${index + 1}/${groups.length}`, size: "xxs", color: "#8391A3", align: "end", flex: 2 },
+      ],
+    },
+  }));
+  const messages: object[] = [];
+  for (let i = 0; i < bubbles.length; i += BUBBLES_PER_CAROUSEL) {
+    const slice = bubbles.slice(i, i + BUBBLES_PER_CAROUSEL);
+    messages.push({
+      type: "flex",
+      altText: `${card.courseName}教學課表（共 ${total} 堂）`,
+      contents: slice.length === 1 ? slice[0] : { type: "carousel", contents: slice },
+    });
+  }
+  return messages;
+}
+
 function buildLessonPlanFlexMessages(card: LessonPlanCard) {
+  if (card.layout === "summary") return buildLessonPlanSummaryMessages(card);
   const total = card.items.length;
   const pages: LessonPlanCard["items"][] = [];
   for (let i = 0; i < total; i += LESSONS_PER_PLAN_MESSAGE) {
