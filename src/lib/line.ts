@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { COURSE_LABEL, courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { equipmentFirstClassText, type EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { signReportAccessToken } from "@/lib/publicAccessToken";
-import { PICKLEBALL_LESSON_DETAILS } from "@/lib/courseCurriculumDetails";
+import { PICKLEBALL_LESSON_DETAILS, TEEBALL_LESSON_DETAILS } from "@/lib/courseCurriculumDetails";
 
 export { COURSE_LABEL, courseLabel };
 
@@ -78,28 +78,7 @@ export const COURSE_CURRICULUM: Record<string, Array<{ lesson: number; title: st
     { lesson: 17, title: "我是瞄準王" },
     { lesson: 18, title: "成果分組比賽" },
   ],
-  棒球: [
-    { lesson: 1, title: "禮儀與規則" },
-    { lesson: 2, title: "基本概念與場地" },
-    { lesson: 3, title: "投球基本動作" },
-    { lesson: 4, title: "短距離傳接球" },
-    { lesson: 5, title: "中長距離投球" },
-    { lesson: 6, title: "壘間傳球" },
-    { lesson: 7, title: "內野守備入門" },
-    { lesson: 8, title: "守備節律" },
-    { lesson: 9, title: "守備判斷" },
-    { lesson: 10, title: "高飛球與滾地球" },
-    { lesson: 11, title: "綜合守備" },
-    { lesson: 12, title: "打擊與短打" },
-    { lesson: 13, title: "推打與拉打" },
-    { lesson: 14, title: "守備與跑壘" },
-    { lesson: 15, title: "裁判與教練模擬" },
-    { lesson: 16, title: "基本技巧驗收" },
-    { lesson: 17, title: "模擬比賽" },
-    { lesson: 18, title: "全壘打挑戰" },
-    { lesson: 19, title: "投準大賽" },
-    { lesson: 20, title: "分組對抗賽" },
-  ],
+  棒球: TEEBALL_LESSON_DETAILS.map(({ lesson, title }) => ({ lesson, title })),
   帶式橄欖球: [
     { lesson: 1, title: "認識帶式橄欖球" },
     { lesson: 2, title: "持球與護球" },
@@ -369,6 +348,7 @@ export function buildReminderMessage(opts: {
     studentCountB?: number | null;
     expectedStudentCount?: number | null;
     reportRole?: "lead" | "assistant";
+    lessonProgress?: { lesson: number; title: string; focus: string; total: number } | null;
   }>;
 }) {
   const courses = opts.courses?.length ? opts.courses : [{
@@ -405,6 +385,20 @@ export function buildReminderMessage(opts: {
             { type: "text", text: `地點｜${course.school}`, size: "sm", color: "#555555", wrap: true },
             ...(course.address ? [{ type: "text" as const, text: `地址｜${course.address}`, size: "sm" as const, color: "#555555", wrap: true }] : []),
             { type: "text", text: `課程｜${courseLabel(course.courseType || opts.courseType || "")}`, size: "sm", color: "#555555", wrap: true },
+            ...(course.lessonProgress
+              ? [{
+                  type: "text" as const,
+                  text: `進度｜第 ${course.lessonProgress.lesson} 堂（共 ${course.lessonProgress.total} 堂）${course.lessonProgress.title}`,
+                  size: "sm" as const, color: "#555555", wrap: true,
+                }]
+              : []),
+            ...(course.lessonProgress?.focus
+              ? [{
+                  type: "text" as const,
+                  text: `重點｜${course.lessonProgress.focus}`,
+                  size: "xs" as const, color: "#5F6F83", wrap: true,
+                }]
+              : []),
             ...(studentCountText(course) ? [{ type: "text" as const, text: `人數｜${studentCountText(course)}`, size: "sm" as const, color: "#555555", wrap: true }] : []),
             ...(course.confirmationSummary ? [{ type: "text" as const, text: course.confirmationSummary, size: "xs" as const, color: "#5F6F83", wrap: true, margin: "sm" as const }] : []),
           ],
