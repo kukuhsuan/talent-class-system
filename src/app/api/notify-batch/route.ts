@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NOTIFY_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { writeAuditLog } from "@/lib/auditLog";
-import { buildBatchMessages, getTemplate, NOTIFY_TEMPLATES, type NotifyTargetType, type NotifyTemplateKey } from "@/lib/notifyTemplates";
+import { buildBatchMessages, getTemplate, listTeacherCourseOptions, NOTIFY_TEMPLATES, type NotifyTargetType, type NotifyTemplateKey } from "@/lib/notifyTemplates";
 import { BATCH_MAX_RECIPIENTS, deleteTemplateOverride, getBatchByUuid, getTemplateOverrides, hasDangerousLink, listBatches, maskLineId, runNotifyBatch, saveTemplateOverride } from "@/lib/notifyBatch";
 
 // GET：範本清單＋最近批次紀錄
@@ -36,7 +36,32 @@ type PostBody = {
   testMode?: boolean;         // 只傳給測試人員
   confirm?: boolean;          // send 必須為 true（我已確認收件人及訊息）
   dryRun?: boolean;           // 模擬發送，不打 LINE API
+  selectedCourseIds?: unknown[];   // 客服勾選要通知的課程；未傳＝沿用預設
+  lessonRangeByCourse?: unknown;   // { 課程名稱: { from, to } } 教學課表堂數區間
 };
+
+// 解析客服在預覽頁挑選的課程與堂數區間
+function parseCourseSelection(body: PostBody) {
+  const selectedCourseIds = Array.isArray(body.selectedCourseIds)
+    ? [...new Set(body.selectedCourseIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))]
+    : undefined;
+  const lessonRangeByCourse: Record<string, { from?: number; to?: number }> = {};
+  const raw = body.lessonRangeByCourse;
+  if (raw && typeof raw === "object") {
+    for (const [courseName, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!courseName || !value || typeof value !== "object") continue;
+      const { from, to } = value as { from?: unknown; to?: unknown };
+      const parsed: { from?: number; to?: number } = {};
+      if (Number.isFinite(Number(from))) parsed.from = Math.trunc(Number(from));
+      if (Number.isFinite(Number(to))) parsed.to = Math.trunc(Number(to));
+      if (parsed.from != null || parsed.to != null) lessonRangeByCourse[courseName.slice(0, 40)] = parsed;
+    }
+  }
+  return {
+    selectedCourseIds,
+    lessonRangeByCourse: Object.keys(lessonRangeByCourse).length > 0 ? lessonRangeByCourse : undefined,
+  };
+}
 
 // POST：preview（逐一收件人實際訊息預覽）／send（正式發送）
 export async function POST(req: NextRequest) {
@@ -88,6 +113,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "會議簡報連結必須是 http(s) 開頭的網址" }, { status: 400 });
   }
 
+  const { selectedCourseIds, lessonRangeByCourse } = parseCourseSelection(body);
+
   let recipients;
   try {
     recipients = await buildBatchMessages({
@@ -97,6 +124,8 @@ export async function POST(req: NextRequest) {
       customBody,
       typhoonStatus: typeof body.typhoonStatus === "string" ? body.typhoonStatus : undefined,
       slidesUrl,
+      selectedCourseIds,
+      lessonRangeByCourse,
     });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
@@ -112,9 +141,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "preview") {
+    // 老師類通知才需要「挑選要通知的課程」清單
+    const courseSelection = targetType === "teacher"
+      ? await listTeacherCourseOptions(recipientIds)
+      : { courses: [], lessonCounts: {} as Record<string, number> };
     return NextResponse.json({
       template: { key: template.key, label: template.label },
       targetType,
+      courseOptions: courseSelection.courses,
+      lessonCounts: courseSelection.lessonCounts,
       total: recipients.length,
       sendable: recipients.filter((r) => !r.skipped && r.lineUserId && r.message.trim()).length,
       unbound: recipients.filter((r) => !r.skipped && !r.lineUserId).map((r) => ({ id: r.id, name: r.name })),

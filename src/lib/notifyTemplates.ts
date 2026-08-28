@@ -405,7 +405,68 @@ type BuildOptions = {
   customBody?: string;
   typhoonStatus?: string;
   slidesUrl?: string;  // {會議簡報} 帶入的連結（發送前填寫，整批共用）
+  // 客服在預覽頁挑選要通知的課程；未傳 = 沿用預設（第一堂課通知自動略過開課日已過的課）
+  selectedCourseIds?: number[];
+  // 每個課程類別要通知的堂數區間（第一堂課通知的教學課表卡片與「課程進度」行）
+  lessonRangeByCourse?: Record<string, { from?: number; to?: number }>;
 };
+
+// 預覽頁「挑選要通知的課程」清單用
+export type BatchCourseOption = {
+  id: number;
+  school: string;
+  courseName: string;
+  startDateIso: string;
+  dayLabel: string;
+  time: string;
+  isPast: boolean;      // 開課日已過 → 預設不勾選
+  teacherNames: string[];
+};
+
+function courseDayLabel(c: { dayOfWeek?: string | null; weekday?: string | null }) {
+  return (c.dayOfWeek || c.weekday || "").replace("星期", "週") || "週次未填";
+}
+
+function isoOf(date: Date | null | undefined) {
+  return date ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(date) : "";
+}
+
+// 預覽時列出這批老師名下所有 115-1 課程，讓客服自行勾選要通知哪幾堂
+export async function listTeacherCourseOptions(recipientIds: number[]) {
+  const today = taipeiDateStr(0);
+  const courses = await prisma.course.findMany({
+    where: {
+      isActive: true,
+      OR: [{ teacherId: { in: recipientIds } }, { assistantTeacherId: { in: recipientIds } }],
+    },
+    select: {
+      id: true, school: true, courseType: true, dayOfWeek: true, weekday: true, time: true,
+      startDate: true, notes: true,
+      teacher: { select: { name: true } },
+      assistantTeacher: { select: { name: true } },
+    },
+    orderBy: [{ startDate: "asc" }, { school: "asc" }],
+  });
+  const options: BatchCourseOption[] = [];
+  for (const c of courses) {
+    if (resolveCourseTerm(c) !== "115-1") continue;
+    const startDateIso = isoOf(c.startDate);
+    options.push({
+      id: c.id,
+      school: c.school,
+      courseName: courseLabel(c.courseType) || "課程",
+      startDateIso,
+      dayLabel: courseDayLabel(c),
+      time: c.time || "時間未填",
+      isPast: Boolean(startDateIso) && startDateIso < today,
+      teacherNames: [c.teacher?.name, c.assistantTeacher?.name].filter((n): n is string => Boolean(n)),
+    });
+  }
+  const lessonTemplates = await readLessonTemplatesBulk(prisma, courses.map((c) => c.courseType));
+  const lessonCounts: Record<string, number> = {};
+  for (const [courseName, lessons] of lessonTemplates) lessonCounts[courseName] = lessons.length;
+  return { courses: options, lessonCounts };
+}
 
 const MAX_MESSAGE_LENGTH = 4500; // LINE text 上限 5000，保留緩衝
 
@@ -462,13 +523,32 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const courses = await prisma.course.findMany({
         where: { isActive: true, OR: [{ teacherId: { in: ids } }, { assistantTeacherId: { in: ids } }] },
         select: {
+          id: true,
           teacherId: true, assistantTeacherId: true, school: true, courseType: true,
           dayOfWeek: true, weekday: true, time: true, address: true, startDate: true,
           enrollCount: true, notes: true,
         },
         orderBy: [{ school: "asc" }],
       });
-      const firstLessonTitleByCourse = new Map<string, string>();
+      // 客服挑選的課程；未傳代表沿用預設
+      const selectedCourseIds = opts.selectedCourseIds ? new Set(opts.selectedCourseIds) : null;
+      const todayIso = taipeiDateStr(0);
+      const isCourseIncluded = (c: { id: number; startDate: Date | null }) => {
+        if (selectedCourseIds) return selectedCourseIds.has(c.id);
+        // 預設：第一堂課通知不重複通知已經開課的班（開課日已過）
+        if (opts.templateKey !== "first_class") return true;
+        const startIso = isoOf(c.startDate);
+        return !startIso || startIso >= todayIso;
+      };
+      // 每個課程類別要通知的堂數區間（預設整學期）
+      const lessonRangeOf = (courseName: string, total: number) => {
+        const raw = opts.lessonRangeByCourse?.[courseName];
+        const from = Math.min(Math.max(Math.trunc(raw?.from ?? 1) || 1, 1), Math.max(total, 1));
+        const to = Math.min(Math.max(Math.trunc(raw?.to ?? total) || total, from), Math.max(total, 1));
+        return { from, to };
+      };
+      // 通知起始堂的標題（顯示在課程色塊的「課程進度」行）
+      const noticeLessonByCourse = new Map<string, { lesson: number; title: string }>();
       if (opts.templateKey === "first_class") {
         const lessonTemplates = await readLessonTemplatesBulk(
           prisma,
@@ -476,14 +556,10 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
         );
         // readLessonTemplatesBulk 回傳的 key 已是 courseLabel()，與下方 label 同一組鍵值
         for (const [courseName, lessons] of lessonTemplates) {
-          const firstLessonTitle = lessons
-            .find((lesson) => lesson.lesson === 1)
-            ?.title.trim();
-          if (firstLessonTitle) {
-            firstLessonTitleByCourse.set(courseName, firstLessonTitle);
-          }
-          const planItems: LessonPlanItem[] = [...lessons]
-            .sort((a, b) => a.lesson - b.lesson)
+          const sorted = [...lessons].sort((a, b) => a.lesson - b.lesson);
+          const { from, to } = lessonRangeOf(courseName, sorted.length);
+          const planItems: LessonPlanItem[] = sorted
+            .filter((lesson) => lesson.lesson >= from && lesson.lesson <= to)
             .map((lesson) => ({
               lesson: lesson.lesson,
               title: lesson.title.trim(),
@@ -492,6 +568,10 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
               ...(lesson.activityDirection.trim() ? { activityDirection: lesson.activityDirection.trim() } : {}),
             }));
           if (planItems.length === 0) continue;
+          const startLesson = planItems[0];
+          if (startLesson.title) {
+            noticeLessonByCourse.set(courseName, { lesson: startLesson.lesson, title: startLesson.title });
+          }
           const planPalette = blockColor(courseName);
           lessonPlanByCourse.set(courseName, {
             courseName,
@@ -504,6 +584,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       for (const c of courses) {
         // 新學期通知只列 115-1；舊課即使仍為啟用狀態也不顯示。
         if (resolveCourseTerm(c) !== "115-1") continue;
+        if (!isCourseIncluded(c)) continue;
         const day = (c.dayOfWeek || c.weekday || "").replace("星期", "週") || "週次未填";
         const start = c.startDate ? `${c.startDate.getMonth() + 1}/${c.startDate.getDate()} 起，` : "";
         const label = courseLabel(c.courseType) || "課程";
@@ -513,7 +594,10 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
           const lines = [
             c.school,
             ...(opts.templateKey === "first_class"
-              ? [`課程進度：第 1 堂｜${firstLessonTitleByCourse.get(label) || "尚未設定"}`]
+              ? [(() => {
+                  const notice = noticeLessonByCourse.get(label);
+                  return `課程進度：第 ${notice?.lesson ?? 1} 堂｜${notice?.title || "尚未設定"}`;
+                })()]
               : []),
             `${start}每${day} ${c.time || "時間未填"}`,
             ...(c.address ? [c.address] : []),

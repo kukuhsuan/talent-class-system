@@ -19,8 +19,17 @@ type Template = {
   defaultBody: string; builtinBody: string; customized: boolean; customizedBy: string;
 };
 
+type CourseOption = {
+  id: number; school: string; courseName: string; startDateIso: string;
+  dayLabel: string; time: string; isPast: boolean; teacherNames: string[];
+};
+
+type LessonRange = { from: number; to: number };
+
 type PreviewData = {
   template: { key: string; label: string };
+  courseOptions?: CourseOption[];
+  lessonCounts?: Record<string, number>;
   total: number; sendable: number;
   unbound: Array<{ id: number; name: string }>;
   skipped: Array<{ id: number; name: string; reason: string }>;
@@ -294,6 +303,12 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
   const [dryRun, setDryRun] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
+  // 挑選要通知的課程（null＝尚未預覽過，由後端套預設：第一堂課通知略過開課日已過的班）
+  const [batchCourses, setBatchCourses] = useState<CourseOption[]>([]);
+  const [lessonCounts, setLessonCounts] = useState<Record<string, number>>({});
+  const [selectedCourseIds, setSelectedCourseIds] = useState<number[] | null>(null);
+  const [lessonRanges, setLessonRanges] = useState<Record<string, LessonRange>>({});
+  const knownCourseIds = useRef<number[]>([]);
   // 卡片內容區有高度上限，切換收件人時 React 會沿用同一個節點 → 手動捲回最上方，避免課表被藏在上緣外
   const previewBodyRef = useRef<HTMLDivElement | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -407,7 +422,9 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
     setPreview(null); setConfirmed(false);
   };
 
-  async function doPreview() {
+  async function doPreview(override?: { courseIds?: number[] | null; ranges?: Record<string, LessonRange> }) {
+    const courseIds = override && "courseIds" in override ? override.courseIds : selectedCourseIds;
+    const ranges = override?.ranges ?? lessonRanges;
     setError(""); setBusy("preview"); setPreview(null); setConfirmed(false);
     try {
       const res = await fetch("/api/notify-batch", {
@@ -416,10 +433,27 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
           action: "preview", templateKey, targetType,
           recipientIds: [...selected], customBody, typhoonStatus: typhoonStatus || undefined,
           slidesUrl: slidesUrl.trim() || undefined,
+          ...(courseIds ? { selectedCourseIds: courseIds } : {}),
+          ...(Object.keys(ranges).length > 0 ? { lessonRangeByCourse: ranges } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "預覽失敗");
+      const options: CourseOption[] = data.courseOptions ?? [];
+      // 已看過的課程沿用客服的勾選；這次新出現的課程套預設（開課日已過＝不勾）
+      const known = new Set(knownCourseIds.current);
+      const kept = new Set(courseIds ?? []);
+      const merged = options.filter(c => (known.has(c.id) ? kept.has(c.id) : !c.isPast)).map(c => c.id);
+      const hasNewCourses = options.some(c => !known.has(c.id));
+      setBatchCourses(options);
+      setLessonCounts(data.lessonCounts ?? {});
+      setSelectedCourseIds(merged);
+      knownCourseIds.current = options.map(c => c.id);
+      // 收件人變多時會冒出這次沒送給後端的新課程 → 用合併後的清單再取一次，預覽才會跟勾選一致
+      if (courseIds && hasNewCourses) {
+        await doPreview({ courseIds: merged, ranges });
+        return;
+      }
       setPreview(data);
       setPreviewIndex(0);
       setBatchUuid(crypto.randomUUID());
@@ -428,6 +462,15 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
     } finally {
       setBusy("");
     }
+  }
+
+  function applyCourseSelection(next: { courseIds?: number[]; ranges?: Record<string, LessonRange> }) {
+    if (next.courseIds) setSelectedCourseIds(next.courseIds);
+    if (next.ranges) setLessonRanges(next.ranges);
+    void doPreview({
+      courseIds: next.courseIds ?? selectedCourseIds,
+      ranges: next.ranges ?? lessonRanges,
+    });
   }
 
   async function doSend() {
@@ -440,6 +483,8 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
           action: "send", uuid: batchUuid, templateKey, targetType,
           recipientIds: [...selected], customBody, typhoonStatus: typhoonStatus || undefined,
           slidesUrl: slidesUrl.trim() || undefined,
+          ...(selectedCourseIds ? { selectedCourseIds } : {}),
+          ...(Object.keys(lessonRanges).length > 0 ? { lessonRangeByCourse: lessonRanges } : {}),
           testMode, dryRun, confirm: true,
         }),
       });
@@ -456,6 +501,27 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
   }
 
   const previewRecipient = preview?.recipients[previewIndex];
+
+  // 換範本／換對象＝重新挑課，避免沿用上一批的勾選
+  useEffect(() => {
+    setBatchCourses([]); setLessonCounts({}); setSelectedCourseIds(null); setLessonRanges({});
+    knownCourseIds.current = [];
+  }, [templateKey, targetType]);
+
+  // 依課程類別分組，讓客服可以整組設定堂數區間
+  const courseGroups = useMemo(() => {
+    const groups = new Map<string, CourseOption[]>();
+    for (const option of batchCourses) {
+      const list = groups.get(option.courseName) ?? [];
+      list.push(option);
+      groups.set(option.courseName, list);
+    }
+    return [...groups.entries()];
+  }, [batchCourses]);
+
+  const courseChecked = (id: number) => (selectedCourseIds ?? []).includes(id);
+  const rangeOf = (courseName: string): LessonRange =>
+    lessonRanges[courseName] ?? { from: 1, to: lessonCounts[courseName] ?? 1 };
 
   useEffect(() => {
     if (previewBodyRef.current) previewBodyRef.current.scrollTop = 0;
@@ -601,12 +667,97 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
               模擬發送（不實際傳送 LINE）
             </label>
           </div>
-          <button onClick={doPreview} disabled={!templateKey || selected.size === 0 || busy !== ""}
+          <button onClick={() => void doPreview()} disabled={!templateKey || selected.size === 0 || busy !== ""}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {busy === "preview" ? "產生預覽中..." : "預覽發送"}
           </button>
           {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
         </div>
+
+        {targetType === "teacher" && batchCourses.length > 0 && (
+          <div className="bg-white rounded-xl border p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-700">挑選要通知的課程</h2>
+              <div className="flex gap-2 text-xs">
+                <button type="button" disabled={busy !== ""}
+                  onClick={() => applyCourseSelection({ courseIds: batchCourses.map(c => c.id) })}
+                  className="rounded-lg border px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50">全選</button>
+                <button type="button" disabled={busy !== ""}
+                  onClick={() => applyCourseSelection({ courseIds: batchCourses.filter(c => !c.isPast).map(c => c.id) })}
+                  className="rounded-lg border px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50">只留未開課</button>
+                <button type="button" disabled={busy !== ""}
+                  onClick={() => applyCourseSelection({ courseIds: [] })}
+                  className="rounded-lg border px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50">全不選</button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              開課日已過的班級預設不勾選。調整後會重新產生預覽，需再次勾選確認才能發送。
+              已選 {(selectedCourseIds ?? []).length} / {batchCourses.length} 班。
+            </p>
+            {courseGroups.map(([courseName, list]) => {
+              const total = lessonCounts[courseName] ?? 0;
+              const range = rangeOf(courseName);
+              return (
+                <div key={courseName} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-700">{courseName}</span>
+                    <span className="text-xs text-slate-400">共 {list.length} 班</span>
+                    {templateKey === "first_class" && total > 0 && (
+                      <span className="ml-auto flex items-center gap-1 text-xs text-slate-600">
+                        教學課表 第
+                        <select value={range.from} disabled={busy !== ""}
+                          onChange={e => {
+                            const from = Number(e.target.value);
+                            applyCourseSelection({ ranges: { ...lessonRanges, [courseName]: { from, to: Math.max(from, range.to) } } });
+                          }}
+                          className="rounded-lg border px-1 py-0.5">
+                          {Array.from({ length: total }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                        堂 到 第
+                        <select value={range.to} disabled={busy !== ""}
+                          onChange={e => {
+                            const to = Number(e.target.value);
+                            applyCourseSelection({ ranges: { ...lessonRanges, [courseName]: { from: Math.min(range.from, to), to } } });
+                          }}
+                          className="rounded-lg border px-1 py-0.5">
+                          {Array.from({ length: total }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                        堂（共 {total} 堂）
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    {list.map(option => (
+                      <label key={option.id}
+                        className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50 ${option.isPast ? "bg-slate-50" : ""}`}>
+                        <input type="checkbox" className="mt-0.5 h-4 w-4" disabled={busy !== ""}
+                          checked={courseChecked(option.id)}
+                          onChange={e => {
+                            const current = selectedCourseIds ?? [];
+                            applyCourseSelection({
+                              courseIds: e.target.checked
+                                ? [...current, option.id]
+                                : current.filter(id => id !== option.id),
+                            });
+                          }} />
+                        <span className="min-w-0">
+                          <span className="font-medium text-slate-700">{option.school}</span>
+                          {option.isPast && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-700">已開課</span>}
+                          <span className="block text-slate-500">
+                            {option.startDateIso ? `${option.startDateIso} 起，` : ""}每{option.dayLabel} {option.time}
+                          </span>
+                          {option.teacherNames.length > 0 && (
+                            <span className="block text-slate-400">{option.teacherNames.join("／")}</span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {preview && (
           <div className="bg-white rounded-xl border p-4 space-y-4">
