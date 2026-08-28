@@ -15,8 +15,13 @@ const HINTS: Record<string, { help: string; placeholder: string; type?: string }
     placeholder: "請拍攝存摺封面，需清楚看到銀行、分行、戶名與帳號",
   },
   "doc.retention.days": {
-    help: "審核完成後保留原檔的天數，每週排程會自動刪除超過期限的檔案（審核結果與狀態會保留）。留空或填錯會退回預設 365 天；填 0 表示不自動刪除。",
-    placeholder: "365",
+    help: "委任書：審核完成後保留原檔的天數，每日排程會刪除超過期限的檔案（審核結果與狀態保留）。留空或填錯會退回預設 90 天；填 0 表示不自動刪除。",
+    placeholder: "90",
+    type: "number",
+  },
+  "doc.retention.bankbook.days": {
+    help: "存摺：從老師上傳當天起算的天數，到期一律刪除原檔，不論是否審核完成。到期前 7 天仍未審核的會先開系統警示提醒補審。留空或填錯會退回預設 30 天；填 0 表示不自動刪除。",
+    placeholder: "30",
     type: "number",
   },
 };

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OWNER_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
-import { APP_SETTING_KEYS, APP_SETTING_LABELS, DEFAULT_RETENTION_DAYS, listAppSettings, setAppSetting } from "@/lib/appSetting";
+import { APP_SETTING_KEYS, APP_SETTING_LABELS, DEFAULT_BANKBOOK_RETENTION_DAYS, DEFAULT_RETENTION_DAYS, listAppSettings, setAppSetting } from "@/lib/appSetting";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
@@ -14,7 +14,10 @@ export async function GET() {
   const { response } = await requireRole(OWNER_ROLES);
   if (response) return response;
   const settings = await listAppSettings();
-  return NextResponse.json({ settings, defaults: { retentionDays: DEFAULT_RETENTION_DAYS } });
+  return NextResponse.json({
+    settings,
+    defaults: { retentionDays: DEFAULT_RETENTION_DAYS, bankbookRetentionDays: DEFAULT_BANKBOOK_RETENTION_DAYS },
+  });
 }
 
 export async function PUT(req: NextRequest) {

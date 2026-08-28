@@ -206,27 +206,88 @@ export async function reviewTeacherDocument(id: number, reviewStatus: string, re
 
 // 保留期限到期的名單：已審核完成、超過 N 天、原檔還在的才需要清。
 // 只刪檔案不刪列——審核紀錄要留著，否則發薪判斷會突然變成「未上傳」。
-export async function listDocumentsToPurge(retentionDays: number) {
+export type PurgeTarget = {
+  id: number;
+  teacherId: number;
+  docType: string;
+  fileUrl: string;
+  basisAt: string;
+  reviewStatus: string;
+};
+
+function cutoffIso(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * 兩種文件的保留政策不同：
+ * - 存摺是金融個資，上傳日起算滿期就刪，不等審核（未審核的也刪）。
+ * - 委任書是授權文件，維持審核完成起算，未審核的不動。
+ * 天數傳 0 代表該類文件不自動刪除。
+ */
+export async function listDocumentsToPurge(opts: { bankbookDays: number; mandateDays: number }) {
   await ensureTeacherDocumentTable();
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
-  return prisma.$queryRawUnsafe<Array<{ id: number; teacherId: number; docType: string; fileUrl: string; reviewedAt: string }>>(
-    `SELECT id, teacherId, docType, fileUrl, reviewedAt
+  const targets: PurgeTarget[] = [];
+
+  if (opts.bankbookDays > 0) {
+    targets.push(...await prisma.$queryRawUnsafe<PurgeTarget[]>(
+      `SELECT id, teacherId, docType, fileUrl, uploadedAt AS basisAt, reviewStatus
+         FROM TeacherDocument
+        WHERE docType = ? AND fileUrl <> '' AND uploadedAt IS NOT NULL AND uploadedAt <= ?
+        ORDER BY uploadedAt ASC
+        LIMIT 200`,
+      "bankbook",
+      cutoffIso(opts.bankbookDays),
+    ));
+  }
+
+  if (opts.mandateDays > 0) {
+    targets.push(...await prisma.$queryRawUnsafe<PurgeTarget[]>(
+      `SELECT id, teacherId, docType, fileUrl, reviewedAt AS basisAt, reviewStatus
+         FROM TeacherDocument
+        WHERE docType <> ? AND reviewStatus = ? AND fileUrl <> '' AND reviewedAt IS NOT NULL AND reviewedAt <= ?
+        ORDER BY reviewedAt ASC
+        LIMIT 200`,
+      "bankbook",
+      DOC_STATUS.done,
+      cutoffIso(opts.mandateDays),
+    ));
+  }
+
+  return targets;
+}
+
+/** 到期前還沒審完的存摺：刪掉就得請老師重傳，先讓行政有機會補審 */
+export async function listBankbooksNearingPurge(retentionDays: number, warnDays: number) {
+  await ensureTeacherDocumentTable();
+  if (retentionDays <= 0) return [];
+  return prisma.$queryRawUnsafe<Array<{ id: number; teacherId: number; uploadedAt: string; reviewStatus: string }>>(
+    `SELECT id, teacherId, uploadedAt, reviewStatus
        FROM TeacherDocument
-      WHERE reviewStatus = ? AND fileUrl <> '' AND reviewedAt IS NOT NULL AND reviewedAt <= ?
-      ORDER BY reviewedAt ASC
-      LIMIT 200`,
+      WHERE docType = ? AND fileUrl <> '' AND reviewStatus <> ?
+        AND uploadedAt IS NOT NULL AND uploadedAt <= ? AND uploadedAt > ?
+      ORDER BY uploadedAt ASC
+      LIMIT 50`,
+    "bankbook",
     DOC_STATUS.done,
-    cutoff,
+    cutoffIso(Math.max(retentionDays - warnDays, 0)),
+    cutoffIso(retentionDays),
   );
 }
 
-export async function markDocumentPurged(id: number) {
+/**
+ * 只清 blob 原檔，審核結果留著。
+ * 但「待審核」的存摺被清掉後已無檔可審，狀態退回未上傳，
+ * 否則發薪判斷會一直卡在待審核，行政也不知道要請老師重傳。
+ */
+export async function markDocumentPurged(id: number, resetToNotUploaded = false) {
   await ensureTeacherDocumentTable();
   await prisma.$executeRawUnsafe(
     `UPDATE TeacherDocument
         SET fileUrl = '', filePurgedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP
+            ${resetToNotUploaded ? ", reviewStatus = ?" : ""}
       WHERE id = ?`,
-    Number(id),
+    ...(resetToNotUploaded ? [DOC_STATUS.none, Number(id)] : [Number(id)]),
   );
 }
 

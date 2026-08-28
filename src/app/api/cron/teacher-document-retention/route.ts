@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { documentRetentionDays } from "@/lib/appSetting";
-import { TEACHER_DOC_LABELS, listDocumentsToPurge, markDocumentPurged, type TeacherDocType } from "@/lib/teacherDocument";
+import { bankbookRetentionDays, documentRetentionDays } from "@/lib/appSetting";
+import { DOC_STATUS, TEACHER_DOC_LABELS, listBankbooksNearingPurge, listDocumentsToPurge, markDocumentPurged, type TeacherDocType } from "@/lib/teacherDocument";
 import { deleteSensitiveDocument } from "@/lib/sensitiveBlob";
 import { writeAuditLog } from "@/lib/auditLog";
 import { processSensitiveBlobDeletionQueue } from "@/lib/sensitiveBlobDeletionQueue";
@@ -13,10 +13,12 @@ export const dynamic = "force-dynamic";
 // 存摺／委任書原檔的保留期限清除。
 // 只刪 blob 原檔，TeacherDocument 那一列與審核結果都留著——
 // 刪掉整列會讓發薪判斷退回「未上傳」，等於把已經審過的老師重新擋住。
+// 例外：存摺若到期時仍未審核，原檔沒了也審不了，狀態才退回未上傳。
 async function purge(req: NextRequest | null) {
-  const retentionDays = await documentRetentionDays();
+  const [mandateDays, bankbookDays] = await Promise.all([documentRetentionDays(), bankbookRetentionDays()]);
+  const retentionDays = mandateDays;
   // 即使管理者把定期清除設為 0，先前已排入的刪除失敗工作仍必須重試。
-  const targets = retentionDays === 0 ? [] : await listDocumentsToPurge(retentionDays);
+  const targets = await listDocumentsToPurge({ bankbookDays, mandateDays });
   let purged = 0;
   let failed = 0;
   const labels: string[] = [];
@@ -27,7 +29,8 @@ async function purge(req: NextRequest | null) {
       failed += 1;
       continue;
     }
-    await markDocumentPurged(target.id);
+    // 未審核完成的存摺：檔案沒了就審不了，狀態退回未上傳，行政才看得出要請老師重傳
+    await markDocumentPurged(target.id, target.docType === "bankbook" && target.reviewStatus !== DOC_STATUS.done);
     purged += 1;
     const teacher = await prisma.teacher
       .findUnique({ where: { id: target.teacherId }, select: { name: true } })
@@ -44,7 +47,7 @@ async function purge(req: NextRequest | null) {
       actorName: "系統",
       actorRole: "cron",
       targetType: "TeacherDocument",
-      targetLabel: `保留期限清除（${retentionDays} 天）`,
+      targetLabel: `保留期限清除（存摺 ${bankbookDays} 天／委任書 ${mandateDays} 天）`,
       diffSummary: `原檔刪除失敗 ${failed} 份，未標記為已清除，下次排程會重試`,
       sensitive: true,
     });
@@ -56,7 +59,7 @@ async function purge(req: NextRequest | null) {
       actorName: "系統",
       actorRole: "cron",
       targetType: "TeacherDocument",
-      targetLabel: `保留期限清除（${retentionDays} 天）`,
+      targetLabel: `保留期限清除（存摺 ${bankbookDays} 天／委任書 ${mandateDays} 天）`,
       diffSummary: `依保留政策刪除原檔 ${purged} 份：${labels.slice(0, 20).join("、")}${labels.length > 20 ? " 等" : ""}`,
       sensitive: true,
     });
@@ -84,14 +87,35 @@ async function purge(req: NextRequest | null) {
     });
   }
 
+  // 到期前 7 天仍未審核的存摺：刪掉就得請老師重傳，先開單提醒行政補審
+  const nearing = await listBankbooksNearingPurge(bankbookDays, 7).catch(() => []);
+  if (nearing.length > 0) {
+    const names = await prisma.teacher
+      .findMany({ where: { id: { in: nearing.map((row) => row.teacherId) } }, select: { id: true, name: true } })
+      .catch(() => [] as Array<{ id: number; name: string }>);
+    const nameById = new Map(names.map((row) => [row.id, row.name]));
+    await raiseSystemAlert({
+      level: "P2",
+      category: "敏感文件",
+      title: `${nearing.length} 份存摺即將到期刪除`,
+      detail: `以下老師的存摺上傳已滿 ${Math.max(bankbookDays - 7, 0)} 天且尚未審核完成，${bankbookDays} 天到期後原檔會自動刪除，需請老師重傳：${nearing
+        .map((row) => nameById.get(row.teacherId) ?? `#${row.teacherId}`)
+        .join("、")}`,
+      dedupeKey: `bankbook-retention-warning-${new Date().toISOString().slice(0, 10)}`,
+    });
+  }
+
   return {
-    skipped: retentionDays === 0,
+    skipped: bankbookDays === 0 && mandateDays === 0,
     retentionDays,
+    bankbookDays,
+    mandateDays,
     purged,
     failed,
     candidates: targets.length,
+    nearingExpiry: nearing.length,
     deletionRetry: { processed: retry.processed, completed: retry.completed.length, failed: retry.failed.length },
-    ...(retentionDays === 0 ? { note: "保留天數設為 0，未執行到期清除；刪除重試仍有執行" } : {}),
+    ...(bankbookDays === 0 && mandateDays === 0 ? { note: "保留天數設為 0，未執行到期清除；刪除重試仍有執行" } : {}),
   };
 }
 

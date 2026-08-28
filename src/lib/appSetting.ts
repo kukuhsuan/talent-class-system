@@ -6,16 +6,20 @@ export const APP_SETTING_KEYS = {
   mandateTemplateUrl: "doc.template.mandate.url",
   bankbookHint: "doc.template.bankbook.hint",
   documentRetentionDays: "doc.retention.days",
+  bankbookRetentionDays: "doc.retention.bankbook.days",
 } as const;
 
 export const APP_SETTING_LABELS: Record<string, string> = {
   [APP_SETTING_KEYS.mandateTemplateUrl]: "委任書格式下載連結",
   [APP_SETTING_KEYS.bankbookHint]: "存摺封面上傳說明",
-  [APP_SETTING_KEYS.documentRetentionDays]: "文件原檔保留天數（審核完成起算，0 = 不自動刪除）",
+  [APP_SETTING_KEYS.documentRetentionDays]: "委任書原檔保留天數（審核完成起算，0 = 不自動刪除）",
+  [APP_SETTING_KEYS.bankbookRetentionDays]: "存摺原檔保留天數（上傳日起算，未審核也會刪，0 = 不自動刪除）",
 };
 
-// 存摺是金融個資，只保留完成會計核對所需的合理期間。
+// 委任書屬授權文件，保留到會計核對結束即可。
 export const DEFAULT_RETENTION_DAYS = 90;
+// 存摺是金融個資，公司政策為上傳後最多留 30 天，且不論是否已審核都要刪。
+export const DEFAULT_BANKBOOK_RETENTION_DAYS = 30;
 
 let tableReady = false;
 
@@ -54,16 +58,27 @@ export async function getAppSetting(key: string) {
   return key.endsWith(".url") ? safeUrl(value) : value;
 }
 
-export async function documentRetentionDays() {
-  const raw = (await getAppSetting(APP_SETTING_KEYS.documentRetentionDays)).trim();
-  if (!raw) return DEFAULT_RETENTION_DAYS;
-  // 2026-07 安全政策由一年縮短為 90 天；舊環境即使曾明確存過 365，
-  // 也不能繼續蓋過新的公司政策。
-  if (raw === "365") return DEFAULT_RETENTION_DAYS;
-  const days = Number(raw);
+function parseRetentionDays(raw: string, fallback: number, supersededValues: string[]) {
+  const value = raw.trim();
+  if (!value) return fallback;
+  // 政策收緊時，舊環境即使曾明確存過較長的天數，也不能繼續蓋過新的公司政策。
+  if (supersededValues.includes(value)) return fallback;
+  const days = Number(value);
   // 設定壞掉時退回預設，不要因為打錯字就變成永不刪除或立刻全刪
-  if (!Number.isInteger(days) || days < 0 || days > 3650) return DEFAULT_RETENTION_DAYS;
+  if (!Number.isInteger(days) || days < 0 || days > 3650) return fallback;
   return days;
+}
+
+// 委任書：2026-07 由一年縮短為 90 天
+export async function documentRetentionDays() {
+  const raw = await getAppSetting(APP_SETTING_KEYS.documentRetentionDays);
+  return parseRetentionDays(raw, DEFAULT_RETENTION_DAYS, ["365"]);
+}
+
+// 存摺：2026-08 由沿用委任書的 90 天改為獨立的 30 天
+export async function bankbookRetentionDays() {
+  const raw = await getAppSetting(APP_SETTING_KEYS.bankbookRetentionDays);
+  return parseRetentionDays(raw, DEFAULT_BANKBOOK_RETENTION_DAYS, ["90", "365"]);
 }
 
 export async function listAppSettings() {

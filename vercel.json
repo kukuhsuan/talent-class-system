@@ -51,7 +51,7 @@
     },
     {
       "path": "/api/cron/teacher-document-retention",
-      "schedule": "20 19 * * 0"
+      "schedule": "20 19 * * *"
     }
   ]
 }
