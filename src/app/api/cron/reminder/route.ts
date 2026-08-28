@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getLineConfig, pushMessage, buildReminderMessage } from "@/lib/line";
+import { getLineConfig, pushMessage, buildReminderMessages } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { courseDateWindowWhere, courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime } from "@/lib/attendanceTime";
@@ -292,7 +292,7 @@ export async function GET(req: NextRequest) {
     const token = getLineConfig(region).token;
 
     const baseTitle = dayOffset === 1 ? "明日課程提醒" : "今日課程提醒";
-    const message = buildReminderMessage({
+    const messages = buildReminderMessages({
       teacherName: teacher.name,
       // 第二次以後才送的，標題講清楚原因，老師才不會以為系統重複發同一則
       title: state === "changed" ? `${baseTitle}（課表有更新）` : baseTitle,
@@ -302,8 +302,8 @@ export async function GET(req: NextRequest) {
     });
 
     try {
-      // 回顧已經併進提醒卡，每位老師固定只收一則
-      await pushMessage(teacher.lineUserId, [message], token);
+      // 回顧已併進提醒卡；一堂課一則、最多兩則（三堂以上其餘收進第二則）
+      await pushMessage(teacher.lineUserId, messages, token);
       await markCourseReminderSent(teacher.id, targetIso, dayOffset, contentHash);
       sent++;
       if (state === "changed") resent++;

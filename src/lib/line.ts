@@ -509,11 +509,27 @@ export function buildReminderMessage(opts: {
       },
     } : {}),
   }));
+  // 通知列預覽帶上園所，老師收到兩則時一眼分得出哪則是哪一班
+  const schoolHint = courses.map((course) => course.school).filter(Boolean).join("、").slice(0, 40);
   return {
     type: "flex",
-    altText: `${opts.teacherName} 老師${opts.title || "課程提醒"}`,
+    altText: `${opts.teacherName} 老師${opts.title || "課程提醒"}${schoolHint ? `｜${schoolHint}` : ""}`,
     contents: bubbles.length === 1 ? bubbles[0] : { type: "carousel", contents: bubbles },
   };
+}
+
+/**
+ * 課程提醒的分則規則：一堂課一則、最多兩則。
+ * 三堂以上的老師，第一則放第一堂，其餘全部收進第二則的 carousel，
+ * 這樣第一堂一定看得到，也不會把聊天室洗版。
+ */
+export function buildReminderMessages(opts: Parameters<typeof buildReminderMessage>[0]): object[] {
+  const courses = opts.courses ?? [];
+  if (courses.length <= 1) return [buildReminderMessage(opts)];
+  const groups = courses.length === 2
+    ? [[courses[0]], [courses[1]]]
+    : [[courses[0]], courses.slice(1)];
+  return groups.map((group) => buildReminderMessage({ ...opts, courses: group }));
 }
 
 // Build post-class report request (mobile form entry point)
