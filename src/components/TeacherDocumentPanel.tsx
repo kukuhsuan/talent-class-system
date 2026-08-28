@@ -228,8 +228,9 @@ export default function TeacherDocumentPanel({
 
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   {row?.filePurgedAt && (
-                    <span className="text-xs text-slate-500">
-                      原檔已於 {formatDateTime(row.filePurgedAt)} 依保留期限刪除，審核紀錄保留
+                    <span className={`text-xs ${status === "未上傳" ? "text-amber-600" : "text-slate-500"}`}>
+                      原檔已於 {formatDateTime(row.filePurgedAt)} 依保留期限刪除，
+                      {status === "未上傳" ? "當時尚未審核完成，需請老師重新上傳" : "審核紀錄保留"}
                     </span>
                   )}
                   {row && !row.filePurgedAt && canViewFile && (

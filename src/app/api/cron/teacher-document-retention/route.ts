@@ -22,6 +22,8 @@ async function purge(req: NextRequest | null) {
   let purged = 0;
   let failed = 0;
   const labels: string[] = [];
+  // 到期時仍未審核的存摺：檔案刪了就得請老師重傳，收集起來開單給行政聯絡
+  const needsReupload: string[] = [];
 
   for (const target of targets) {
     const deletion = await deleteSensitiveDocument(target.fileUrl);
@@ -30,12 +32,26 @@ async function purge(req: NextRequest | null) {
       continue;
     }
     // 未審核完成的存摺：檔案沒了就審不了，狀態退回未上傳，行政才看得出要請老師重傳
-    await markDocumentPurged(target.id, target.docType === "bankbook" && target.reviewStatus !== DOC_STATUS.done);
+    const wasUnreviewed = target.docType === "bankbook" && target.reviewStatus !== DOC_STATUS.done;
+    await markDocumentPurged(target.id, wasUnreviewed);
     purged += 1;
     const teacher = await prisma.teacher
       .findUnique({ where: { id: target.teacherId }, select: { name: true } })
       .catch(() => null);
-    labels.push(`${teacher?.name ?? target.teacherId}－${TEACHER_DOC_LABELS[target.docType as TeacherDocType] ?? target.docType}`);
+    const teacherLabel = teacher?.name ?? `#${target.teacherId}`;
+    labels.push(`${teacherLabel}－${TEACHER_DOC_LABELS[target.docType as TeacherDocType] ?? target.docType}`);
+    if (wasUnreviewed) needsReupload.push(teacherLabel);
+  }
+
+  // 系統不主動通知老師，改由行政依這張單逐一聯絡
+  if (needsReupload.length > 0) {
+    await raiseSystemAlert({
+      level: "P2",
+      category: "敏感文件",
+      title: `${needsReupload.length} 位老師的存摺已到期刪除，需請老師重傳`,
+      detail: `下列老師的存摺在保留期限（${bankbookDays} 天）內未完成審核，原檔已刪除、狀態退回未上傳，請行政聯絡老師重新上傳：${needsReupload.join("、")}`,
+      dedupeKey: `bankbook-reupload-${new Date().toISOString().slice(0, 10)}`,
+    });
   }
 
   // 刪不掉就不標記已清除（下週會再試一次），但要留紀錄——
@@ -113,6 +129,7 @@ async function purge(req: NextRequest | null) {
     purged,
     failed,
     candidates: targets.length,
+    needsReupload: needsReupload.length,
     nearingExpiry: nearing.length,
     deletionRetry: { processed: retry.processed, completed: retry.completed.length, failed: retry.failed.length },
     ...(bankbookDays === 0 && mandateDays === 0 ? { note: "保留天數設為 0，未執行到期清除；刪除重試仍有執行" } : {}),
