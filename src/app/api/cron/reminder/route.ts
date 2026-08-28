@@ -13,14 +13,12 @@ import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
 import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { recordAutomationRun } from "@/lib/automationHealth";
-import { buildLessonRecapFlex, previousLessonRecapMap, type LessonRecap } from "@/lib/lessonHandoff";
+import { previousLessonRecapMap, type LessonRecap } from "@/lib/lessonHandoff";
 import { upcomingLessonMap, type UpcomingLesson } from "@/lib/lessonProgress";
 
-// 一次 push 最多 5 則，主提醒佔 1 則，回顧卡片保守留 3 張
-const MAX_RECAP_CARDS = 3;
-
 type ReminderTeacher = { id: number; name: string; lineUserId: string | null; lineRegion: string };
-type ReminderCourse = { attendanceId?: number; courseId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null; reportRole?: "lead" | "assistant"; lessonProgress?: UpcomingLesson | null };
+type ReminderCourse = { attendanceId?: number; courseId?: number; school: string; time: string; courseType: string; address?: string; date: string; dayOfWeek: string; confirmationSummary?: string; equipment?: EquipmentReminderData | null; studentCount?: number | null; studentCountA?: number | null; studentCountB?: number | null; expectedStudentCount?: number | null; reportRole?: "lead" | "assistant"; lessonProgress?: UpcomingLesson | null; recap?: ReminderRecap | null };
+type ReminderRecap = { date: string; teacherName: string; progress: string; handoffNote: string; incidentSummary: string; studentCount: number | null };
 
 function addIsoDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00.000Z`);
@@ -225,6 +223,21 @@ export async function GET(req: NextRequest) {
     ).catch(() => new Map<number, UpcomingLesson>()),
   ]);
 
+  // 上一堂回顧改成塞進提醒卡的欄位；課堂摘要偏長，卡片上只留進度／人數／事件／交接
+  const recapFor = (courseId: number): ReminderRecap | null => {
+    const recap = recapMap.get(courseId);
+    if (!recap) return null;
+    if (!recap.progress && !recap.handoffNote && !recap.incidentSummary && recap.studentCount == null) return null;
+    return {
+      date: recap.date,
+      teacherName: recap.teacherName,
+      progress: recap.progress,
+      handoffNote: recap.handoffNote,
+      incidentSummary: recap.incidentSummary,
+      studentCount: recap.studentCount,
+    };
+  };
+
   const byTeacher = new Map<number, { teacher: ReminderTeacher; courses: ReminderCourse[] }>();
   for (const course of courses) {
     for (const { teacher, reportRole } of course.recipients) {
@@ -242,6 +255,7 @@ export async function GET(req: NextRequest) {
         equipment: course.attendanceId ? equipmentMap.get(course.attendanceId) ?? null : null,
         expectedStudentCount: course.attendanceId ? expectedMap.get(course.attendanceId) ?? null : null,
         lessonProgress: course.courseId ? lessonMap.get(course.courseId) ?? null : null,
+        recap: course.courseId ? recapFor(course.courseId) : null,
         reportRole,
       });
       byTeacher.set(teacher.id, item);
@@ -287,19 +301,9 @@ export async function GET(req: NextRequest) {
       courses: teacherCourses,
     });
 
-    // 上一堂回顧：同一位老師也照送（當作自己的課前回顧），只是文案改成「你自己留下的提醒」
-    const seenCourseIds = new Set<number>();
-    const recapMessages: object[] = [];
-    for (const course of teacherCourses) {
-      if (recapMessages.length >= MAX_RECAP_CARDS) break;
-      const recap = course.courseId ? recapMap.get(course.courseId) : undefined;
-      if (!recap || seenCourseIds.has(recap.courseId)) continue;
-      seenCourseIds.add(recap.courseId);
-      recapMessages.push(buildLessonRecapFlex(recap));
-    }
-
     try {
-      await pushMessage(teacher.lineUserId, [message, ...recapMessages], token);
+      // 回顧已經併進提醒卡，每位老師固定只收一則
+      await pushMessage(teacher.lineUserId, [message], token);
       await markCourseReminderSent(teacher.id, targetIso, dayOffset, contentHash);
       sent++;
       if (state === "changed") resent++;

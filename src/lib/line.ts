@@ -349,6 +349,15 @@ export function buildReminderMessage(opts: {
     expectedStudentCount?: number | null;
     reportRole?: "lead" | "assistant";
     lessonProgress?: { lesson: number; title: string; focus: string; total: number } | null;
+    // 上一堂回顧：原本另外發一張卡，改成併進提醒卡，老師每天只收一則
+    recap?: {
+      date: string;
+      teacherName: string;
+      progress: string;
+      handoffNote: string;
+      incidentSummary: string;
+      studentCount: number | null;
+    } | null;
   }>;
 }) {
   const courses = opts.courses?.length ? opts.courses : [{
@@ -366,6 +375,18 @@ export function buildReminderMessage(opts: {
     }
     return course.studentCount != null ? `${course.studentCount} 人` : "";
   };
+  // 上一堂回顧的欄位；交接事項可能很長，截斷避免卡片被撐爆
+  const recapRows = (recap: NonNullable<(typeof courses)[number]["recap"]>) => {
+    const rows: Array<{ label: string; value: string; color: string }> = [];
+    if (recap.progress) rows.push({ label: "上到進度", value: recap.progress, color: "#263548" });
+    if (recap.studentCount != null) rows.push({ label: "出席人數", value: `${recap.studentCount} 人`, color: "#4A5A6D" });
+    if (recap.incidentSummary) rows.push({ label: "特殊事件", value: recap.incidentSummary, color: "#C0564B" });
+    if (recap.handoffNote) {
+      rows.push({ label: "交接事項", value: recap.handoffNote.slice(0, 150), color: "#B0722B" });
+    }
+    return rows;
+  };
+
   const bubbles = courses.slice(0, 12).map((course) => ({
     type: "bubble",
     header: {
@@ -403,6 +424,25 @@ export function buildReminderMessage(opts: {
             ...(course.confirmationSummary ? [{ type: "text" as const, text: course.confirmationSummary, size: "xs" as const, color: "#5F6F83", wrap: true, margin: "sm" as const }] : []),
           ],
         },
+        // 上一堂回顧（含交接事項），沒有可寫的內容就整塊不出現
+        ...(course.recap && recapRows(course.recap).length > 0 ? [{
+          type: "box" as const, layout: "vertical" as const, spacing: "xs" as const,
+          backgroundColor: "#F6F8FB", cornerRadius: "10px", paddingAll: "13px",
+          contents: [
+            {
+              type: "text" as const,
+              text: `上一堂（${course.recap.date.slice(5)}　${course.recap.teacherName}）`,
+              size: "sm" as const, weight: "bold" as const, color: "#5F6F83", wrap: true,
+            },
+            ...recapRows(course.recap).map((row) => ({
+              type: "box" as const, layout: "horizontal" as const, spacing: "sm" as const, margin: "sm" as const,
+              contents: [
+                { type: "text" as const, text: row.label, size: "xs" as const, color: "#8391A3", flex: 3, wrap: true },
+                { type: "text" as const, text: row.value, size: "sm" as const, color: row.color, flex: 9, wrap: true },
+              ],
+            })),
+          ],
+        }] : []),
         // 出勤禮儀提醒
         {
           type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#FDF2EC", cornerRadius: "10px", paddingAll: "13px",

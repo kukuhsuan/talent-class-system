@@ -163,6 +163,8 @@ function textRow(label: string, value: string, color: string) {
  * 上一堂回顧卡片，接在課程提醒後面一起 push。
  * 同一位老師也會收到（自己回顧自己上一堂寫的交接）。
  */
+// 獨立的回顧卡片。目前沒有呼叫端：課程提醒已把回顧併進同一張卡，
+// 保留是為了之後若要單獨推播回顧（例如代課交接）可以直接沿用。
 export function buildLessonRecapFlex(recap: LessonRecap) {
   const rows: object[] = [];
   if (recap.progress) rows.push(textRow("上到進度", recap.progress, "#263548"));
