@@ -2,14 +2,6 @@
   "regions": ["pdx1"],
   "crons": [
     {
-      "path": "/api/cron/operations-daily",
-      "schedule": "50 22 * * *"
-    },
-    {
-      "path": "/api/cron/operations-daily?dayOffset=1",
-      "schedule": "50 6 * * *"
-    },
-    {
       "path": "/api/cron/operations-followup",
       "schedule": "30 12 * * *"
     },

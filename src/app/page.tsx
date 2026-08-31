@@ -203,10 +203,9 @@ export default function Home() {
   };
   const tomorrowStr = taipeiDateIso(new Date(now.getTime() + 86400000));
   const automationCards = [
-    // 老師提醒改成只發前一天那一封；當天早上的排程已停用，健康度不再追蹤
+    // 目前只剩前一天的老師提醒是排程發送：
+    // 當天早上的老師提醒、以及每日營運班表推播都已停用，健康度不再追蹤。
     { jobKey: "teacher-reminder:1", targetDate: tomorrowStr, label: "明日老師提醒", time: "14:00" },
-    { jobKey: "operations-daily:0", targetDate: todayStr, label: "今日營運班表", time: "06:50" },
-    { jobKey: "operations-daily:1", targetDate: tomorrowStr, label: "明日營運班表", time: "14:50" },
   ].map((card) => ({
     ...card,
     run: automationHealth.find((run) => run.jobKey === card.jobKey && run.targetDate.slice(0, 10) === card.targetDate),
