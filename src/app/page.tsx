@@ -205,7 +205,7 @@ export default function Home() {
   const automationCards = [
     // 目前只剩前一天的老師提醒是排程發送：
     // 當天早上的老師提醒、以及每日營運班表推播都已停用，健康度不再追蹤。
-    { jobKey: "teacher-reminder:1", targetDate: tomorrowStr, label: "明日老師提醒", time: "14:00" },
+    { jobKey: "teacher-reminder:1", targetDate: tomorrowStr, label: "明日老師提醒", time: "18:00" },
   ].map((card) => ({
     ...card,
     run: automationHealth.find((run) => run.jobKey === card.jobKey && run.targetDate.slice(0, 10) === card.targetDate),
@@ -235,7 +235,7 @@ export default function Home() {
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-semibold text-slate-800">今日概況</h2>
-            <p className="text-sm text-slate-500 mt-1">自動提醒：今日 07:00、明日 14:00；需要時也可手動補發。</p>
+            <p className="text-sm text-slate-500 mt-1">自動提醒：前一天 18:00 發送明日課程；需要時也可手動補發。</p>
           </div>
           <div className="flex gap-2">
             <button
