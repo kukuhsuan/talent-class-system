@@ -23,7 +23,6 @@ export type SalaryDetail = {
   role: "主教" | "助教";
   department: string;
   notes: string;
-  substituteFee?: number | null;
 };
 
 export type SalaryAdjustmentRow = {
@@ -153,13 +152,6 @@ export async function calculateSalaryMonth(year: number, month: number, options:
   const teachers = teachersRaw as unknown as TeacherRow[];
   const rows = rowsRaw as unknown as AttendanceRow[];
   const adjustments = adjustmentsRaw as unknown as SalaryAdjustmentRow[];
-  const substituteRows = rows.length ? await prisma.substitute.findMany({
-    where: { attendanceId: { in: rows.map((row) => row.id) }, confirmed: true, fee: { not: null } },
-    select: { attendanceId: true, role: true, substituteTeacherId: true, fee: true },
-  }) : [];
-  const substituteFeeMap = new Map(
-    substituteRows.map((row) => [`${row.attendanceId}:${row.role}:${row.substituteTeacherId}`, row.fee]),
-  );
   // 哪些課的計薪時數是行政單堂改過的：這些要蓋過課程預設，否則改了等於沒改
   const hoursOverrideMap = await attendanceHoursOverrideMap(rows.map((row) => row.id));
   // scheduledTime / payrollHours 已在 schema 內，include 直接帶回，省 2 次資料庫來回
@@ -193,15 +185,18 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     // 車費是「每堂固定」，不隨時數變動：老師跑一趟就是一趟，上 1 小時和 2 小時的
     // 交通成本一樣。原本寫成 payableHours * travelFee，1.5 小時的課會發 1.5 倍車費。
     const travelFee = role === "助教" || isDemo || hours.needsReview ? 0 : teacher.travelFee;
-    const substituteFee = substituteFeeMap.get(`${row.id}:${role}:${teacher.id}`) ?? null;
-    const teachingPay = substituteFee ?? hours.payableHours * rate;
+    // 代課與原課都依老師對應身份的時薪 × 計薪時數計算。
+    // Substitute.fee 是舊代課流程留下的參考欄位，代課頁也明示不會自動加入薪資；
+    // 不得讓其中的殘值（例如 1）偷偷覆蓋正常薪資。特殊加給統一走 SalaryAdjustment，
+    // 才會在薪資明細中留下可查核的補發／扣款紀錄。
+    const teachingPay = hours.payableHours * rate;
     return {
       id: role === "助教" ? -row.id : row.id, date: row.date, school: row.course.school,
       courseType: row.course.courseType, category, hours: hours.payableHours, time: hours.time,
       hoursNeedsReview: hours.needsReview, hoursReviewReason: hours.reason, rate, travelFee,
       amount: teachingPay + travelFee,
       isSub: role === "主教" && row.course.teacherId !== teacher.id, role,
-      department: row.course.department ?? "", notes: row.notes, substituteFee,
+      department: row.course.department ?? "", notes: row.notes,
     };
   };
 
