@@ -61,14 +61,14 @@ type DeliveryState = "new" | "changed" | "same";
 async function courseReminderState(
   teacherId: number,
   targetDate: string,
-  dayOffset: number,
   contentHash: string,
 ): Promise<DeliveryState> {
+  // 故意不篩 dayOffset：老師只在乎「這堂課有沒有被通知過」，不在乎是前一天還是當天發的。
+  // 只鎖 (teacherId, targetDate) 才能擋掉「前一天自動發過 + 有人又手動點今日提醒」這種同一堂課發兩次。
   const rows = await prisma.$queryRawUnsafe<Array<{ contentHash: string | null }>>(
-    "SELECT contentHash FROM CourseReminderDelivery WHERE teacherId = ? AND targetDate = ? AND dayOffset = ? LIMIT 1",
+    "SELECT contentHash FROM CourseReminderDelivery WHERE teacherId = ? AND targetDate = ? ORDER BY sentAt DESC LIMIT 1",
     teacherId,
     targetDate,
-    dayOffset,
   );
   if (rows.length === 0) return "new";
   const stored = rows[0]?.contentHash;
@@ -282,7 +282,7 @@ export async function GET(req: NextRequest) {
       continue;
     }
     const contentHash = reminderContentHash(teacherCourses);
-    const state = onlyTeacherId ? "changed" : await courseReminderState(teacher.id, targetIso, dayOffset, contentHash);
+    const state = onlyTeacherId ? "changed" : await courseReminderState(teacher.id, targetIso, contentHash);
     if (state === "same") {
       skippedAlreadySent++;
       continue;
