@@ -5,6 +5,7 @@ import { attendanceHoursOverrideMap } from "@/lib/attendanceHoursOverride";
 import { normalizeCategory } from "@/lib/courseMeta";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
+import { visibleOperationalAttendanceWhere } from "@/lib/attendanceVisibility";
 
 export type SalaryDetail = {
   id: number;
@@ -80,9 +81,10 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     date: { gte: start, lt: end },
     cancelled: false,
     AND: [
-      // 封存代表不再參與日常排班與自動計薪。只有已由會計鎖定的歷史薪資
-      // 可以繼續保留，避免封存後的重複預排堂次再次出現在薪資與 Excel。
-      { OR: [{ course: { is: { isActive: true } } }, { isPayrollLocked: true }] },
+      // 封存代表不再參與日常排班，但已經上過、有回報資料的堂次仍要計薪——
+      // 沿用出勤頁同一套「封存後仍保留真實紀錄」判斷（見 visibleOperationalAttendanceWhere），
+      // 否則行政一封存課程，老師該月已上但未鎖薪的課就會憑空從薪資消失。
+      visibleOperationalAttendanceWhere(),
       ...(options.teacherId
         ? [{ OR: [{ actualTeacherId: options.teacherId }, { assistantTeacherId: options.teacherId }] }]
         : []),
