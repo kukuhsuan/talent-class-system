@@ -2,10 +2,10 @@ import { prisma } from "@/lib/prisma";
 
 let signatureColumnsReady = false;
 
-/** 幼兒園與安親班可用現場電子簽名取代臨時缺少的紙本點名表。 */
-export function supportsSchoolSignature(department: string | null | undefined) {
-  const value = String(department ?? "");
-  return value.includes("幼兒園") || value.includes("安親");
+/** 安親班已停辦，電子簽名功能全面關閉；歷史已簽紀錄仍會顯示，只是不能再簽新的。 */
+export function supportsSchoolSignature(_department: string | null | undefined) {
+  void _department;
+  return false;
 }
 
 export function requiresSchoolSignature(_department: string | null | undefined, _teacherName?: string | null) {
