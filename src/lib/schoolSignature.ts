@@ -2,10 +2,15 @@ import { prisma } from "@/lib/prisma";
 
 let signatureColumnsReady = false;
 
-/** 安親班已停辦，電子簽名功能全面關閉；歷史已簽紀錄仍會顯示，只是不能再簽新的。 */
-export function supportsSchoolSignature(_department: string | null | undefined) {
+// 安親班已停辦，電子簽名功能全面關閉；歷史已簽紀錄仍會顯示，只是不能再簽新的。
+// 臨沂何嘉仁幼兒園個案要求保留，先用白名單開回來。
+const SIGNATURE_SCHOOL_ALLOWLIST = ["臨沂何嘉仁"];
+
+/** 幼兒園與安親班可用現場電子簽名取代臨時缺少的紙本點名表；目前只留白名單內的園所。 */
+export function supportsSchoolSignature(_department: string | null | undefined, school?: string | null) {
   void _department;
-  return false;
+  const name = String(school ?? "");
+  return SIGNATURE_SCHOOL_ALLOWLIST.some((allowed) => name.includes(allowed));
 }
 
 export function requiresSchoolSignature(_department: string | null | undefined, _teacherName?: string | null) {

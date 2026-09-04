@@ -196,7 +196,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ? (attendance as unknown as { schoolNotifyError?: string }).schoolNotifyError ?? ""
         : "",
       schoolSignatureRequired: requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name),
-      schoolSignatureAvailable: supportsSchoolSignature(attendance.course.department),
+      schoolSignatureAvailable: supportsSchoolSignature(attendance.course.department, attendance.course.school),
       schoolVerifierName: signature?.schoolVerifierName ?? "",
       schoolSignatureData: signature?.schoolSignatureData ?? "",
       schoolSignedAt: signature?.schoolSignedAt instanceof Date ? signature.schoolSignedAt.toISOString() : signature?.schoolSignedAt ?? null,
