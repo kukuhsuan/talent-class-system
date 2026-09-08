@@ -193,13 +193,13 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     target: "teacher",
     editable: true,
     needsAck: false,
-    description: "通知中南區教練加入 WaysLeader AI 課程點名上傳 LINE 官方帳號；請先篩選並勾選要通知的教練，發送前可修改截止日期與內容",
+    description: "通知中南區教練加入 WaysLeader AI 課程點名上傳 LINE 官方帳號；卡片保留可直接點擊的加入按鈕，發送前可修改截止日期與內容",
     defaultBody: [
       "📢 中南區教練重要通知",
       "",
       "之後「點名」與「課程回報」將統一使用 LINE 官方帳號：",
       "WaysLeader AI 課程點名上傳",
-      "https://lin.ee/wD3RjQE",
+      "加入 LINE 官方帳號：https://lin.ee/wD3RjQE",
       "",
       "⚠️ 請所有教練務必於 9/10 前完成加入！",
       "",
@@ -671,7 +671,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       const ackUrl = ackToken ? `${appUrl()}/notify-ack/${ackToken}` : undefined;
       if (ackUrl) vars.確認連結 = ackUrl;
       // 會以 Flex 卡片送出時，內文網址點不了 → 抽成卡片按鈕
-      const asCard = Boolean(template.needsAck) || items.length > 0;
+      const asCard = Boolean(template.needsAck) || items.length > 0 || opts.templateKey === "line_official_binding";
       const { body: teacherBody, buttons: linkButtons } = asCard
         ? extractLinkButtons(body)
         : { body, buttons: [] as FlexLinkButton[] };
