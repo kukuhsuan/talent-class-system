@@ -15,6 +15,7 @@ export type NotifyTemplateKey =
   | "term_kickoff_meeting"
   | "class_notes"
   | "coach_rules"
+  | "line_official_binding"
   | "typhoon"
   | "school_term"
   | "school_links"
@@ -184,6 +185,31 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
       "以上事項請所有教練共同遵守，透過一致的教學品質、專業態度及安全管理，提供學生最佳的學習體驗，也建立公司良好的品牌形象。",
       "",
       "✅ 請點選下方「確認收到」按鈕，確認您已收到並詳閱本提醒事項。",
+    ].join("\n"),
+  },
+  {
+    key: "line_official_binding",
+    label: "中南區教練 LINE 綁定通知",
+    target: "teacher",
+    editable: true,
+    needsAck: false,
+    description: "通知中南區教練加入 WaysLeader AI 課程點名上傳 LINE 官方帳號；請先篩選並勾選要通知的教練，發送前可修改截止日期與內容",
+    defaultBody: [
+      "📢 中南區教練重要通知",
+      "",
+      "之後「點名」與「課程回報」將統一使用 LINE 官方帳號：",
+      "WaysLeader AI 課程點名上傳",
+      "https://lin.ee/wD3RjQE",
+      "",
+      "⚠️ 請所有教練務必於 9/10 前完成加入！",
+      "",
+      "加入後：",
+      "✅ 收到「已自動完成綁定」→ 不需其他操作",
+      "❗ 未收到綁定成功訊息 → 請聯絡區域負責人取得 6 碼綁定碼，並直接貼到聊天室送出。",
+      "",
+      "原有課程、出勤及薪資紀錄都會保留。",
+      "",
+      "請務必於 9/10 前完成加入，謝謝大家配合！",
     ].join("\n"),
   },
   {
