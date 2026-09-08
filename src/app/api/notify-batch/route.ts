@@ -141,8 +141,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "preview") {
-    // 老師類通知才需要「挑選要通知的課程」清單
-    const courseSelection = targetType === "teacher"
+    // 只有內容真的會帶課表的老師通知，才需要「挑選要通知的課程」。
+    // 例如 LINE 綁定通知是以老師為收件單位，不應再出現課程勾選。
+    const needsCourseSelection = targetType === "teacher"
+      && (template.key === "new_term" || template.key === "first_class");
+    const courseSelection = needsCourseSelection
       ? await listTeacherCourseOptions(recipientIds)
       : { courses: [], lessonCounts: {} as Record<string, number> };
     return NextResponse.json({
