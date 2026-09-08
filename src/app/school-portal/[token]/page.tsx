@@ -1257,6 +1257,26 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
     }
   }
 
+  async function shareGeneratedImage() {
+    if (!shareImageUrl) return;
+    try {
+      const blob = await fetch(shareImageUrl).then((response) => response.blob());
+      const filename = `WaysLeader-${row.school}-${row.courseName}-${row.date}.png`;
+      const file = new File([blob], filename, { type: "image/png" });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ title: `${row.courseName}學習成果`, files: [file] });
+        return;
+      }
+      const anchor = document.createElement("a");
+      anchor.href = shareImageUrl;
+      anchor.download = filename;
+      anchor.click();
+      window.alert("此瀏覽器無法直接開啟分享選單，圖片已下載；請從相簿或下載資料夾分享到 LINE。");
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") window.alert("分享圖片失敗，請改用下載分享圖。");
+    }
+  }
+
   return (
     <article className="relative overflow-hidden rounded-[22px] border border-[#EBE1D3]/80 bg-white p-4 shadow-[0_12px_28px_rgba(154,94,50,0.06)] sm:rounded-[24px] sm:p-6">
       <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[#FBF0E4]" />
@@ -1330,9 +1350,14 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
                 {imageGenerating ? "學習卡產生中..." : "產生學習卡圖片"}
               </button>
               {shareImageUrl && (
-                <a href={shareImageUrl} download={`WaysLeader-${row.school}-${row.courseName}-${row.date}.png`} className="rounded-2xl border border-[#EBE1D3] bg-white px-3 py-3 text-center text-xs font-black text-[#57493C] shadow-sm sm:px-5 sm:text-sm">
-                  下載分享圖
-                </a>
+                <>
+                  <button type="button" onClick={shareGeneratedImage} className="rounded-2xl bg-[#315E9F] px-3 py-3 text-center text-xs font-black text-white shadow-sm sm:px-5 sm:text-sm">
+                    直接分享圖片
+                  </button>
+                  <a href={shareImageUrl} download={`WaysLeader-${row.school}-${row.courseName}-${row.date}.png`} className="rounded-2xl border border-[#EBE1D3] bg-white px-3 py-3 text-center text-xs font-black text-[#57493C] shadow-sm sm:px-5 sm:text-sm">
+                    下載分享圖
+                  </a>
+                </>
               )}
             </div>
             {shareImageUrl && (

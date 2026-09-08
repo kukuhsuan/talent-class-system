@@ -141,7 +141,7 @@ function breakLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: numbe
   return out;
 }
 // 分享圖：高度依內容動態計算（無照片時不留大片空白）；能力以標籤呈現
-async function generateShareImage(item: ReportItem, schoolName: string) {
+async function generateShareImage(item: ReportItem, schoolName: string, share = false) {
   const W = 1080, M = 48, PAD = 36;
   const measure = document.createElement("canvas").getContext("2d");
   if (!measure) return;
@@ -262,15 +262,26 @@ async function generateShareImage(item: ReportItem, schoolName: string) {
   // 匯出：污染或不支援時明確提示，不再無聲失敗
   await new Promise<void>((resolve, reject) => {
     try {
-      canvas.toBlob((blob) => {
+      canvas.toBlob(async (blob) => {
         if (!blob) { reject(new Error("no-blob")); return; }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `運動班長成果_${item.date}_${item.courseName}.png`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-        resolve();
+        const filename = `運動班長成果_${item.date}_${item.courseName}.png`;
+        const file = new File([blob], filename, { type: "image/png" });
+        try {
+          if (share && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+            await navigator.share({ title: `${item.courseName}課程成果`, files: [file] });
+          } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+          }
+          resolve();
+        } catch (error) {
+          if ((error as Error).name === "AbortError") { resolve(); return; }
+          reject(error as Error);
+        }
       }, "image/png");
     } catch (err) { reject(err as Error); }
   }).catch(() => {
@@ -352,11 +363,11 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
           <Icon name={copied ? "check" : "copy"} className="h-4 w-4" />{copied ? "已複製" : "複製給家長"}
         </button>
         <button
-          onClick={async () => { setMaking(true); try { await generateShareImage(item, schoolName); } finally { setMaking(false); } }}
+          onClick={async () => { setMaking(true); try { await generateShareImage(item, schoolName, true); } finally { setMaking(false); } }}
           disabled={making}
           className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-[10px] bg-[#1F3A6D] text-[14px] font-bold text-white disabled:opacity-50"
         >
-          <Icon name="image" className="h-4 w-4" />{making ? "產生中…" : "產生成果圖片"}
+          <Icon name="image" className="h-4 w-4" />{making ? "產生中…" : "分享成果圖片"}
         </button>
       </div>
     </article>
