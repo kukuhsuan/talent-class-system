@@ -1221,6 +1221,7 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   const [copied, setCopied] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
   const [shareImageUrl, setShareImageUrl] = useState("");
+  const [shareImageFile, setShareImageFile] = useState<File | null>(null);
   const skills = parseAbilities(row.skillFocus || reportField(row.reportContent, "能力培養") || row.aiSkillFocus);
   const progressText = reportField(row.reportContent, "課程進度") || reportField(row.reportContent, "訓練內容") || cleanProgressText(row.reportContent);
   const focusText = reportField(row.reportContent, "本堂重點");
@@ -1247,9 +1248,10 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   async function generateShareImage() {
     setImageGenerating(true);
     try {
-      const url = await createParentShareImage({ row, skills, mainText, skillMap });
+      const { url, blob } = await createParentShareImage({ row, skills, mainText, skillMap });
       if (shareImageUrl) URL.revokeObjectURL(shareImageUrl);
       setShareImageUrl(url);
+      setShareImageFile(new File([blob], `WaysLeader-${row.school}-${row.courseName}-${row.date}.png`, { type: "image/png" }));
     } catch (e) {
       window.alert((e as Error).message || "產生分享圖片失敗，請稍後再試");
     } finally {
@@ -1258,22 +1260,21 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
   }
 
   async function shareGeneratedImage() {
-    if (!shareImageUrl) return;
-    try {
-      const blob = await fetch(shareImageUrl).then((response) => response.blob());
-      const filename = `WaysLeader-${row.school}-${row.courseName}-${row.date}.png`;
-      const file = new File([blob], filename, { type: "image/png" });
-      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-        await navigator.share({ title: `${row.courseName}學習成果`, files: [file] });
-        return;
-      }
+    if (!shareImageUrl || !shareImageFile) return;
+    const download = () => {
       const anchor = document.createElement("a");
       anchor.href = shareImageUrl;
-      anchor.download = filename;
+      anchor.download = shareImageFile.name;
       anchor.click();
-      window.alert("此瀏覽器無法直接開啟分享選單，圖片已下載；請從相簿或下載資料夾分享到 LINE。");
+    };
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [shareImageFile] }))) {
+        await navigator.share({ title: `${row.courseName}學習成果`, files: [shareImageFile] });
+        return;
+      }
+      download();
     } catch (error) {
-      if ((error as Error).name !== "AbortError") window.alert("分享圖片失敗，請改用下載分享圖。");
+      if ((error as Error).name !== "AbortError") download();
     }
   }
 
@@ -1731,7 +1732,7 @@ async function renderShareCanvas({ row, skills, mainText, skillMap }: { row: Por
       else reject(new Error("產生分享圖片失敗"));
     }, "image/png");
   });
-  return URL.createObjectURL(blob);
+  return { url: URL.createObjectURL(blob), blob };
 }
 
 function compactShareText(value: string) {
