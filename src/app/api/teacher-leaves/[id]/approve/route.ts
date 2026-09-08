@@ -27,10 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           text: `✅ 您的請假申請已核准。\n\n${leave.leaveDate} ${leave.time}\n${leave.school}｜${leave.courseType}\n\n行政會協助安排代課老師。`,
         }], getLineConfig(teacher.lineRegion as LineRegion).token);
       }
-      // 這裡刻意不自動發代課詢問。原本核准當下就依「地區＋專長」群發給最多 5 位老師，
-      // 但誰適合代這堂課，行政心裡的判斷（跟園所的熟悉度、車程、最近排太滿）系統算不出來，
-      // 結果是一核准就有五個人同時收到詢問、多數還得再一一標記已取消，
-      // 老師端也被不該找他的課打擾。改由行政在「選老師發詢問」自己挑人送。
+      // 不自動群發；北部由行政挑選老師後發詢問，南部維持手動指定。
     }
     // 操作歷程：誰核准了請假（C-5）
     await writeAuditLog(req, {

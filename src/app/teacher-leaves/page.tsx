@@ -210,7 +210,7 @@ export default function TeacherLeavesPage() {
     try {
       // 核准不再自動群發詢問，提示要把下一步講出來，
       // 否則行政會以為系統已經在找人，這堂課就一路空到上課當天沒人去。
-      await action(`/api/teacher-leaves/${id}/approve`, "已核准請假，請接著按「選老師發詢問」安排代課");
+      await action(`/api/teacher-leaves/${id}/approve`, "已核准請假；北部請按「選老師發詢問」，南部請使用「手動指定代課」");
     } catch (error) {
       alert((error as Error).message);
     }
@@ -454,7 +454,7 @@ export default function TeacherLeavesPage() {
         <div className="space-y-4 border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="font-bold text-slate-800">請假申請列表｜{filterYear} 年 {filterMonth} 月｜{titleCount}</h2>
-            <p className="mt-1 text-xs text-slate-500">老師可在 LINE 申請，行政也可代為建立。月份以請假課程日期計算，不是申請時間。</p>
+            <p className="mt-1 text-xs text-slate-500">老師可在 LINE 申請，行政也可代為建立。目前「選老師發詢問」只開放北部課程及北部 LINE 官方帳號；南部請使用手動指定。月份以請假課程日期計算，不是申請時間。</p>
           </div>
           <div className="grid gap-3 md:grid-cols-[180px_180px_1fr] md:items-end">
             <Field label="年份">

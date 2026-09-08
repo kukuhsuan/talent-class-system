@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { buildSubstituteInquiryMessage, getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { getTeacherLeave, LEAVE_STATUS, upsertSubstituteInquiry } from "@/lib/teacherLeaves";
+import { listSubstituteCandidates } from "@/lib/substituteCandidates";
+
+const NORTH_REGIONS = new Set(["北部", "台北市", "新北市", "基隆市", "桃園市", "新竹市", "新竹縣"]);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -10,6 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const leave = await getTeacherLeave(Number(id));
     if (!leave) return NextResponse.json({ error: "找不到請假申請" }, { status: 404 });
     if (leave.isPayrollLocked) return NextResponse.json({ error: "此課程已鎖定薪資，不可發送代課詢問" }, { status: 409 });
+    const { target } = await listSubstituteCandidates(leave);
+    if (!NORTH_REGIONS.has(target.region)) {
+      return NextResponse.json({ error: "目前只開放北部課程使用 LINE 代課詢問" }, { status: 409 });
+    }
 
     const data = await req.json();
     const rawIds: unknown[] = Array.isArray(data.candidateTeacherIds) ? data.candidateTeacherIds : [];
@@ -30,6 +37,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!teacher.lineUserId || !teacher.lineRegion) {
         skipped++;
         skippedTeachers.push(`${teacher.name}（未綁定 LINE）`);
+        continue;
+      }
+      if (teacher.lineRegion !== "north") {
+        skipped++;
+        skippedTeachers.push(`${teacher.name}（不是北部 LINE 官方帳號）`);
         continue;
       }
       eligible.push(teacher);
