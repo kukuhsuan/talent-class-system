@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel } from "@/lib/courseMeta";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { requirePortalVerification } from "@/lib/portalAuth";
-import { signParentShareToken } from "@/lib/publicAccessToken";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +92,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         aiSummary: r.aiSummary,
         aiTeachingNote: r.aiTeachingNote,
         photoUrls: photos,
-        shareUrl: `/learning-share/${encodeURIComponent(signParentShareToken(r.id))}`,
       };
     });
 

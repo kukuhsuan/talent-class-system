@@ -18,7 +18,7 @@ import {
   withoutAdminNotes,
 } from "@/lib/courseConfirmation";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
-import { signParentShareToken, signTeacherCardToken } from "@/lib/publicAccessToken";
+import { signTeacherCardToken } from "@/lib/publicAccessToken";
 // 驗證閘門抽到 lib/portalAuth，底下的 reports/ratings/summary/photo/certificate 子路由共用同一套
 import { requirePortalVerification } from "@/lib/portalAuth";
 import { writeAuditLog } from "@/lib/auditLog";
@@ -277,7 +277,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       representativePhotoUrl: portalPhotoUrl(r.reportPhotos, token),
       photoUrls: portalPhotoUrls(r.reportPhotos, token),
       schoolNotifyStatus: r.schoolNotifyStatus,
-      shareUrl: `/learning-share/${encodeURIComponent(signParentShareToken(r.id))}`,
     }));
 
     const monthlyRows = records.filter((r) => !r.cancelled).map((r) => ({

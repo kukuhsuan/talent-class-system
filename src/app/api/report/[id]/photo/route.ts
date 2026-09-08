@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { get, put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
-import { verifyParentShareToken, verifyPublicAccessToken } from "@/lib/publicAccessToken";
+import { verifyPublicAccessToken } from "@/lib/publicAccessToken";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE } from "@/lib/reportWindow";
 
@@ -40,18 +40,10 @@ function storedToUrl(stored: string, tokenParam: string) {
   return stored;
 }
 
-function verifyPhotoReadToken(token: string) {
-  try {
-    return verifyPublicAccessToken(token, "report");
-  } catch {
-    return verifyParentShareToken(token);
-  }
-}
-
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { attendanceId } = verifyPhotoReadToken(decodeURIComponent(id));
+    const { attendanceId } = verifyPublicAccessToken(decodeURIComponent(id), "report");
     const pathname = req.nextUrl.searchParams.get("path") ?? "";
     if (!pathname.startsWith("report-photos/")) {
       return NextResponse.json({ error: "照片路徑不正確" }, { status: 400 });
