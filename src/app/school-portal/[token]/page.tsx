@@ -30,7 +30,7 @@ type PortalData = {
     id: number; date: string; school: string; courseType?: string; courseName: string; department: string; category: string; time: string; teacherName: string;
     studentCount: number; reportContent: string; skillFocus: string; classStatus: string; incident: boolean;
     incidentChild: string; incidentProcess: string; incidentAction: string; incidentNotified: string;
-    aiSummary: string; aiSkillFocus: string; aiTeachingNote: string; representativePhotoUrl: string; photoUrls?: string[]; schoolNotifyStatus: string;
+    aiSummary: string; aiSkillFocus: string; aiTeachingNote: string; representativePhotoUrl: string; photoUrls?: string[]; schoolNotifyStatus: string; shareUrl?: string;
   }>;
   teachers: Array<{
     id: number;
@@ -1244,6 +1244,23 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
     }
   }
 
+  async function shareToParents() {
+    if (!row.shareUrl) return;
+    const url = new URL(row.shareUrl, window.location.origin).toString();
+    const data = { title: `${row.courseName}學習成果`, text: shareText, url };
+    try {
+      if (navigator.share) {
+        await navigator.share(data);
+      } else {
+        await navigator.clipboard.writeText(`${shareText}\n\n${url}`);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1600);
+      }
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") window.prompt("複製以下連結分享給家長", url);
+    }
+  }
+
   async function generateShareImage() {
     setImageGenerating(true);
     try {
@@ -1323,6 +1340,11 @@ function OutcomeCard({ row, skillMap }: { row: PortalData["reports"][number]; sk
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex sm:flex-wrap sm:gap-3">
+              {row.shareUrl && (
+                <button type="button" onClick={shareToParents} className="rounded-2xl bg-[#315E9F] px-3 py-3 text-xs font-black text-white shadow-sm transition hover:bg-[#244B82] sm:px-5 sm:text-sm">
+                  分享連結給家長
+                </button>
+              )}
               <button type="button" onClick={copyShareText} className="rounded-2xl bg-[#C06B3E] px-3 py-3 text-xs font-black text-white shadow-sm transition hover:bg-[#A9552F] sm:px-5 sm:text-sm">
                 {copied ? "已複製分享文字" : "複製給家長文字"}
               </button>

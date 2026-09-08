@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { requiredAuthSecret } from "@/lib/authSecret";
 
 type PublicTokenPayload = {
-  type: "report" | "assessment" | "recruitment" | "teacher_resume" | "teacher_card" | "teacher_document";
+  type: "report" | "parent_share" | "assessment" | "recruitment" | "teacher_resume" | "teacher_card" | "teacher_document";
   attendanceId: number;
   campaignId?: number;
   teacherId?: number;
@@ -87,6 +87,15 @@ export function verifyPublicAccessToken(token: string, expectedType: PublicToken
   if (payload.type !== expectedType || !Number.isFinite(payload.attendanceId)) throw new Error("Invalid token");
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) throw new Error("Expired token");
   return { attendanceId: payload.attendanceId };
+}
+
+// 家長成果卡是唯讀分享憑證，刻意與可修改課程回報的 report token 分開。
+export function signParentShareToken(attendanceId: number, maxAgeDays = 90) {
+  return signPublicAccessToken("parent_share", attendanceId, maxAgeDays);
+}
+
+export function verifyParentShareToken(token: string) {
+  return verifyPublicAccessToken(token, "parent_share");
 }
 
 export function signRecruitmentToken(campaignId: number, teacherId: number, maxAgeDays = 90) {

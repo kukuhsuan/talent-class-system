@@ -18,7 +18,7 @@ export type PortalSummary = {
 type ReportItem = {
   id: number; date: string; courseName: string; teacherName: string; time: string;
   studentCount: number; reportContent: string; skillFocus: string; classStatus: string;
-  incident: boolean; incidentNote: string; aiSummary: string; aiTeachingNote: string; photoUrls: string[];
+  incident: boolean; incidentNote: string; aiSummary: string; aiTeachingNote: string; photoUrls: string[]; shareUrl?: string;
 };
 type ReportsResponse = {
   year: number; month: number; total: number; lessonCount: number; reportedCount: number;
@@ -307,6 +307,21 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
     } catch { window.prompt("請長按複製以下文字", buildParentText(item, schoolName)); }
   }
 
+  async function shareLink() {
+    if (!item.shareUrl) return;
+    const url = new URL(item.shareUrl, window.location.origin).toString();
+    const text = buildParentText(item, schoolName);
+    try {
+      if (navigator.share) await navigator.share({ title: `${item.courseName}課程成果`, text, url });
+      else {
+        await navigator.clipboard.writeText(`${text}\n\n${url}`);
+        setCopied(true); setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") window.prompt("請複製以下連結分享給家長", url);
+    }
+  }
+
   return (
     <article className="overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white">
       <div className="p-4">
@@ -347,7 +362,10 @@ function OutcomeCard({ item, schoolName }: { item: ReportItem; schoolName: strin
           <Icon name="chevron" className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#E2E8F0] p-3">
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#E2E8F0] p-3 sm:grid-cols-3">
+        {item.shareUrl && <button onClick={shareLink} className="col-span-2 flex min-h-[44px] items-center justify-center gap-1.5 rounded-[10px] bg-[#315E9F] text-[14px] font-bold text-white sm:col-span-1">
+          分享連結給家長
+        </button>}
         <button onClick={copyText} className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-[10px] border border-[#E2E8F0] text-[14px] font-bold text-[#1F3A6D]">
           <Icon name={copied ? "check" : "copy"} className="h-4 w-4" />{copied ? "已複製" : "複製給家長"}
         </button>
