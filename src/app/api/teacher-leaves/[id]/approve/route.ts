@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           text: `✅ 您的請假申請已核准。\n\n${leave.leaveDate} ${leave.time}\n${leave.school}｜${leave.courseType}\n\n行政會協助安排代課老師。`,
         }], getLineConfig(teacher.lineRegion as LineRegion).token);
       }
-      // 不自動群發；北部由行政挑選老師後發詢問，南部維持手動指定。
+      // 不自動群發；由行政確認候選老師後再逐一發送詢問。
     }
     // 操作歷程：誰核准了請假（C-5）
     await writeAuditLog(req, {
