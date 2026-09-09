@@ -129,6 +129,7 @@ export async function notifySchoolReport(attendanceId: number): Promise<NotifyRe
           courseType: att.course.courseType,
           date: att.date.toISOString().slice(0, 10),
           studentCount: displayCount,
+          portalUrl: `${appUrl()}/school-portal/${encodeURIComponent(await getOrCreatePortalCode(school.id))}`,
           content: att.reportContent,
         })
       : buildSchoolReportMessage({

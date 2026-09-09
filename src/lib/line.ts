@@ -1310,6 +1310,7 @@ export function buildUpbearSchoolReportMessage(opts: {
   courseType: string;
   date: string;
   studentCount: number | null;
+  portalUrl?: string;
   content: string;
 }) {
   const field = (label: string) => opts.content
@@ -1367,6 +1368,13 @@ export function buildUpbearSchoolReportMessage(opts: {
           { type: "separator", color: "#EEDCCB" },
           detail("今日活動", activity, "#FFF1E5"),
           detail("孩子表現", performance, "#F4EEDF"),
+          ...(opts.portalUrl ? [{
+            type: "button" as const,
+            style: "primary" as const,
+            color: "#C96F3B",
+            margin: "md" as const,
+            action: { type: "uri" as const, label: "查看園所學習成果", uri: opts.portalUrl },
+          }] : []),
         ],
       },
     },
