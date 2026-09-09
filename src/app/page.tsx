@@ -201,6 +201,12 @@ export default function Home() {
     const [, month, day] = iso.slice(0, 10).split("-");
     return `${Number(month)}/${Number(day)}`;
   };
+  const failedTeacherNames = (details: string) => details
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(":", 1)[0].trim())
+    .filter(Boolean);
   const tomorrowStr = taipeiDateIso(new Date(now.getTime() + 86400000));
   const automationCards = [
     // 目前只剩前一天的老師提醒是排程發送：
@@ -310,6 +316,22 @@ export default function Home() {
                 </div>
                 <div className="mt-2 text-xs text-slate-500">預定 {time}</div>
                 {run && <div className="mt-1 text-xs font-semibold text-slate-600">成功 {run.success}／{run.total}{run.failed ? `・失敗 ${run.failed}` : ""}</div>}
+                {run && run.failed > 0 && (
+                  <details className="mt-3 border-t border-slate-100 pt-2">
+                    <summary className="cursor-pointer text-xs font-semibold text-amber-700">
+                      查看失敗名單（{run.failed}）
+                    </summary>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {failedTeacherNames(run.details).length > 0 ? failedTeacherNames(run.details).map((name, index) => (
+                        <span key={`${name}:${index}`} className="rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+                          {name}
+                        </span>
+                      )) : (
+                        <span className="text-xs text-slate-500">本次未留下姓名，請到客服通知中心查看 LINE 發送紀錄。</span>
+                      )}
+                    </div>
+                  </details>
+                )}
               </div>
             );
           })}
