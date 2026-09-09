@@ -258,6 +258,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         console.warn("course attendance time stamp skipped", { courseId: course.id, message });
         warnings.push(`新出勤時間標記略過：${message}`);
       }
+    }
+    // 日期主檔可能在舊版已儲存成功，但當時清理出勤失敗。即使這次日期沒有再變動，
+    // 仍重新核對一次，讓管理員直接按儲存即可自動修復殘留的未來預排堂次。
+    if (allScheduled.length > 0) {
       try {
         await pruneFutureUnreportedAttendanceDates(course.id, allScheduled);
       } catch (pruneError) {
