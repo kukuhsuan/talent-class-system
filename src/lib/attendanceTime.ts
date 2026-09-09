@@ -7,6 +7,7 @@ import { attendanceHoursOverrideMap, ensureAttendanceHoursOverrideColumn } from 
 import { normalizeCategory } from "@/lib/courseMeta";
 import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 import { OPEN_LEAVE_STATUSES } from "@/lib/leaveStatus";
+import { REMOVED_FROM_COURSE_SCHEDULE_REASON } from "@/lib/attendanceVisibility";
 
 // Module-level flag: avoids repeated PRAGMA table_info round-trips within the same process lifetime.
 // (Mirrors the pattern used by coursePayrollColumnReady in payrollHours.ts)
@@ -310,7 +311,17 @@ export async function pruneFutureUnreportedAttendanceDates(courseId: number, kee
   const unique = [...new Set(keepDates.map((date) => date.slice(0, 10)).filter(Boolean))];
   if (unique.length === 0) return { count: 0 };
 
-  return prisma.attendance.deleteMany({
+  // 日期日後重新加回課表時，恢復先前因稽核關聯而只能保留的預排堂次。
+  await prisma.attendance.updateMany({
+    where: {
+      courseId,
+      date: { in: unique.map(parseAttendanceDay) },
+      cancelReason: REMOVED_FROM_COURSE_SCHEDULE_REASON,
+    },
+    data: { cancelled: false, cancelReason: "" },
+  });
+
+  const candidates = await prisma.attendance.findMany({
     where: {
       courseId,
       date: {
@@ -325,5 +336,36 @@ export async function pruneFutureUnreportedAttendanceDates(courseId: number, kee
       studentCountA: null,
       studentCountB: null,
     },
+    select: { id: true },
   });
+  if (candidates.length === 0) return { count: 0, preserved: 0 };
+
+  let count = 0;
+  let preserved = 0;
+  for (const { id } of candidates) {
+    try {
+      // 器材提醒是由預排堂次衍生；日期移除後應一起清掉，否則會留下孤兒提醒。
+      await prisma.$transaction([
+        prisma.attendanceEquipment.deleteMany({ where: { attendanceId: id } }),
+        prisma.attendance.delete({ where: { id } }),
+      ]);
+      count += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/FOREIGN KEY constraint failed|foreign key constraint/i.test(message)) throw error;
+
+      // 已有請假、代課、課程異動或評量等歷史時不能破壞關聯資料。
+      // 改為保留但從所有營運清單隱藏，避免日期縮短後仍被當成待上課／計薪堂次。
+      await prisma.attendance.update({
+        where: { id },
+        data: {
+          cancelled: true,
+          cancelReason: REMOVED_FROM_COURSE_SCHEDULE_REASON,
+        },
+      });
+      preserved += 1;
+    }
+  }
+
+  return { count, preserved };
 }
