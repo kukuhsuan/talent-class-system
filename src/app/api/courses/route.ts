@@ -13,6 +13,7 @@ import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/l
 import { writeAuditLog } from "@/lib/auditLog";
 import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
 import { courseScheduleConflictMessage, findCourseScheduleConflict } from "@/lib/courseScheduleConflict";
+import { REMOVED_FROM_COURSE_SCHEDULE_REASON } from "@/lib/attendanceVisibility";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -128,7 +129,10 @@ export async function GET(req: NextRequest) {
     assistantTeacher: { select: { id: true, name: true } },
     schoolRel: { select: { id: true, name: true, type: true, region: true, address: true } },
     attendances: includeDates ? {
-      where: { date: attendanceDateRange },
+      where: {
+        date: attendanceDateRange,
+        NOT: { cancelReason: REMOVED_FROM_COURSE_SCHEDULE_REASON },
+      },
       select: { date: true },
       orderBy: { date: "asc" as const },
     } : false,
