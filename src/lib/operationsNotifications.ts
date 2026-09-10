@@ -3,10 +3,9 @@ import { getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 
 export const OPERATIONS_RECIPIENTS = [
-  { name: "黃一瀞", area: "north" as const, label: "北部" },
-  { name: "鄭伃茵", area: "south" as const, label: "南部" },
+  { name: "黃一瀞", area: "all" as const, label: "全台" },
+  { name: "江芃菱", area: "all" as const, label: "全台" },
   { name: "咕咕瑄", area: "all" as const, label: "全台" },
-  { name: "Amber", area: "all" as const, label: "全台" },
 ];
 
 let deliveryTableReady = false;
@@ -191,6 +190,39 @@ export function buildOperationsAlertMessage(text: string) {
         { type: "separator", color: "#F0CDD2" },
         { type: "text", text: lines.join("\n") || "請至管理系統查看詳細資料。", color: "#6D4A50", size: "sm", wrap: true },
       ] },
+    },
+  };
+}
+
+export function buildSalaryReminderMessage(input: { year: number; month: number }) {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || "https://talent-class-system.vercel.app";
+  const query = `year=${input.year}&month=${input.month}`;
+  return {
+    type: "flex",
+    altText: `💰 ${input.year} 年 ${input.month} 月薪資計算提醒`,
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#315FA8", paddingAll: "18px", spacing: "sm",
+        contents: [
+          { type: "text", text: "💰 月底薪資作業提醒", color: "#FFFFFF", weight: "bold", size: "xl" },
+          { type: "text", text: `${input.year} 年 ${input.month} 月｜今天是 28 日`, color: "#DCEAFF", size: "sm" },
+        ],
+      },
+      body: {
+        type: "box", layout: "vertical", paddingAll: "17px", spacing: "md",
+        contents: [
+          { type: "text", text: "請開始核對本月老師薪資", weight: "bold", color: "#20334F", size: "md", wrap: true },
+          { type: "text", text: "建議順序：補齊上課回報與人數 → 確認代課與計薪時數 → 核對薪資總額。", color: "#66758A", size: "sm", wrap: true },
+        ],
+      },
+      footer: {
+        type: "box", layout: "horizontal", paddingAll: "12px", spacing: "sm",
+        contents: [
+          { type: "button", style: "secondary", height: "sm", action: { type: "uri", label: "月底會計包", uri: `${baseUrl}/accounting?${query}` } },
+          { type: "button", style: "primary", height: "sm", color: "#315FA8", action: { type: "uri", label: "開始算薪資", uri: `${baseUrl}/salary?${query}` } },
+        ],
+      },
     },
   };
 }

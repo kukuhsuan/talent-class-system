@@ -39,9 +39,11 @@ export async function GET(req: NextRequest) {
   const date = new Date(`${dateIso}T00:00:00.000Z`);
   const dayName = dayNameOfIso(dateIso);
   const { start, end } = dayBounds(dateIso);
+  const unreportedSince = new Date(start);
+  unreportedSince.setUTCDate(unreportedSince.getUTCDate() - 7);
   const courseWindow = courseDateWindowWhere(dateIso);
   const datedCourseIds = await courseIdsWithAnyAttendance({ isActive: true, ...courseWindow }, date);
-  const [attendances, cancelledAttendances, weeklyCourses, recipients] = await Promise.all([
+  const [attendances, cancelledAttendances, recentUnreported, weeklyCourses, recipients] = await Promise.all([
     prisma.attendance.findMany({
       where: { date: { gte: start, lt: end }, cancelled: false, course: { isActive: true, ...courseWindow } },
       include: { course: true, actualTeacher: true, assistantTeacher: true },
@@ -51,6 +53,17 @@ export async function GET(req: NextRequest) {
       where: { date: { gte: start, lt: end }, cancelled: true, course: { isActive: true, ...courseWindow } },
       include: { course: true, actualTeacher: true },
       orderBy: { scheduledTime: "asc" },
+    }),
+    prisma.attendance.findMany({
+      where: {
+        date: { gte: unreportedSince, lt: start },
+        cancelled: false,
+        reportSentAt: null,
+        course: { isActive: true },
+      },
+      include: { course: true, actualTeacher: true },
+      orderBy: { date: "desc" },
+      take: 30,
     }),
     prisma.course.findMany({
       where: { isActive: true, ...courseWindow, dayOfWeek: dayName, ...(datedCourseIds.size ? { id: { notIn: [...datedCourseIds] } } : {}) },
@@ -99,6 +112,15 @@ export async function GET(req: NextRequest) {
       level: "urgent",
       title: `${attendance.course.school} 已停課`,
       detail: `${attendance.scheduledTime || attendance.course.time || "時間未填"}｜${attendance.course.courseType}${attendance.cancelReason ? `｜${attendance.cancelReason}` : ""}`,
+    });
+  }
+  for (const attendance of recentUnreported) {
+    const courseDate = attendance.date.toISOString().slice(0, 10);
+    attentionItems.push({
+      region: attendance.course.region,
+      level: "warning",
+      title: `${attendance.actualTeacher.name} 尚未完成課程回報`,
+      detail: `${courseDate}｜${attendance.course.school}｜${attendance.course.courseType}`,
     });
   }
 

@@ -64,7 +64,7 @@ export async function ensureSystemAlertTable() {
 
 /** 推播文字訊息給主管（未設定 ADMIN_ALERT_LINE_USER_ID 時靜默略過） */
 export async function pushAdminAlert(text: string): Promise<boolean> {
-  // 固定營運通知群組：黃一瀞、鄭伃茵、咕咕瑄。
+  // 固定營運通知群組：黃一瀞、江芃菱、咕咕瑄。
   const operationsResult = await pushOperationsAlert(text);
   const to = process.env.ADMIN_ALERT_LINE_USER_ID?.trim();
   if (!to) return operationsResult.sent > 0;
