@@ -30,15 +30,17 @@ function addOption(map: Map<string, { code: string; label: string }>, code: stri
 export async function GET() {
   await ensureCourseOptionTable();
 
-  const optionRows = await prisma.$queryRawUnsafe<RawCourseOption[]>(
-    "SELECT code, label, isActive FROM CourseOption WHERE isActive = true ORDER BY label ASC",
-  );
-  const courseRows = await prisma.$queryRawUnsafe<RawCourseType[]>(
-    "SELECT DISTINCT courseType FROM Course WHERE courseType IS NOT NULL AND TRIM(courseType) != ''",
-  );
-  const progressRows = await prisma.$queryRawUnsafe<RawCourseType[]>(
-    "SELECT DISTINCT courseType FROM CourseProgress WHERE courseType IS NOT NULL AND TRIM(courseType) != ''",
-  );
+  const [optionRows, courseRows, progressRows] = await Promise.all([
+    prisma.$queryRawUnsafe<RawCourseOption[]>(
+      "SELECT code, label, isActive FROM CourseOption WHERE isActive = true ORDER BY label ASC",
+    ),
+    prisma.$queryRawUnsafe<RawCourseType[]>(
+      "SELECT DISTINCT courseType FROM Course WHERE courseType IS NOT NULL AND TRIM(courseType) != ''",
+    ),
+    prisma.$queryRawUnsafe<RawCourseType[]>(
+      "SELECT DISTINCT courseType FROM CourseProgress WHERE courseType IS NOT NULL AND TRIM(courseType) != ''",
+    ),
+  ]);
 
   const options = new Map<string, { code: string; label: string }>();
   COURSE_OPTIONS.forEach((option) => addOption(options, option.code, option.label));
@@ -48,6 +50,7 @@ export async function GET() {
 
   return NextResponse.json(
     [...options.values()].sort((a, b) => a.label.localeCompare(b.label, "zh-Hant")),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } },
   );
 }
 

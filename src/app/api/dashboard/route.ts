@@ -8,6 +8,7 @@ import { attendanceMissingItems, isPendingReport } from "@/lib/reportWindow";
 import { isWaitingTeacherName, WAITING_TEACHER_NAME } from "@/lib/teacherAssignment";
 import { equipmentNextStopLabel, equipmentSummaryLabels } from "@/lib/equipmentReminderCore";
 import { automationRunsForDates } from "@/lib/automationHealth";
+import { openSystemAlertSummary } from "@/lib/systemAlerts";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
 
   // 首頁所有獨立資料一次平行讀取，避免先等主要資料、再依序等器材與排程健康度，
   // 冷啟動時可少掉兩段資料庫往返。
-  const [courses, todayAttendance, pendingCandidates, pendingSubstituteRows, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups, automationRuns] = await Promise.all([
+  const [courses, todayAttendance, pendingCandidates, pendingSubstituteRows, teacherCount, unboundTeacherCount, datedCourseIds, changeRequestGroups, automationRuns, alertSummary] = await Promise.all([
     prisma.course.findMany({
       where: { isActive: true, ...todayCourseWindow, ...deptFilter },
       select: {
@@ -131,6 +132,7 @@ export async function GET(req: NextRequest) {
       _count: { _all: true },
     }),
     automationRunsForDates([todayIso, tomorrowIso]).catch(() => []),
+    openSystemAlertSummary().catch(() => ({ total: 0, p1: 0, categories: [] })),
   ]);
 
   const validTodayAttendance = todayAttendance.filter((item) => courseOccursOnIso(item.course, todayIso));
@@ -217,6 +219,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     equipment,
     automationHealth,
+    alertSummary,
     pendingSubstituteCount,
     pendingSubstitutePastCount,
     todayCourseCount: todayCourseIds.size,

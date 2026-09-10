@@ -196,6 +196,9 @@ export default function CoursesPage() {
   const [courseOptions, setCourseOptions] = useState<CourseOption[]>(COURSE_OPTIONS.map((option) => ({ ...option })));
   const [form, setForm] = useState({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") });
   const [editing, setEditing] = useState<number | null>(null);
+  const [editingOriginalDates, setEditingOriginalDates] = useState<string[]>([]);
+  const [editingOriginalForm, setEditingOriginalForm] = useState<CourseForm | null>(null);
+  const [undoDraft, setUndoDraft] = useState<{ courseId: number; form: CourseForm; currentDates: string[] } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filterDepartment, setFilterDepartment] = useState(dept || "");
   const [filterRegion, setFilterRegion] = useState("");
@@ -259,7 +262,7 @@ export default function CoursesPage() {
     setLoadingOptions(true);
     try {
       const [teacherRes, schoolRes, optionRes] = await Promise.all([
-        fetch("/api/teachers", { cache: "no-store" }),
+        fetch("/api/teachers?minimal=1"),
         fetch("/api/schools?minimal=1", { cache: "no-store" }),
         fetch("/api/course-options", { cache: "no-store" }),
       ]);
@@ -366,6 +369,8 @@ export default function CoursesPage() {
   function startCreate() {
     setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") });
     setEditing(null);
+    setEditingOriginalDates([]);
+    setEditingOriginalForm(null);
     setShowForm(true);
     void fetchNextCode();
   }
@@ -377,6 +382,20 @@ export default function CoursesPage() {
     if (parsed.errors.length > 0) return alert(`日期格式無法解析：${parsed.errors.join("、")}`);
     const scheduledDates = collectScheduledDates(form);
     if ((form.dateMode === "range" || form.dateMode === "weekly") && scheduledDates.length === 0) return alert("請確認日期區間與星期設定");
+    if (editing !== null) {
+      const removedDates = editingOriginalDates.filter((date) => !scheduledDates.includes(date));
+      const addedDates = scheduledDates.filter((date) => !editingOriginalDates.includes(date));
+      if (removedDates.length > 0 || addedDates.length > 0) {
+        const lines = [
+          `這次會調整 ${removedDates.length + addedDates.length} 個日期：`,
+          removedDates.length ? `移除 ${removedDates.length} 堂：${removedDates.slice(0, 8).join("、")}${removedDates.length > 8 ? "…" : ""}` : "",
+          addedDates.length ? `新增 ${addedDates.length} 堂：${addedDates.slice(0, 8).join("、")}${addedDates.length > 8 ? "…" : ""}` : "",
+          "",
+          "已上課、已回報或已鎖定薪資的紀錄會保留；只會清理尚未發生且未回報的多餘日期。確定儲存？",
+        ].filter((line) => line !== "");
+        if (!confirm(lines.join("\n"))) return;
+      }
+    }
     const autoDay = scheduledDates[0] ? weekdayOfIso(scheduledDates[0]) : form.dayOfWeek;
     const targetDays = new Set((scheduledDates.length > 0 ? scheduledDates.map(weekdayOfIso) : [form.dayOfWeek]).filter(Boolean));
     const assistantId = form.assistantTeacherId ? Number(form.assistantTeacherId) : null;
@@ -427,7 +446,16 @@ export default function CoursesPage() {
       }
       const result = await res.json().catch(() => ({}));
       const wasAfterSchool = form.department === "安親班";
+      if (editing !== null && editingOriginalForm) {
+        setUndoDraft({
+          courseId: editing,
+          form: { ...editingOriginalForm, version: Number(result.version) || editingOriginalForm.version },
+          currentDates: scheduledDates,
+        });
+      }
       setForm({ ...EMPTY_FORM, department: coerceDept(dept || "幼兒園") }); setEditing(null); setShowForm(false); void loadCourses();
+      setEditingOriginalDates([]);
+      setEditingOriginalForm(null);
       const warnings = Array.isArray(result.warnings) ? result.warnings.filter(Boolean) : [];
       const baseMsg = warnings.length > 0 ? `課程已儲存，但${warnings[0]}` : "課程已儲存";
       const afterSchoolHint = wasAfterSchool ? "｜請至「上課紀錄」設定每天老師" : "";
@@ -477,19 +505,22 @@ export default function CoursesPage() {
     } catch { /* fallback to c */ }
 
     const existingDates = uniqueSortedDates(fullCourse.scheduledDates ?? []);
+    setEditingOriginalDates(existingDates);
     const inferredWeekly = inferWeeklyDates(existingDates);
     const persistedMode = DATE_MODES.some((mode) => mode.value === fullCourse.recurrenceType) ? fullCourse.recurrenceType : "";
     const dateMode = persistedMode || (inferredWeekly ? "weekly" : "multiple");
     const recurrenceStart = fullCourse.startDate?.slice(0, 10) || inferredWeekly?.start || "";
     const recurrenceEnd = fullCourse.endDate?.slice(0, 10) || inferredWeekly?.end || "";
     const recurrenceDays = sanitizeCourseWeekdays(fullCourse.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [fullCourse.dayOfWeek || "星期一"]);
-    setForm({ code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
+    const nextForm: CourseForm = { code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
       courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), category: normalizeCategory(fullCourse.category),
       department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes.replace(/\s*\[\[TERM:[^\]]+\]\]\s*/g, " ").trim(), academicTermOverride: fullCourse.academicTermOverride ?? "",
       version: fullCourse.version ?? null,
       dateMode, scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: dateMode === "weekly" ? [] : existingDates,
       rangeStart: dateMode === "range" ? recurrenceStart : "", rangeEnd: dateMode === "range" ? recurrenceEnd : "",
-      recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays.length > 0 ? recurrenceDays : ["星期一"] });
+      recurringStart: dateMode === "weekly" ? recurrenceStart : "", recurringEnd: dateMode === "weekly" ? recurrenceEnd : "", recurringDays: recurrenceDays.length > 0 ? recurrenceDays : ["星期一"] };
+    setForm(nextForm);
+    setEditingOriginalForm(nextForm);
     setEditing(c.id); setShowForm(true);
     scrollToFormOnEdit();
   };
@@ -540,10 +571,29 @@ export default function CoursesPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const parsedDates = form.dateMode === "multiple" ? parseCourseDateInput(form.scheduledDateText, Number(form.scheduledDateYear)) : { dates: [], errors: [] };
   const previewDates = collectScheduledDates(form);
+  const removedPreviewDates = editing !== null ? editingOriginalDates.filter((date) => !previewDates.includes(date)) : [];
+  const addedPreviewDates = editing !== null ? previewDates.filter((date) => !editingOriginalDates.includes(date)) : [];
 
   return (
     <div>
       <Toast toast={toast} />
+      {undoDraft && !showForm && (
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 sm:flex-row sm:items-center sm:justify-between">
+          <span>剛才的課程修改可以復原；系統會先把舊內容重新帶入，確認後再儲存。</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => {
+              setForm(undoDraft.form);
+              setEditing(undoDraft.courseId);
+              setEditingOriginalDates(undoDraft.currentDates);
+              setEditingOriginalForm(null);
+              setShowForm(true);
+              setUndoDraft(null);
+              scrollToFormOnEdit();
+            }} className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white">檢視並復原</button>
+            <button type="button" onClick={() => setUndoDraft(null)} className="rounded-lg px-3 py-2 text-blue-600">關閉</button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-slate-800">課程排班</h1>
@@ -837,6 +887,14 @@ export default function CoursesPage() {
                   ))}
                 </div>
               )}
+              {editing !== null && (removedPreviewDates.length > 0 || addedPreviewDates.length > 0) && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <div className="font-bold">儲存前影響預覽</div>
+                  {removedPreviewDates.length > 0 && <div className="mt-1">將移除 {removedPreviewDates.length} 堂：{removedPreviewDates.slice(0, 8).join("、")}{removedPreviewDates.length > 8 ? "…" : ""}</div>}
+                  {addedPreviewDates.length > 0 && <div className="mt-1">將新增 {addedPreviewDates.length} 堂：{addedPreviewDates.slice(0, 8).join("、")}{addedPreviewDates.length > 8 ? "…" : ""}</div>}
+                  <div className="mt-1 text-amber-700">既有回報、代課與薪資鎖定紀錄不會被刪除。</div>
+                </div>
+              )}
               {parsedDates.errors.length > 0 && <p className="mt-2 text-xs text-red-500">無法解析：{parsedDates.errors.join("、")}</p>}
             </div>
             <div className="md:col-span-4 flex items-end pb-2">
@@ -848,7 +906,7 @@ export default function CoursesPage() {
           </div>
           <div className="flex gap-2 mt-4">
             <SaveButton saving={saving} onClick={save} savingText="儲存中，請稍候…" />
-            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button disabled={saving} onClick={() => { setShowForm(false); setEditing(null); setEditingOriginalDates([]); setEditingOriginalForm(null); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60">取消</button>
           </div>
           {saveStatus && <p className="mt-2 text-sm font-medium text-blue-700">{saveStatus}</p>}
         </div>

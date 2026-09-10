@@ -17,6 +17,7 @@ type DashboardStats = {
   unboundTeacherCount: number;
   teacherCount: number;
   courseChanges: Record<string, number>;
+  alertSummary: { total: number; p1: number; categories: Array<{ category: string; total: number }> };
 };
 type PendingDetail = {
   id: number;
@@ -76,6 +77,7 @@ const EMPTY_STATS: DashboardStats = {
   unboundTeacherCount: 0,
   teacherCount: 0,
   courseChanges: {},
+  alertSummary: { total: 0, p1: 0, categories: [] },
 };
 
 export default function Home() {
@@ -126,6 +128,7 @@ export default function Home() {
         unboundTeacherCount: Number(data.unboundTeacherCount ?? 0),
         teacherCount: Number(data.teacherCount ?? 0),
         courseChanges: data.courseChanges ?? {},
+        alertSummary: data.alertSummary ?? { total: 0, p1: 0, categories: [] },
       });
       setPendingDetails(Array.isArray(data.pendingDetails) ? data.pendingDetails.slice(0, 5) : []);
       setEquipmentItems(Array.isArray(data.equipment?.items) ? data.equipment.items : []);
@@ -196,6 +199,7 @@ export default function Home() {
     // 待指派代課＝這堂課沒有人會去上。已經過去的課一律紅色：那不是還來得及找人，是已經開了天窗。
     { label: "待指派代課", value: stats.pendingSubstituteCount, href: "/attendance?status=unassigned", tone: stats.pendingSubstitutePastCount > 0 ? "err" : stats.pendingSubstituteCount > 0 ? "warn" : "idle" },
     { label: "LINE 未綁定", value: stats.unboundTeacherCount, href: "/notify", tone: "idle" },
+    { label: "待處理異常", value: stats.alertSummary.total, href: "/alerts", tone: stats.alertSummary.p1 > 0 ? "err" : stats.alertSummary.total > 0 ? "warn" : "idle" },
   ];
   const formatDate = (iso: string) => {
     const [, month, day] = iso.slice(0, 10).split("-");
@@ -237,6 +241,19 @@ export default function Home() {
         </div>
       )}
 
+      <div className="mb-4 grid grid-cols-4 gap-2 md:hidden" aria-label="手機快速操作">
+        {[
+          ["今日課表", "/schedule"],
+          ["上課紀錄", "/attendance"],
+          ["老師請假", "/teacher-leaves"],
+          ["LINE 通知", "/notify"],
+        ].map(([label, href]) => (
+          <Link key={href} href={href} className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-xs font-bold text-slate-700 shadow-sm">
+            {label}
+          </Link>
+        ))}
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -260,7 +277,7 @@ export default function Home() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {cards.map((card) => (
             <StatCard key={card.label} label={card.label} value={card.value} href={card.href} tone={card.tone} loading={loading} />
           ))}

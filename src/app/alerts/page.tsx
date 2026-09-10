@@ -10,6 +10,7 @@ type AlertRow = {
   category: string;
   title: string;
   detail: string;
+  dedupeKey: string;
   status: string;
   resolvedBy: string;
   resolvedAt: string | null;
@@ -25,6 +26,7 @@ export default function AlertsPage() {
   const [levelFilter, setLevelFilter] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
   const { toast, showToast } = useToast();
 
   const load = useCallback(async () => {
@@ -64,6 +66,30 @@ export default function AlertsPage() {
     } finally {
       setUpdatingId(null);
     }
+  }
+
+  async function retryNotification(alert: AlertRow) {
+    setRetryingId(alert.id);
+    try {
+      const res = await fetch(`/api/alerts/${alert.id}/retry`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "重送失敗");
+      showToast("success", "通知已重新發送，異常單已自動結案");
+      await load();
+    } catch (error) {
+      showToast("error", (error as Error).message || "重送失敗");
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
+  function actionHref(alert: AlertRow) {
+    if (alert.dedupeKey.startsWith("notify-fail:")) return "/progress";
+    if (alert.dedupeKey.startsWith("unlinked-course:")) return "/courses";
+    if (alert.category.includes("代課")) return "/teacher-leaves";
+    if (alert.category.includes("未回報")) return "/attendance?status=missing";
+    if (alert.category.includes("請款")) return "/school-invoices";
+    return "";
   }
 
   const p1Count = alerts.filter((a) => a.level === "P1").length;
@@ -132,7 +158,21 @@ export default function AlertsPage() {
               <div className="mt-2 text-sm font-semibold text-slate-800">{alert.title}</div>
               {alert.detail && <div className="mt-1 whitespace-pre-wrap text-sm text-slate-500">{alert.detail}</div>}
               {alert.status === "未處理" ? (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {alert.dedupeKey.startsWith("notify-fail:") && (
+                    <button
+                      onClick={() => retryNotification(alert)}
+                      disabled={retryingId === alert.id}
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {retryingId === alert.id ? "重送中…" : "重新發送園所通知"}
+                    </button>
+                  )}
+                  {actionHref(alert) && (
+                    <a href={actionHref(alert)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100">
+                      前往處理 →
+                    </a>
+                  )}
                   <button
                     onClick={() => updateStatus(alert.id, "已處理")}
                     disabled={updatingId === alert.id}

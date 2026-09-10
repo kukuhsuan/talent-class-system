@@ -125,9 +125,27 @@ export default function SchoolsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "園所端連結產生失敗");
       await navigator.clipboard.writeText(data.url);
-      showToast("success", "園所端連結已複製");
+      showToast("success", "免登入園所分享連結已複製");
     } catch (e) {
       showToast("error", (e as Error).message || "園所端連結產生失敗", 3000);
+    }
+  }
+
+  async function sharePortalLink(school: School) {
+    try {
+      const res = await fetch(`/api/schools/${school.id}/portal-link`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "園所端連結產生失敗");
+      const shareData = { title: `${school.name}｜WaysLeader AI 學習成果`, text: `${school.name} 學習成果（免登入即可查看）`, url: data.url };
+      if (navigator.share) {
+        await navigator.share(shareData);
+        showToast("success", "已開啟分享選單");
+      } else {
+        await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
+        showToast("success", "分享文字與免登入連結已複製");
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") showToast("error", (e as Error).message || "分享失敗", 3000);
     }
   }
 
@@ -373,7 +391,7 @@ export default function SchoolsPage() {
                     <span className="whitespace-nowrap rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{normalizeRegion(s.region) || "—"}</span>
                   </div>
                 </div>
-                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
+                <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onShareLink={sharePortalLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
               </div>
               <div className="mt-3 space-y-1 text-sm text-slate-500">
                 {s.address && <div>{s.address}</div>}
@@ -417,7 +435,7 @@ export default function SchoolsPage() {
                     : <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">未綁定</span>}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
+                  <SchoolActions school={s} onEdit={edit} onAuth={setAuthSchool} onCopyLink={copyPortalLink} onShareLink={sharePortalLink} onSendBillingPreview={sendBillingPreview} onCopyConfirmationLink={copyConfirmationLink} onRotateLink={rotatePortalLink} onDelete={del} />
                 </td>
               </tr>
             ))}
@@ -454,13 +472,14 @@ type SchoolActionsProps = {
   onEdit: (school: School) => void;
   onAuth: (school: { id: number; name: string }) => void;
   onCopyLink: (id: number) => void;
+  onShareLink: (school: School) => void;
   onSendBillingPreview: (id: number) => void;
   onCopyConfirmationLink: (id: number) => void;
   onRotateLink: (id: number) => void;
   onDelete: (id: number) => void;
 };
 
-function SchoolActions({ school, onEdit, onAuth, onCopyLink, onSendBillingPreview, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
+function SchoolActions({ school, onEdit, onAuth, onCopyLink, onShareLink, onSendBillingPreview, onCopyConfirmationLink, onRotateLink, onDelete }: SchoolActionsProps) {
   const run = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
     const menu = event.currentTarget.closest("details");
     if (menu) menu.open = false;
@@ -480,7 +499,8 @@ function SchoolActions({ school, onEdit, onAuth, onCopyLink, onSendBillingPrevie
         <button onClick={(event) => run(event, () => onAuth({ id: school.id, name: school.name }))} className={itemClass}>管理園所驗證碼</button>
         <div className="my-1 border-t border-slate-100" />
         <div className={groupLabelClass}>連結與表單</div>
-        <button onClick={(event) => run(event, () => onCopyLink(school.id))} className={itemClass}>複製園所端連結</button>
+        <button onClick={(event) => run(event, () => onShareLink(school))} className={`${itemClass} font-semibold text-blue-700`}>直接分享成果頁</button>
+        <button onClick={(event) => run(event, () => onCopyLink(school.id))} className={itemClass}>複製免登入分享連結</button>
         <button onClick={(event) => run(event, () => onSendBillingPreview(school.id))} className={itemClass}>傳帳務表單給園所</button>
         {!normalizeDepartment(school.type).includes("安親") && (
           <button onClick={(event) => run(event, () => onCopyConfirmationLink(school.id))} className={itemClass}>複製開課確認連結</button>

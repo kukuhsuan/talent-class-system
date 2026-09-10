@@ -132,6 +132,37 @@ export async function listSystemAlerts(filter: { status?: string; level?: string
   );
 }
 
+export async function getSystemAlert(id: number): Promise<SystemAlertRow | null> {
+  await ensureSystemAlertTable();
+  const rows = await prisma.$queryRawUnsafe<SystemAlertRow[]>(
+    `SELECT "id", "level", "category", "title", "detail", "dedupeKey", "status",
+            "resolvedBy", "resolutionNote", "resolvedAt", "notifiedAt", "createdAt"
+     FROM "SystemAlert" WHERE "id" = ? LIMIT 1`,
+    id,
+  );
+  return rows[0] ?? null;
+}
+
+export async function openSystemAlertSummary() {
+  await ensureSystemAlertTable();
+  const [countRows, categoryRows] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ total: number; p1: number }>>(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN "level" = 'P1' THEN 1 ELSE 0 END) AS p1
+       FROM "SystemAlert" WHERE "status" = '未處理'`,
+    ),
+    prisma.$queryRawUnsafe<Array<{ category: string; total: number }>>(
+      `SELECT "category" AS category, COUNT(*) AS total
+       FROM "SystemAlert" WHERE "status" = '未處理'
+       GROUP BY "category" ORDER BY total DESC, category ASC LIMIT 5`,
+    ),
+  ]);
+  return {
+    total: Number(countRows[0]?.total ?? 0),
+    p1: Number(countRows[0]?.p1 ?? 0),
+    categories: categoryRows.map((row) => ({ category: row.category, total: Number(row.total) })),
+  };
+}
+
 export async function updateSystemAlertStatus(id: number, status: string, actorName: string, resolutionNote = "") {
   await ensureSystemAlertTable();
   const done = status === ALERT_STATUS.resolved || status === ALERT_STATUS.ignored;
