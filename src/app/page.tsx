@@ -241,18 +241,25 @@ export default function Home() {
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-4 gap-2 md:hidden" aria-label="手機快速操作">
+      <section className="mb-5 lg:hidden" aria-label="手機常用功能">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-700">常用功能</h2>
+          <span className="text-xs text-slate-400">點一下直接前往</span>
+        </div>
+        <div className="grid grid-cols-4 gap-2">
         {[
-          ["今日課表", "/schedule"],
-          ["上課紀錄", "/attendance"],
-          ["老師請假", "/teacher-leaves"],
-          ["LINE 通知", "/notify"],
-        ].map(([label, href]) => (
-          <Link key={href} href={href} className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-xs font-bold text-slate-700 shadow-sm">
-            {label}
+          ["📅", "課表", "/schedule"],
+          ["✏️", "上課紀錄", "/attendance"],
+          ["🙋", "老師請假", "/teacher-leaves"],
+          ["💬", "LINE 通知", "/notify"],
+        ].map(([icon, label, href]) => (
+          <Link key={href} href={href} className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl border border-blue-100 bg-white px-1 py-3 text-center text-xs font-bold text-slate-700 shadow-sm transition active:scale-95 active:bg-blue-50">
+            <span aria-hidden="true" className="text-xl leading-none">{icon}</span>
+            <span>{label}</span>
           </Link>
         ))}
-      </div>
+        </div>
+      </section>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 md:p-5">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
