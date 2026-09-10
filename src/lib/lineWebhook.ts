@@ -55,6 +55,32 @@ const pendingGroupB = new Map<string, number>();
 const LEAVE_REASON_ACTION = "teacher_leave_reason";
 const UNAUTHORIZED_ATTENDANCE_REPLY = "此課程資料無法由您的帳號回報，請聯繫行政確認。";
 
+// LINE 是對外介面：只把可由老師自行處理的業務提示回傳，避免資料庫、
+// 環境變數或第三方服務的原始錯誤出現在聊天室。
+const TEACHER_SAFE_ERROR_PATTERNS = [
+  /^找不到要請假的課程/,
+  /^這堂課不是您的課程/,
+  /^此課程已鎖定薪資/,
+  /^請假原因為必填/,
+  /^這堂課已經有請假申請/,
+  /^找不到請假申請/,
+  /^這筆請假申請不是您的/,
+  /^這筆請假已被駁回/,
+  /^此請假已找到代課老師/,
+  /^找不到這筆課程異動/,
+  /^這筆課程異動不是發送給您的/,
+  /^這筆課程異動已經處理/,
+];
+
+function teacherSafeError(error: unknown, fallback: string, context: string) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (message && TEACHER_SAFE_ERROR_PATTERNS.some((pattern) => pattern.test(message))) {
+    return message;
+  }
+  console.error(`[line webhook] ${context}:`, error);
+  return fallback;
+}
+
 async function teacherCanAccessAttendance(lineUserId: string, attendanceId: number) {
   if (!Number.isFinite(attendanceId) || attendanceId <= 0) return false;
   const teacher = await prisma.teacher.findFirst({
@@ -217,7 +243,10 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       }], token);
     } catch (error) {
       await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
-      await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "請假申請送出失敗，請稍後再試。" }], token);
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: teacherSafeError(error, "請假申請送出失敗，請稍後再試或聯絡行政。", "leave request failed"),
+      }], token);
     }
     return;
   }
@@ -710,7 +739,10 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
           : `✅ 已取消請假申請。\n\n${result.leave.leaveDate} ${result.leave.time}\n${result.leave.school}｜${result.leave.courseType}`,
       }], token);
     } catch (error) {
-      await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "取消請假失敗，請稍後再試。" }], token);
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: teacherSafeError(error, "取消請假失敗，請稍後再試或聯絡行政。", "leave cancellation failed"),
+      }], token);
     }
     return;
   }
@@ -835,7 +867,10 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
           : "已收到您的回覆，行政會再與您聯繫確認。";
       await replyMessage(replyToken, [{ type: "text", text: replyText }], token);
     } catch (error) {
-      await replyMessage(replyToken, [{ type: "text", text: (error as Error).message || "課程異動回覆失敗，請聯絡行政確認。" }], token);
+      await replyMessage(replyToken, [{
+        type: "text",
+        text: teacherSafeError(error, "課程異動回覆失敗，請聯絡行政確認。", "course change response failed"),
+      }], token);
     }
     return;
   }
