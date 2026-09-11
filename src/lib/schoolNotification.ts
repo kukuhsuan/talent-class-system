@@ -8,6 +8,14 @@ type NotifyResult = { status: "通知成功" | "通知失敗" | "不需通知"; 
 
 export type SchoolCourseChangeKind = "cancelled" | "substitute" | "substitute_pending" | "teacher_changed";
 
+export type UpcomingSchoolCourse = {
+  attendanceId: number;
+  time: string;
+  courseType: string;
+  teacherName: string;
+  assistantTeacherName?: string;
+};
+
 type SchoolCourseChangeInput = {
   attendanceId: number;
   kind: SchoolCourseChangeKind;
@@ -173,6 +181,80 @@ export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): 
       title: `課堂 #${input.attendanceId} 的園所異動通知失敗`,
       detail: message.slice(0, 500),
       dedupeKey: `school-change-failed:${input.attendanceId}:${input.kind}`,
+    }).catch(() => undefined);
+    return { status: "通知失敗", error: message };
+  }
+}
+
+/** 同一園所兩天後的課程合併成一則 LINE，並以園所＋日期去重。 */
+export async function notifySchoolUpcomingCourses(input: {
+  schoolId: number;
+  targetDate: string;
+  courses: UpcomingSchoolCourse[];
+}): Promise<NotifyResult> {
+  const eventKey = `upcoming:${input.schoolId}:${input.targetDate}`;
+  try {
+    if (input.courses.length === 0) return { status: "不需通知" };
+    await ensureSchoolLineRegionColumn();
+    await ensureCourseChangeNotificationTable();
+    const school = await prisma.school.findUnique({ where: { id: input.schoolId } });
+    if (!school) return { status: "通知失敗", error: "找不到園所" };
+    const existing = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+      'SELECT "status" FROM "SchoolCourseChangeNotification" WHERE "eventKey" = ? LIMIT 1',
+      eventKey,
+    );
+    if (existing[0]?.status === "通知成功") return { status: "不需通知" };
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "SchoolCourseChangeNotification" ("attendanceId", "eventKey", "eventType", "schoolId")
+       VALUES (?, ?, 'upcoming', ?)
+       ON CONFLICT("eventKey") DO UPDATE SET "updatedAt" = CURRENT_TIMESTAMP`,
+      input.courses[0].attendanceId, eventKey, school.id,
+    );
+    if (!school.lineUserId) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "SchoolCourseChangeNotification" SET "status" = '未發送', "error" = '園所尚未綁定 LINE', "updatedAt" = CURRENT_TIMESTAMP WHERE "eventKey" = ?`,
+        eventKey,
+      );
+      return { status: "不需通知", error: "園所尚未綁定 LINE" };
+    }
+    const token = getLineConfig(await getSchoolLineRegion(school.id)).token;
+    if (!token) throw new Error("園所 LINE Channel Token 尚未設定");
+    const courseLines = input.courses.map((course, index) => {
+      const teachers = [course.teacherName, course.assistantTeacherName].filter(Boolean).join("／");
+      return `${index + 1}. ${course.time}｜${course.courseType}\n   老師：${teachers || "確認中"}`;
+    });
+    const text = [
+      "【課程行前提醒】",
+      `${school.name} 您好，以下為兩天後的課程安排：`,
+      `日期：${input.targetDate}`,
+      "",
+      ...courseLines,
+      "",
+      "若課程資訊需要調整，請儘快聯繫 WaysLeader AI 課務人員，謝謝。",
+    ].join("\n");
+    await pushMessage(school.lineUserId, [{ type: "text", text }], token);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "SchoolCourseChangeNotification"
+       SET "status" = '通知成功', "attempts" = "attempts" + 1, "error" = '', "sentAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "eventKey" = ?`,
+      eventKey,
+    );
+    return { status: "通知成功" };
+  } catch (error) {
+    const message = (error as Error).message || "園所課前提醒發送失敗";
+    await ensureCourseChangeNotificationTable().then(() => prisma.$executeRawUnsafe(
+      `UPDATE "SchoolCourseChangeNotification"
+       SET "status" = '通知失敗', "attempts" = "attempts" + 1, "error" = ?, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "eventKey" = ?`,
+      message.slice(0, 500), eventKey,
+    )).catch(() => undefined);
+    const { raiseSystemAlert } = await import("@/lib/systemAlerts");
+    await raiseSystemAlert({
+      level: "P2",
+      category: "園所通知",
+      title: `園所 #${input.schoolId} 的課程前兩天提醒失敗`,
+      detail: `${input.targetDate}｜${message.slice(0, 500)}`,
+      dedupeKey: `school-upcoming-failed:${input.schoolId}:${input.targetDate}`,
     }).catch(() => undefined);
     return { status: "通知失敗", error: message };
   }
