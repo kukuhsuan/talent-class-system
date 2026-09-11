@@ -1,10 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
-import { buildSchoolReportMessage, buildUpbearSchoolReportMessage, getLineConfig } from "@/lib/line";
+import { buildSchoolReportMessage, buildUpbearSchoolReportMessage, getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 
 type NotifyResult = { status: "通知成功" | "通知失敗" | "不需通知"; error?: string };
+
+export type SchoolCourseChangeKind = "cancelled" | "substitute" | "substitute_pending" | "teacher_changed";
+
+type SchoolCourseChangeInput = {
+  attendanceId: number;
+  kind: SchoolCourseChangeKind;
+  teacherName?: string;
+  role?: "主教" | "助教";
+  reason?: string;
+};
 
 async function setNotifyStatus(attendanceId: number, status: string, error = "") {
   await prisma.$executeRawUnsafe(
@@ -32,6 +42,140 @@ async function getSchoolLineRegion(schoolId: number): Promise<LineRegion> {
   );
   const region = rows[0]?.lineRegion;
   return region === "school2" ? "school2" : "school";
+}
+
+let courseChangeNotificationTableReady = false;
+
+async function ensureCourseChangeNotificationTable() {
+  if (courseChangeNotificationTableReady) return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "SchoolCourseChangeNotification" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "attendanceId" INTEGER NOT NULL,
+      "eventKey" TEXT NOT NULL UNIQUE,
+      "eventType" TEXT NOT NULL,
+      "schoolId" INTEGER,
+      "status" TEXT NOT NULL DEFAULT '待發送',
+      "attempts" INTEGER NOT NULL DEFAULT 0,
+      "error" TEXT NOT NULL DEFAULT '',
+      "sentAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await prisma.$executeRawUnsafe(
+    'CREATE INDEX IF NOT EXISTS "SchoolCourseChangeNotification_attendanceId_idx" ON "SchoolCourseChangeNotification" ("attendanceId")',
+  );
+  courseChangeNotificationTableReady = true;
+}
+
+/**
+ * 將停課／代課異動通知園所。通知失敗只留紀錄，不回滾已完成的課務異動。
+ * eventKey 包含異動內容，可防止同一操作因重送 API 而重複通知。
+ */
+export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): Promise<NotifyResult> {
+  try {
+    await ensureSchoolLineRegionColumn();
+    await ensureCourseChangeNotificationTable();
+    const attendance = await prisma.attendance.findUnique({
+      where: { id: input.attendanceId },
+      include: {
+        course: { include: { schoolRel: true } },
+        actualTeacher: { select: { name: true } },
+        assistantTeacher: { select: { name: true } },
+      },
+    });
+    if (!attendance) return { status: "通知失敗", error: "找不到出勤紀錄" };
+
+    const school = attendance.scheduledSchoolId
+      ? await prisma.school.findUnique({ where: { id: attendance.scheduledSchoolId } })
+      : attendance.course.schoolRel
+        ?? await prisma.school.findFirst({ where: { name: attendance.scheduledSchoolName.trim() || attendance.course.school } });
+    const eventValue = input.kind === "cancelled"
+      ? input.reason?.trim() || attendance.cancelReason?.trim() || "停課"
+      : input.kind === "substitute_pending"
+        ? "代課老師重新安排中"
+      : `${input.role || "主教"}:${input.teacherName || attendance.actualTeacher.name}`;
+    const eventKey = `${attendance.id}:${input.kind}:${eventValue}`;
+    const existing = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+      'SELECT "status" FROM "SchoolCourseChangeNotification" WHERE "eventKey" = ? LIMIT 1',
+      eventKey,
+    );
+    if (existing[0]?.status === "通知成功") return { status: "不需通知" };
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "SchoolCourseChangeNotification" ("attendanceId", "eventKey", "eventType", "schoolId")
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT("eventKey") DO UPDATE SET "updatedAt" = CURRENT_TIMESTAMP`,
+      attendance.id, eventKey, input.kind, school?.id ?? null,
+    );
+
+    if (!school?.lineUserId) {
+      const error = "園所尚未綁定 LINE";
+      await prisma.$executeRawUnsafe(
+        `UPDATE "SchoolCourseChangeNotification" SET "status" = '未發送', "error" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "eventKey" = ?`,
+        error, eventKey,
+      );
+      const { raiseSystemAlert } = await import("@/lib/systemAlerts");
+      await raiseSystemAlert({
+        level: "P2",
+        category: "園所通知",
+        title: `${school?.name || attendance.course.school} 未收到${input.kind === "cancelled" ? "停課" : "師資異動"}通知`,
+        detail: `${attendance.date.toISOString().slice(0, 10)}｜${attendance.course.courseType}｜園所尚未綁定 LINE`,
+        dedupeKey: `school-change-unbound:${eventKey}`,
+      });
+      return { status: "不需通知", error };
+    }
+    const schoolRegion = await getSchoolLineRegion(school.id);
+    const token = getLineConfig(schoolRegion).token;
+    if (!token) throw new Error(schoolRegion === "school2" ? "LINE_SCHOOL2_TOKEN 尚未設定" : "LINE_SCHOOL_TOKEN 尚未設定");
+
+    const date = attendance.date.toISOString().slice(0, 10);
+    const time = attendance.scheduledTime?.trim() || attendance.course.time || "時間待確認";
+    const courseType = attendance.course.courseType;
+    const heading = input.kind === "cancelled" ? "【停課通知】" : "【師資異動通知】";
+    const detail = input.kind === "cancelled"
+      ? `本堂課已停課${eventValue && eventValue !== "停課" ? `\n原因：${eventValue}` : ""}`
+      : input.kind === "substitute_pending"
+        ? "原代課安排已取消，新的代課老師確認中；確認後會再通知"
+      : `${input.role || "主教"}改由 ${input.teacherName || attendance.actualTeacher.name} 老師授課`;
+    const text = [
+      heading,
+      school.name,
+      `日期：${date}`,
+      `時間：${time}`,
+      `課程：${courseType}`,
+      `異動：${detail}`,
+      "",
+      "若有疑問，請直接聯繫 WaysLeader AI 課務人員。",
+    ].join("\n");
+
+    await pushMessage(school.lineUserId, [{ type: "text", text }], token);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "SchoolCourseChangeNotification"
+       SET "status" = '通知成功', "attempts" = "attempts" + 1, "error" = '', "sentAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "eventKey" = ?`,
+      eventKey,
+    );
+    return { status: "通知成功" };
+  } catch (error) {
+    const message = (error as Error).message || "園所異動通知發送失敗";
+    await ensureCourseChangeNotificationTable().then(() => prisma.$executeRawUnsafe(
+      `UPDATE "SchoolCourseChangeNotification"
+       SET "status" = '通知失敗', "attempts" = "attempts" + 1, "error" = ?, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "attendanceId" = ? AND "status" != '通知成功'`,
+      message.slice(0, 500), input.attendanceId,
+    )).catch(() => undefined);
+    console.error(`[school-course-change] attendance ${input.attendanceId}:`, message);
+    const { raiseSystemAlert } = await import("@/lib/systemAlerts");
+    await raiseSystemAlert({
+      level: "P2",
+      category: "園所通知",
+      title: `課堂 #${input.attendanceId} 的園所異動通知失敗`,
+      detail: message.slice(0, 500),
+      dedupeKey: `school-change-failed:${input.attendanceId}:${input.kind}`,
+    }).catch(() => undefined);
+    return { status: "通知失敗", error: message };
+  }
 }
 
 function appUrl() {

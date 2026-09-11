@@ -4,6 +4,7 @@ import { parseAttendanceDay } from "@/lib/attendanceBatch";
 import { coursePayrollHoursForAttendance } from "@/lib/payrollHours";
 import { taipeiDateIso } from "@/lib/courseDates";
 import { withDatabaseRetry } from "@/lib/databaseRetry";
+import { notifySchoolCourseChange } from "@/lib/schoolNotification";
 
 export const COURSE_CHANGE_STATUS = {
   draft: "草稿",
@@ -329,7 +330,7 @@ export async function respondToCourseChange(requestId: number, teacherId: number
 }
 
 export async function applyCourseChangeRequest(requestId: number, actor: { userId: number | null; name: string }) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const request = await tx.courseChangeRequest.findUnique({ where: { id: requestId }, include: courseChangeInclude });
     if (!request) throw new Error("找不到這筆課程異動");
     // 前一次交易若已成功、但回應或後續通知失敗，重按時直接回傳完成結果。
@@ -473,6 +474,14 @@ export async function applyCourseChangeRequest(requestId: number, actor: { userI
     });
     return tx.courseChangeRequest.findUniqueOrThrow({ where: { id: request.id }, include: courseChangeInclude });
   });
+  if (parseChangeTypes(result.changeTypes).includes("CANCEL")) {
+    await Promise.all(result.targets.map((target) => notifySchoolCourseChange({
+      attendanceId: target.attendanceId,
+      kind: "cancelled",
+      reason: [result.reasonType, result.reasonNote].filter(Boolean).join("：") || "園所申請停課",
+    })));
+  }
+  return result;
 }
 
 export function courseChangeDisplay(request: Awaited<ReturnType<typeof getCourseChangeRequest>>) {

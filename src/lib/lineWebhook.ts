@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { notifySchoolReport } from "@/lib/schoolNotification";
+import { notifySchoolCourseChange, notifySchoolReport } from "@/lib/schoolNotification";
 import {
   LineRegion, getLineConfig, verifyLineSignature,
   replyMessage,
@@ -1017,6 +1017,7 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
         await completeOrAskCount(attendanceId, category, dept, replyToken, token, "✅ 已確認正常上課！");
       }
     } else {
+      await notifySchoolCourseChange({ attendanceId, kind: "cancelled", reason: "老師回報停課" });
       await replyMessage(replyToken, [{ type: "text", text: "已記錄停課，謝謝回報！" }], token);
     }
     return;

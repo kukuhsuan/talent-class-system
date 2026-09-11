@@ -12,6 +12,7 @@ import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { syncSubstituteWithAttendance } from "@/lib/substituteAssignment";
 import { schoolSignatureMap } from "@/lib/schoolSignature";
 import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
+import { notifySchoolCourseChange } from "@/lib/schoolNotification";
 
 // 單堂出勤（供電子簽到表列印頁使用）
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -152,6 +153,31 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }) || `修改出勤紀錄：${record.date.toISOString().slice(0, 10)} ${record.course.school}`,
     sensitive: true,
   });
+  const schoolNotifications: Promise<unknown>[] = [];
+  if (!current.cancelled && record.cancelled) {
+    schoolNotifications.push(notifySchoolCourseChange({
+      attendanceId: record.id,
+      kind: "cancelled",
+      reason: record.cancelReason,
+    }));
+  }
+  if (!record.cancelled && record.actualTeacherId !== current.actualTeacherId) {
+    schoolNotifications.push(notifySchoolCourseChange({
+      attendanceId: record.id,
+      kind: "teacher_changed",
+      role: "主教",
+      teacherName: record.actualTeacher.name,
+    }));
+  }
+  if (!record.cancelled && record.assistantTeacherId !== current.assistantTeacherId && record.assistantTeacher) {
+    schoolNotifications.push(notifySchoolCourseChange({
+      attendanceId: record.id,
+      kind: "teacher_changed",
+      role: "助教",
+      teacherName: record.assistantTeacher.name,
+    }));
+  }
+  await Promise.all(schoolNotifications);
   return NextResponse.json(equipmentRow === undefined ? record : { ...record, equipment: equipmentRow });
 }
 

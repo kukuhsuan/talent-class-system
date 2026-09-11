@@ -10,6 +10,7 @@ import {
 import { courseEndAt } from "@/lib/reportWindow";
 import { effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { ensureWaitingTeacherId, findWaitingTeacherId, openLeaveForAttendance } from "@/lib/pendingSubstitute";
+import { notifySchoolCourseChange } from "@/lib/schoolNotification";
 
 export type SubstituteRole = "主教" | "助教";
 
@@ -202,6 +203,16 @@ export async function assignSubstitute(input: AssignmentInput) {
     });
   }
 
+  // 園所需要知道實際到場老師是誰；不論老師端通知採哪一套文案，都只送一則園所異動通知。
+  await Promise.all(notifyPlans.map((plan) => notifySchoolCourseChange({
+    attendanceId: plan.attendance.id,
+    kind: "substitute",
+    teacherName: teacher.name,
+    role: input.role,
+  }))).catch((error) => {
+    console.error("[substitute] 園所代課通知流程失敗：", (error as Error).message);
+  });
+
   return { updated: attendances.length, notified: notifyPlans.length };
 }
 
@@ -222,7 +233,7 @@ export async function syncSubstituteWithAttendance(attendanceId: number, role: S
 export async function cancelSubstitute(id: number) {
   const record = await prisma.substitute.findUnique({
     where: { id },
-    include: { attendance: { include: { course: true } } },
+    include: { attendance: { include: { course: true } }, originalTeacher: { select: { name: true } } },
   });
   if (!record) throw new Error("找不到代課紀錄");
   if (!record.attendance) {
@@ -251,5 +262,8 @@ export async function cancelSubstitute(id: number) {
     }),
     prisma.substitute.delete({ where: { id } }),
   ]);
+  await notifySchoolCourseChange(backToPending
+    ? { attendanceId: record.attendanceId!, kind: "substitute_pending", role }
+    : { attendanceId: record.attendanceId!, kind: "teacher_changed", role, teacherName: record.originalTeacher.name });
   return { restored: true, pendingSubstitute: backToPending };
 }
