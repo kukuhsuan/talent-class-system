@@ -10,7 +10,7 @@
       "schedule": "0 1 28 * *"
     },
     {
-      "path": "/api/cron/school-course-reminder",
+      "path": "/api/cron/school-course-change-reminder",
       "schedule": "0 1 * * *"
     },
     {
