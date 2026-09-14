@@ -9,6 +9,7 @@ import {
   buildEquipmentFlowAcceptedMessage,
   isSchoolLineRegion,
 } from "@/lib/line";
+import { confirmSchoolCourseChangeByLineUser } from "@/lib/schoolNotification";
 import { formatMonthDay, taipeiDateIso, weekdayOfIso } from "@/lib/courseDates";
 import { courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
 import { attendanceScheduledTimeMap, effectiveAttendanceTime, stampAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
@@ -646,6 +647,18 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
   const params = new URLSearchParams(data);
   const action = params.get("action");
   const attendanceId = Number(params.get("id"));
+
+  if (action === "school_change_ack") {
+    const result = await confirmSchoolCourseChangeByLineUser(attendanceId, userId);
+    if (!result.ok) {
+      await replyMessage(replyToken, [{ type: "text", text: "找不到這則園所異動通知，或通知不是發給您的，請聯絡課務人員。" }], token);
+    } else if (result.already) {
+      await replyMessage(replyToken, [{ type: "text", text: `${result.schoolName}已經確認收到這則課程異動通知，謝謝！` }], token);
+    } else {
+      await replyMessage(replyToken, [{ type: "text", text: `✅ 已記錄${result.schoolName}確認收到課程異動通知，謝謝！` }], token);
+    }
+    return;
+  }
 
   // 批次通知「確認收到」按鈕：postback 直接記錄，不開網頁
   if (action === "notify_ack") {

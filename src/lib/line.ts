@@ -270,6 +270,65 @@ export function isSchoolLineRegion(region: LineRegion) {
   return region === "school" || region === "school2";
 }
 
+export function buildSchoolCourseChangeMessage(opts: {
+  notificationId: number;
+  school: string;
+  date: string;
+  time: string;
+  courseType: string;
+  detail: string;
+  kind: "cancelled" | "substitute" | "substitute_pending" | "teacher_changed";
+}): object {
+  const isCancelled = opts.kind === "cancelled";
+  return {
+    type: "flex",
+    altText: `${isCancelled ? "停課" : "師資異動"}通知｜${opts.school}｜${opts.date}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: "#3467B2",
+        paddingAll: "22px",
+        contents: [
+          { type: "text", text: "上課注意事項", color: "#FFFFFF", size: "xl", weight: "bold" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "22px",
+        spacing: "md",
+        contents: [
+          { type: "text", text: `【${isCancelled ? "停課通知" : "師資異動通知"}】`, size: "md", weight: "bold", color: "#1F2937" },
+          { type: "text", text: `${opts.school} 您好：`, size: "md", color: "#374151", wrap: true },
+          { type: "text", text: `日期：${opts.date}\n時間：${opts.time}\n課程：${opts.courseType}\n異動：${opts.detail}`, size: "md", color: "#374151", wrap: true, lineSpacing: "5px" },
+          { type: "separator", margin: "md", color: "#D7DFEA" },
+          { type: "text", text: "若有疑問，請直接聯繫 WaysLeader AI 課務人員。", size: "sm", color: "#64748B", wrap: true, margin: "md" },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "18px",
+        contents: [{
+          type: "button",
+          style: "primary",
+          color: "#3A9159",
+          height: "sm",
+          action: {
+            type: "postback",
+            label: "✅ 確認收到",
+            data: `action=school_change_ack&id=${opts.notificationId}`,
+            displayText: "✅ 確認收到",
+          },
+        }],
+      },
+    },
+  };
+}
+
 export function verifyLineSignature(body: string, signature: string, secret: string): boolean {
   const hmac = crypto.createHmac("SHA256", secret);
   hmac.update(body);

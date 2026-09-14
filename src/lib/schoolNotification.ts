@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
-import { buildSchoolReportMessage, buildUpbearSchoolReportMessage, getLineConfig, pushMessage } from "@/lib/line";
+import { buildSchoolCourseChangeMessage, buildSchoolReportMessage, buildUpbearSchoolReportMessage, getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
 import { getOrCreatePortalCode } from "@/lib/schoolPortalAccess";
 import { taipeiDateIso } from "@/lib/courseDates";
@@ -73,7 +73,31 @@ async function ensureCourseChangeNotificationTable() {
   await prisma.$executeRawUnsafe(
     'CREATE INDEX IF NOT EXISTS "SchoolCourseChangeNotification_attendanceId_idx" ON "SchoolCourseChangeNotification" ("attendanceId")',
   );
+  await prisma.$executeRawUnsafe('ALTER TABLE "SchoolCourseChangeNotification" ADD COLUMN "acknowledgedAt" DATETIME').catch(() => undefined);
+  await prisma.$executeRawUnsafe('ALTER TABLE "SchoolCourseChangeNotification" ADD COLUMN "acknowledgedBy" TEXT').catch(() => undefined);
   courseChangeNotificationTableReady = true;
+}
+
+export async function confirmSchoolCourseChangeByLineUser(notificationId: number, lineUserId: string) {
+  await ensureCourseChangeNotificationTable();
+  await ensureSchoolLineRegionColumn();
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: number; schoolId: number | null; acknowledgedAt: string | null; schoolName: string | null }>>(
+    `SELECT n."id", n."schoolId", n."acknowledgedAt", s."name" AS "schoolName"
+     FROM "SchoolCourseChangeNotification" n
+     LEFT JOIN "School" s ON s."id" = n."schoolId"
+     WHERE n."id" = ? AND s."lineUserId" = ? LIMIT 1`,
+    notificationId, lineUserId,
+  );
+  const row = rows[0];
+  if (!row) return { ok: false as const };
+  if (row.acknowledgedAt) return { ok: true as const, already: true, schoolName: row.schoolName || "園所" };
+  await prisma.$executeRawUnsafe(
+    `UPDATE "SchoolCourseChangeNotification"
+     SET "acknowledgedAt" = CURRENT_TIMESTAMP, "acknowledgedBy" = ?, "updatedAt" = CURRENT_TIMESTAMP
+     WHERE "id" = ? AND "acknowledgedAt" IS NULL`,
+    lineUserId, notificationId,
+  );
+  return { ok: true as const, already: false, schoolName: row.schoolName || "園所" };
 }
 
 /**
@@ -115,6 +139,11 @@ export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): 
        ON CONFLICT("eventKey") DO UPDATE SET "updatedAt" = CURRENT_TIMESTAMP`,
       attendance.id, eventKey, input.kind, school?.id ?? null,
     );
+    const notificationRows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
+      'SELECT "id" FROM "SchoolCourseChangeNotification" WHERE "eventKey" = ? LIMIT 1',
+      eventKey,
+    );
+    const notificationId = Number(notificationRows[0]?.id);
 
     // 異動在很早以前登記也不能漏掉：先保留待發送，統一於上課前兩天由排程送出。
     // 距離上課不足兩天的臨時異動則立即通知；過期課程不再打擾園所。
@@ -153,24 +182,21 @@ export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): 
     const date = attendance.date.toISOString().slice(0, 10);
     const time = attendance.scheduledTime?.trim() || attendance.course.time || "時間待確認";
     const courseType = attendance.course.courseType;
-    const heading = input.kind === "cancelled" ? "【停課通知】" : "【師資異動通知】";
     const detail = input.kind === "cancelled"
       ? `本堂課已停課${eventValue && eventValue !== "停課" ? `\n原因：${eventValue}` : ""}`
       : input.kind === "substitute_pending"
         ? "原代課安排已取消，新的代課老師確認中；確認後會再通知"
       : `${input.role || "主教"}改由 ${input.teacherName || attendance.actualTeacher.name} 老師授課`;
-    const text = [
-      heading,
-      school.name,
-      `日期：${date}`,
-      `時間：${time}`,
-      `課程：${courseType}`,
-      `異動：${detail}`,
-      "",
-      "若有疑問，請直接聯繫 WaysLeader AI 課務人員。",
-    ].join("\n");
-
-    await pushMessage(school.lineUserId, [{ type: "text", text }], token);
+    if (!Number.isInteger(notificationId)) throw new Error("找不到園所異動通知紀錄");
+    await pushMessage(school.lineUserId, [buildSchoolCourseChangeMessage({
+      notificationId,
+      school: school.name,
+      date,
+      time,
+      courseType,
+      detail,
+      kind: input.kind,
+    })], token);
     await prisma.$executeRawUnsafe(
       `UPDATE "SchoolCourseChangeNotification"
        SET "status" = '通知成功', "attempts" = "attempts" + 1, "error" = '', "sentAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
