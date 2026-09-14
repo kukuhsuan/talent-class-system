@@ -9,6 +9,7 @@ import { attendanceScheduledTimeMap, effectiveAttendanceTime } from "@/lib/atten
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
 import { NOTIFY_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { writeAuditLog } from "@/lib/auditLog";
+import { activeScheduleMonths } from "@/lib/scheduleWindow";
 
 const DAY_ORDER = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 const DAY_JS: Record<string, number> = {
@@ -40,10 +41,11 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
   if (!recipient) throw new Error(`找不到收件老師：${recipientName}`);
   if (!recipient.lineUserId || !recipient.lineRegion) throw new Error(`${recipient.name} 尚未綁定 LINE`);
 
-  const targetYear = new Date().getFullYear();
-  const displayMonthIndexes = [6, 7, 8];
-  const periodStart = new Date(targetYear, displayMonthIndexes[0], 1);
-  const periodEnd = new Date(targetYear, displayMonthIndexes[displayMonthIndexes.length - 1] + 1, 0, 23, 59, 59, 999);
+  const displayMonths = activeScheduleMonths(taipeiDateIso());
+  const firstMonth = displayMonths[0];
+  const lastMonth = displayMonths[displayMonths.length - 1];
+  const periodStart = new Date(Date.UTC(firstMonth.year, firstMonth.monthIndex, 1));
+  const periodEnd = new Date(Date.UTC(lastMonth.year, lastMonth.monthIndex + 1, 0, 23, 59, 59, 999));
 
   const courses = await prisma.course.findMany({
     where: {
@@ -85,14 +87,14 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
     isActive: true,
     id: { in: [...displayCourseIds] },
   }, periodStart);
-  const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+  const fmt = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
   type ScheduleEntryRow = {
     date: string; dayShort: string; school: string; courseType: string; time: string; address?: string; confirmationSummary?: string; sortKey: number;
   };
 
-  const weeks = displayMonthIndexes.map((month) => {
-    const monthStart = new Date(targetYear, month, 1);
-    const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
+  const weeks = displayMonths.map(({ year, monthIndex }) => {
+    const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+    const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59, 999));
     const entries = [
       ...actualRows
         .filter((row) => displayCourseIds.has(row.course.id) && row.date >= monthStart && row.date <= monthEnd)
@@ -128,7 +130,7 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
           const targetDay = DAY_JS[course.dayOfWeek];
           const cursor = new Date(monthStart);
           while (cursor <= monthEnd) {
-            if (cursor.getDay() === targetDay) {
+            if (cursor.getUTCDay() === targetDay) {
               rows.push({
                 date: fmt(cursor),
                 dayShort: course.dayOfWeek.replace("星期", ""),
@@ -140,14 +142,14 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
                 sortKey: cursor.getTime(),
               });
             }
-            cursor.setDate(cursor.getDate() + 1);
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
           }
           return rows;
         }),
     ];
     return {
-      label: `${targetYear} 年 ${month + 1} 月`,
-      month: `${month + 1}月`,
+      label: `${year} 年 ${monthIndex + 1} 月`,
+      month: `${monthIndex + 1}月`,
       entries: entries
         .sort((a, b) => a.sortKey - b.sortKey)
         .map(({ date, dayShort, school, courseType, time, address, confirmationSummary }) => ({ date, dayShort, school, courseType, time, address, confirmationSummary })),
@@ -157,7 +159,7 @@ export async function sendScheduleLookupTest(body: { sourceTeacherName?: string;
   const cfg = getLineConfig(recipient.lineRegion as LineRegion);
   const msg = buildTwoMonthScheduleMessage({ teacherName: source.name, weeks });
   await pushMessage(recipient.lineUserId, [msg], cfg.token);
-  return { ok: true, sent: 1, sourceTeacher: source.name, recipientTeacher: recipient.name, months: "7-9" };
+  return { ok: true, sent: 1, sourceTeacher: source.name, recipientTeacher: recipient.name, months: weeks.map((week) => week.month).join("、") };
 }
 
 export async function sendScheduleMessages(body: { teacherId?: number | string; region?: string } = {}) {

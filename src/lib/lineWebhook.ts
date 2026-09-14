@@ -17,6 +17,7 @@ import { attendanceHoursFromCourseTime } from "@/lib/courseHours";
 import { attendanceReportWindow, isPendingReport, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
 import { recordTeacherArrival } from "@/lib/attendanceArrival";
 import { courseConfirmationMapBySchoolIds, courseConfirmationSummary } from "@/lib/courseConfirmation";
+import { activeScheduleMonths } from "@/lib/scheduleWindow";
 import {
   cancellableLeaveChoices,
   cancelLeaveRequestByTeacher,
@@ -441,12 +442,11 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       "星期一": 1, "星期二": 2, "星期三": 3, "星期四": 4,
       "星期五": 5, "星期六": 6, "星期日": 0,
     };
-    const now = new Date();
-    const targetYear = now.getFullYear();
-
-    const displayMonthIndexes = [6, 7, 8];
-    const periodStart = new Date(targetYear, displayMonthIndexes[0], 1);
-    const periodEnd = new Date(targetYear, displayMonthIndexes[displayMonthIndexes.length - 1] + 1, 0, 23, 59, 59, 999);
+    const displayMonths = activeScheduleMonths(taipeiDateIso());
+    const firstMonth = displayMonths[0];
+    const lastMonth = displayMonths[displayMonths.length - 1];
+    const periodStart = new Date(Date.UTC(firstMonth.year, firstMonth.monthIndex, 1));
+    const periodEnd = new Date(Date.UTC(lastMonth.year, lastMonth.monthIndex + 1, 0, 23, 59, 59, 999));
 
     const actualRows = await prisma.attendance.findMany({
       where: {
@@ -475,7 +475,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       ? courseConfirmationSummary(confirmationMap.get(schoolId), { multiline: true, teacher: true })
       : "";
 
-    const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const fmt = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 
     const displayCourses = courses;
     const displayCourseIds = new Set(displayCourses.map((course) => course.id));
@@ -503,9 +503,9 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       sortKey: number;
     };
 
-    for (const month of displayMonthIndexes) {
-      const monthStart = new Date(targetYear, month, 1);
-      const monthEnd = new Date(targetYear, month + 1, 0, 23, 59, 59, 999);
+    for (const { year, monthIndex } of displayMonths) {
+      const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+      const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59, 999));
       const entries = [
         ...actualRows
           .filter((a) => a.date >= monthStart && a.date <= monthEnd)
@@ -541,7 +541,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
             const targetDay = DAY_JS[c.dayOfWeek];
             const cursor = new Date(monthStart);
             while (cursor <= monthEnd) {
-              if (cursor.getDay() === targetDay) {
+              if (cursor.getUTCDay() === targetDay) {
                 rows.push({
                   date: fmt(cursor),
                   dayShort: c.dayOfWeek.replace("星期", ""),
@@ -553,15 +553,15 @@ async function handleText(userId: string, text: string, replyToken: string, regi
                   sortKey: cursor.getTime(),
                 });
               }
-              cursor.setDate(cursor.getDate() + 1);
+              cursor.setUTCDate(cursor.getUTCDate() + 1);
             }
             return rows;
           }),
       ];
 
       weeks.push({
-        label: `${targetYear} 年 ${month + 1} 月`,
-        month: `${month + 1}月`,
+        label: `${year} 年 ${monthIndex + 1} 月`,
+        month: `${monthIndex + 1}月`,
         entries: entries
           .sort((a, b) => a.sortKey - b.sortKey)
           .map(({ date, dayShort, school, courseType, time, address, confirmationSummary }) => ({ date, dayShort, school, courseType, time, address, confirmationSummary })),
