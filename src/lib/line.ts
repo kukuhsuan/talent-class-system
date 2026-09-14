@@ -280,9 +280,16 @@ export function buildSchoolCourseChangeMessage(opts: {
   kind: "cancelled" | "substitute" | "substitute_pending" | "teacher_changed";
 }): object {
   const isCancelled = opts.kind === "cancelled";
+  const noticeLabel = isCancelled
+    ? "停課通知"
+    : opts.kind === "substitute"
+      ? "代課通知"
+      : opts.kind === "substitute_pending"
+        ? "代課安排通知"
+        : "師資異動通知";
   return {
     type: "flex",
-    altText: `${isCancelled ? "停課" : "師資異動"}通知｜${opts.school}｜${opts.date}`,
+    altText: `${noticeLabel}｜${opts.school}｜${opts.date}`,
     contents: {
       type: "bubble",
       size: "mega",
@@ -301,7 +308,7 @@ export function buildSchoolCourseChangeMessage(opts: {
         paddingAll: "22px",
         spacing: "md",
         contents: [
-          { type: "text", text: `【${isCancelled ? "停課通知" : "師資異動通知"}】`, size: "md", weight: "bold", color: "#1F2937" },
+          { type: "text", text: `【${noticeLabel}】`, size: "md", weight: "bold", color: "#1F2937" },
           { type: "text", text: `${opts.school} 您好：`, size: "md", color: "#374151", wrap: true },
           { type: "text", text: `日期：${opts.date}\n時間：${opts.time}\n課程：${opts.courseType}\n異動：${opts.detail}`, size: "md", color: "#374151", wrap: true, lineSpacing: "5px" },
           { type: "separator", margin: "md", color: "#D7DFEA" },

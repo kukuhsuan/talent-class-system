@@ -186,7 +186,9 @@ export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): 
       ? `本堂課已停課${eventValue && eventValue !== "停課" ? `\n原因：${eventValue}` : ""}`
       : input.kind === "substitute_pending"
         ? "原代課安排已取消，新的代課老師確認中；確認後會再通知"
-      : `${input.role || "主教"}改由 ${input.teacherName || attendance.actualTeacher.name} 老師授課`;
+      : input.kind === "substitute"
+        ? `本堂${input.role || "主教"}由 ${input.teacherName || attendance.actualTeacher.name} 老師代課`
+        : `${input.role || "主教"}改由 ${input.teacherName || attendance.actualTeacher.name} 老師授課`;
     if (!Number.isInteger(notificationId)) throw new Error("找不到園所異動通知紀錄");
     await pushMessage(school.lineUserId, [buildSchoolCourseChangeMessage({
       notificationId,
