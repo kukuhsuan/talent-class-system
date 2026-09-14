@@ -203,13 +203,27 @@ export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): 
 export async function flushSchoolCourseChangesForDate(targetDate: string) {
   await ensureCourseChangeNotificationTable();
   const rows = await prisma.$queryRawUnsafe<Array<{ attendanceId: number; eventType: string }>>(
-    `SELECT DISTINCT n."attendanceId", n."eventType"
-     FROM "SchoolCourseChangeNotification" n
-     JOIN "Attendance" a ON a."id" = n."attendanceId"
-     WHERE date(a."date") = date(?)
-       AND n."status" IN ('待發送', '未發送', '通知失敗')
-       AND n."eventType" IN ('cancelled', 'substitute', 'substitute_pending', 'teacher_changed')`,
-    targetDate,
+    `SELECT DISTINCT pending."attendanceId", pending."eventType"
+     FROM (
+       SELECT n."attendanceId", n."eventType"
+       FROM "SchoolCourseChangeNotification" n
+       JOIN "Attendance" a ON a."id" = n."attendanceId"
+       WHERE date(a."date") = date(?)
+         AND n."status" IN ('待發送', '未發送', '通知失敗')
+         AND n."eventType" IN ('cancelled', 'substitute', 'substitute_pending', 'teacher_changed')
+
+       UNION ALL
+
+       -- 防漏：代課可能在園所通知功能上線前就已安排，當時不會建立待發送紀錄。
+       -- 課前兩天排程直接從正式代課紀錄補抓，之後好兒美等園所不會因此漏通知。
+       SELECT s."attendanceId", 'substitute' AS "eventType"
+       FROM "Substitute" s
+       JOIN "Attendance" a ON a."id" = s."attendanceId"
+       WHERE s."attendanceId" IS NOT NULL
+         AND date(a."date") = date(?)
+         AND a."cancelled" = 0
+     ) pending`,
+    targetDate, targetDate,
   );
   const eventTypesByAttendance = new Map<number, Set<string>>();
   for (const row of rows) {
@@ -229,6 +243,8 @@ export async function flushSchoolCourseChangesForDate(targetDate: string) {
   let failed = 0;
   const errors: string[] = [];
   for (const attendance of attendances) {
+    const recordedTypes = eventTypesByAttendance.get(attendance.id) ?? new Set<string>();
+    const teacherChangeKind: SchoolCourseChangeKind = recordedTypes.has("substitute") ? "substitute" : "teacher_changed";
     const notifications: SchoolCourseChangeInput[] = [];
     if (attendance.cancelled) {
       notifications.push({ attendanceId: attendance.id, kind: "cancelled", reason: attendance.cancelReason || "停課", forceSend: true });
@@ -236,10 +252,10 @@ export async function flushSchoolCourseChangesForDate(targetDate: string) {
       notifications.push({ attendanceId: attendance.id, kind: "substitute_pending", role: "主教", forceSend: true });
     } else {
       if (attendance.actualTeacherId !== attendance.course.teacherId) {
-        notifications.push({ attendanceId: attendance.id, kind: "teacher_changed", role: "主教", teacherName: attendance.actualTeacher.name, forceSend: true });
+        notifications.push({ attendanceId: attendance.id, kind: teacherChangeKind, role: "主教", teacherName: attendance.actualTeacher.name, forceSend: true });
       }
       if (attendance.assistantTeacher && attendance.assistantTeacherId !== attendance.course.assistantTeacherId) {
-        notifications.push({ attendanceId: attendance.id, kind: "teacher_changed", role: "助教", teacherName: attendance.assistantTeacher.name, forceSend: true });
+        notifications.push({ attendanceId: attendance.id, kind: teacherChangeKind, role: "助教", teacherName: attendance.assistantTeacher.name, forceSend: true });
       }
       if (notifications.length === 0) {
         notifications.push({ attendanceId: attendance.id, kind: "teacher_changed", role: "主教", teacherName: attendance.actualTeacher.name, forceSend: true });
