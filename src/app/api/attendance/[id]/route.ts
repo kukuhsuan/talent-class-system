@@ -161,22 +161,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       reason: record.cancelReason,
     }));
   }
-  if (!record.cancelled && record.actualTeacherId !== current.actualTeacherId) {
-    schoolNotifications.push(notifySchoolCourseChange({
-      attendanceId: record.id,
-      kind: "teacher_changed",
-      role: "主教",
-      teacherName: record.actualTeacher.name,
-    }));
-  }
-  if (!record.cancelled && record.assistantTeacherId !== current.assistantTeacherId && record.assistantTeacher) {
-    schoolNotifications.push(notifySchoolCourseChange({
-      attendanceId: record.id,
-      kind: "teacher_changed",
-      role: "助教",
-      teacherName: record.assistantTeacher.name,
-    }));
-  }
   await Promise.all(schoolNotifications);
   return NextResponse.json(equipmentRow === undefined ? record : { ...record, equipment: equipmentRow });
 }

@@ -105,6 +105,9 @@ export async function confirmSchoolCourseChangeByLineUser(notificationId: number
  * eventKey 包含異動內容，可防止同一操作因重送 API 而重複通知。
  */
 export async function notifySchoolCourseChange(input: SchoolCourseChangeInput): Promise<NotifyResult> {
+  // 正式更換授課老師屬重大師資異動，不由排程自動對園所發布。
+  // 自動通知只處理停課與代課；永久師資變更需由課務確認後另行正式聯繫。
+  if (input.kind === "teacher_changed") return { status: "不需通知" };
   try {
     await ensureSchoolLineRegionColumn();
     await ensureCourseChangeNotificationTable();
@@ -238,7 +241,7 @@ export async function flushSchoolCourseChangesForDate(targetDate: string) {
        JOIN "Attendance" a ON a."id" = n."attendanceId"
        WHERE date(a."date") = date(?)
          AND n."status" IN ('待發送', '未發送', '通知失敗')
-         AND n."eventType" IN ('cancelled', 'substitute', 'substitute_pending', 'teacher_changed')
+         AND n."eventType" IN ('cancelled', 'substitute', 'substitute_pending')
 
        UNION ALL
 
@@ -284,9 +287,6 @@ export async function flushSchoolCourseChangesForDate(targetDate: string) {
       }
       if (attendance.assistantTeacher && attendance.assistantTeacherId !== attendance.course.assistantTeacherId) {
         notifications.push({ attendanceId: attendance.id, kind: teacherChangeKind, role: "助教", teacherName: attendance.assistantTeacher.name, forceSend: true });
-      }
-      if (notifications.length === 0) {
-        notifications.push({ attendanceId: attendance.id, kind: "teacher_changed", role: "主教", teacherName: attendance.actualTeacher.name, forceSend: true });
       }
     }
     const results: NotifyResult[] = [];
