@@ -33,6 +33,16 @@ function addDays(iso: string, days: number) {
   return toIsoDate(d);
 }
 
+function scheduleWindow(date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const from = `${year}-${String(month).padStart(2, "0")}-01`;
+  if (month >= 9) return { from, to: `${year + 1}-01-31` };
+  if (month === 1) return { from, to: `${year}-01-31` };
+  if (month <= 6) return { from, to: `${year}-06-30` };
+  return { from, to: `${year}-08-31` };
+}
+
 function formatSlash(iso: string) {
   const d = new Date(`${iso}T00:00:00.000Z`);
   return `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}`;
@@ -60,6 +70,11 @@ export default function SchedulePage() {
   const [weekStart, setWeekStart] = useState(startOfWeek());
   const [loading, setLoading] = useState(true);
   const weekEnd = addDays(weekStart, 6);
+  const activeWindow = scheduleWindow();
+  const queryFrom = weekStart < activeWindow.from ? activeWindow.from : weekStart;
+  const queryTo = weekEnd > activeWindow.to ? activeWindow.to : weekEnd;
+  const previousWeekDisabled = addDays(weekStart, -1) < activeWindow.from;
+  const nextWeekDisabled = addDays(weekStart, 7) > activeWindow.to;
   const weekDates = DAYS.map((_, i) => addDays(weekStart, i));
   const todayIso = toIsoDate(new Date());
   const isAfterSchool = dept === "安親班";
@@ -70,14 +85,14 @@ export default function SchedulePage() {
     const params = new URLSearchParams();
     if (filterRegion) params.set("region", filterRegion);
     if (dept) params.set("dept", dept);
-    params.set("from", weekStart);
-    params.set("to", weekEnd);
+    params.set("from", queryFrom);
+    params.set("to", queryTo);
     const qs = params.toString();
     void Promise.resolve().then(() => setLoading(true));
     fetch("/api/schedule" + (qs ? `?${qs}` : ""))
       .then((r) => r.json())
       .then((data) => { setCourses(data); setLoading(false); });
-  }, [filterRegion, dept, weekStart, weekEnd]);
+  }, [filterRegion, dept, queryFrom, queryTo]);
 
   const allRegions = [...new Set(courses.map((c) => normalizeRegion(c.region)).filter(Boolean))].sort();
 
@@ -128,13 +143,13 @@ export default function SchedulePage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-sm font-semibold text-slate-800">查看日期區間</div>
-            <div className="text-sm text-slate-500">{formatSlash(weekStart)} ~ {formatSlash(weekEnd)}</div>
+            <div className="text-sm text-slate-500">{formatSlash(queryFrom)} ~ {formatSlash(queryTo)}</div>
           </div>
           <div className="grid grid-cols-3 gap-2 md:flex md:flex-wrap">
-            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="rounded-lg border border-slate-200 bg-white px-3 py-3 md:py-2 text-sm text-slate-700 hover:bg-slate-50">上一週</button>
+            <button disabled={previousWeekDisabled} onClick={() => setWeekStart(addDays(weekStart, -7))} className="rounded-lg border border-slate-200 bg-white px-3 py-3 md:py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">上一週</button>
             <button onClick={() => setWeekStart(startOfWeek())} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 md:py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">本週</button>
-            <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="rounded-lg border border-slate-200 bg-white px-3 py-3 md:py-2 text-sm text-slate-700 hover:bg-slate-50">下一週</button>
-            <input type="date" value={weekStart} onChange={(e) => e.target.value && setWeekStart(startOfWeek(new Date(`${e.target.value}T00:00:00`)))} className="col-span-3 w-full md:w-auto md:min-w-[150px]" />
+            <button disabled={nextWeekDisabled} onClick={() => setWeekStart(addDays(weekStart, 7))} className="rounded-lg border border-slate-200 bg-white px-3 py-3 md:py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">下一週</button>
+            <input type="date" min={activeWindow.from} max={activeWindow.to} value={weekStart < activeWindow.from ? activeWindow.from : weekStart} onChange={(e) => e.target.value && setWeekStart(startOfWeek(new Date(`${e.target.value}T00:00:00`)))} className="col-span-3 w-full md:w-auto md:min-w-[150px]" />
           </div>
         </div>
       </div>
