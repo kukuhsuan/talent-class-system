@@ -31,6 +31,11 @@ function progressText(item: { lesson: number; title: string }) {
   return `第${item.lesson}堂 ${item.title}`;
 }
 
+function reportField(content: string | null | undefined, label: string) {
+  const line = String(content ?? "").split("\n").find((item) => item.trim().startsWith(`${label}：`));
+  return line?.replace(`${label}：`, "").trim() ?? "";
+}
+
 function isKindergarten(department: string | null | undefined) {
   return (department ?? "").includes("幼兒園");
 }
@@ -383,6 +388,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : [];
     const focusText = kindergarten ? String(lessonTemplate?.focus ?? "").trim() : "";
     const outcomeText = String(data.outcomeText ?? lessonTemplate?.activityDirection ?? "").trim();
+    if (kindergarten && outcomeText.length < 15) {
+      return NextResponse.json({ error: "請填寫至少 15 字的孩子今日具體亮點" }, { status: 400 });
+    }
+    const genericOutcomes = new Set([
+      "孩子今天能跟著老師完成挑戰，課堂參與穩定，也願意嘗試不同任務。",
+      "本堂練習新動作，多數孩子能掌握基本要領，會再於下堂課加強熟練度。",
+      "孩子的秩序與專注有進步，分組活動時能互相配合、輪流等待。",
+    ]);
+    if (kindergarten && genericOutcomes.has(outcomeText)) {
+      return NextResponse.json({ error: "這段是舊的公版文字，請改寫成本堂實際觀察到的孩子亮點" }, { status: 400 });
+    }
+    if (kindergarten) {
+      const previous = await prisma.attendance.findFirst({
+        where: { courseId: attendance.courseId, date: { lt: attendance.date }, reportSentAt: { not: null } },
+        orderBy: { date: "desc" },
+        select: { reportContent: true },
+      });
+      if (previous && reportField(previous.reportContent, "成果回報") === outcomeText) {
+        return NextResponse.json({ error: "成果回報與上一堂完全相同，請補上本堂實際的新觀察" }, { status: 400 });
+      }
+    }
 
     // 交接提醒只給下一堂的老師看，不併入 reportContent（那份會送到園所／家長端）
     const handoffNote = String(data.handoffNote ?? "").trim().slice(0, 500);

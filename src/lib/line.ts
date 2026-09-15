@@ -1299,9 +1299,13 @@ export function buildSchoolReportMessage(opts: {
 }) {
   const label = courseLabel(opts.courseType);
   const countText = (value: number | null | undefined) => value == null ? "未設定" : `${value} 人`;
+  const field = (name: string) => opts.content.split("\n").find((line) => line.trim().startsWith(`${name}：`))?.replace(`${name}：`, "").trim() || "";
+  const progress = field("課程進度") || field("訓練內容") || "本堂課程已完成";
+  const focus = field("本堂重點");
+  const outcome = field("成果回報") || "本堂孩子皆有參與課程活動。";
   return {
     type: "flex",
-    altText: `本週課程完成報告：${opts.school} ${label}`,
+    altText: `本週課堂小日誌：${opts.school} ${label}`,
     contents: {
       type: "bubble",
       header: {
@@ -1309,7 +1313,10 @@ export function buildSchoolReportMessage(opts: {
         layout: "vertical",
         backgroundColor: "#2F80C9",
         paddingAll: "16px",
-        contents: [{ type: "text", text: "本週課程完成報告", color: "#FFFFFF", weight: "bold", size: "md" }],
+        contents: [
+          { type: "text", text: "本週課堂小日誌 ✨", color: "#FFFFFF", weight: "bold", size: "lg" },
+          { type: "text", text: opts.date, color: "#DCEBFF", size: "xs", margin: "sm" },
+        ],
       },
       body: {
         type: "box",
@@ -1326,8 +1333,9 @@ export function buildSchoolReportMessage(opts: {
             type: "box", layout: "vertical", margin: "sm",
             backgroundColor: "#FFFFFF", cornerRadius: "8px", paddingAll: "10px",
             contents: [
-              { type: "text", text: "完成進度", size: "xs", color: "#2F80C9", weight: "bold" },
-              { type: "text", text: opts.content || "正常上課", size: "sm", color: "#102A43", weight: "bold", wrap: true, margin: "xs" },
+              { type: "text", text: "今天玩什麼", size: "xs", color: "#2F80C9", weight: "bold" },
+              { type: "text", text: progress, size: "sm", color: "#102A43", weight: "bold", wrap: true, margin: "xs" },
+              ...(focus ? [{ type: "text" as const, text: focus, size: "xs" as const, color: "#486581", wrap: true, margin: "sm" as const }] : []),
             ],
           },
           {
@@ -1353,8 +1361,8 @@ export function buildSchoolReportMessage(opts: {
             type: "box", layout: "vertical", margin: "sm",
             backgroundColor: "#FFFFFF", cornerRadius: "8px", paddingAll: "10px",
             contents: [
-              { type: "text", text: "學習重點", size: "xs", color: "#2F80C9", weight: "bold" },
-              { type: "text", text: "教練依據現場狀況與孩童需求，進行專屬客製化教學。", size: "xs", color: "#486581", wrap: true, margin: "xs" },
+              { type: "text", text: "孩子今日亮點 🌟", size: "xs", color: "#2F80C9", weight: "bold" },
+              { type: "text", text: outcome, size: "sm", color: "#102A43", wrap: true, margin: "xs" },
             ],
           },
           ...(opts.portalUrl ? [{

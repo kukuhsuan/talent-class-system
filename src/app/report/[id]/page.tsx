@@ -373,13 +373,6 @@ async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
 
 const PHOTO_LIMIT = 4;
 
-// 成果回報常用句型（一鍵帶入後可再修改）
-const OUTCOME_TEMPLATES = [
-  "孩子今天能跟著老師完成挑戰，課堂參與穩定，也願意嘗試不同任務。",
-  "本堂練習新動作，多數孩子能掌握基本要領，會再於下堂課加強熟練度。",
-  "孩子的秩序與專注有進步，分組活動時能互相配合、輪流等待。",
-];
-
 // 課後交接常用句：點選會「附加」到現有內容後面，方便一次寫多件事
 const HANDOFF_TEMPLATES = [
   "進度未上完，下堂請先接續",
@@ -655,6 +648,7 @@ export default function TeacherReportPage() {
   const missingItems = [
     needsStudentCount && !form.studentCount ? "出席人數" : "",
     !assistantCountOnly && !needsStudentCount && !form.progress.trim() ? (isKindergarten ? "課程進度" : "訓練內容") : "",
+    !assistantCountOnly && isKindergarten && form.outcomeText.trim().length < 15 ? "具體成果（至少 15 字）" : "",
     !assistantCountOnly && form.incident && (!form.incidentChild.trim() || !form.incidentProcess.trim() || !form.incidentAction.trim()) ? "特殊事件內容" : "",
     !assistantCountOnly && info.schoolSignatureRequired && !form.schoolVerifierName.trim() ? "園所老師姓名" : "",
     !assistantCountOnly && info.schoolSignatureRequired && !form.schoolSignatureData ? "園所簽名" : "",
@@ -798,24 +792,14 @@ export default function TeacherReportPage() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">成果回報短文</label>
-          <p className="mt-1 text-xs text-slate-500">簡短 2～3 行即可，系統不會自動生成文案。</p>
+          <label className="text-sm font-semibold text-slate-800">孩子今日亮點</label>
+          <p className="mt-1 text-xs leading-5 text-slate-500">請寫本堂真正看到的一個具體變化，避免與上週相同。</p>
+          <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+            可寫：哪個挑戰最投入？從不會到會了什麼？合作、專注或動作哪裡有進步？下堂想挑戰什麼？
+          </div>
           <textarea value={form.outcomeText} disabled={locked} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
             className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#2563EB]"
-            placeholder="例：孩子今天能跟著老師完成挑戰，練習控制方向與力道。課堂中大家參與穩定，也願意嘗試不同任務。" />
-          {!locked && (
-            <div className="mt-2">
-              <div className="text-xs font-semibold text-slate-400">常用句型（點選帶入後可再修改）</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {OUTCOME_TEMPLATES.map((text) => (
-                  <button key={text} type="button" onClick={() => setForm({ ...form, outcomeText: text })}
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs leading-5 text-slate-600 active:bg-slate-100">
-                    {text.slice(0, 16)}…
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+            placeholder="例：今天守門遊戲中，原本不敢接球的孩子主動站到球門前，第二輪已能看準方向移動擋球；下堂會加入雙人合作挑戰。" />
         </section>
 
         {/* 課後交接：只給下一堂授課老師看，不會進到園所／家長的回報內容 */}
