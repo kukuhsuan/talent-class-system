@@ -372,6 +372,8 @@ async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
 }
 
 const PHOTO_LIMIT = 4;
+// 暫停老師端照片上傳入口；保留既有資料與程式，日後可安全恢復。
+const ENABLE_REPORT_PHOTOS = false;
 
 // 課後交接常用句：點選會「附加」到現有內容後面，方便一次寫多件事
 const HANDOFF_TEMPLATES = [
@@ -742,7 +744,7 @@ export default function TeacherReportPage() {
               <div className="rounded-xl bg-blue-50 px-2 py-2"><span className="block text-base text-blue-600">2</span>課程進度</div>
               <div className="rounded-xl bg-blue-50 px-2 py-2"><span className="block text-base text-blue-600">3</span>孩子亮點</div>
             </div>
-            <p className="mt-3 text-xs leading-5 text-slate-500">完成這三項就能送出；交接、照片與特殊事件需要時再填。</p>
+            <p className="mt-3 text-xs leading-5 text-slate-500">完成這三項就能送出；交接與特殊事件需要時再填。</p>
           </div>
         )}
         {needsStudentCount && (
@@ -853,7 +855,7 @@ export default function TeacherReportPage() {
           </section>
         </details>
 
-        <details className="rounded-2xl bg-white shadow-sm">
+        {ENABLE_REPORT_PHOTOS && <details className="rounded-2xl bg-white shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-4 text-sm font-bold text-slate-800 [&::-webkit-details-marker]:hidden">
             <span className="flex items-center justify-between">加入課堂活動照片 <span className="text-xs font-medium text-slate-400">選填 ＋</span></span>
           </summary>
@@ -900,7 +902,7 @@ export default function TeacherReportPage() {
             />
           </details>
           </section>
-        </details>
+        </details>}
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">今天是否有特殊事件？</div>
