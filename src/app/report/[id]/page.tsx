@@ -670,7 +670,7 @@ export default function TeacherReportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md pb-10">
+    <div className="mx-auto max-w-md pb-28">
       <div className="mb-4 rounded-b-[28px] bg-gradient-to-br from-[#EAF3FF] via-white to-[#DBEAFE] px-5 pb-6 pt-5 shadow-sm">
         <div className="text-xs font-semibold tracking-[0.2em] text-[#2563EB]">WAYSLEADER AI LEARNING REPORT</div>
         <h1 className="mt-2 text-2xl font-bold text-[#2E2B27]">課程回報</h1>
@@ -734,9 +734,23 @@ export default function TeacherReportPage() {
       )}
 
       <div className="space-y-4">
+        {!assistantCountOnly && !locked && !done && (
+          <div className="rounded-2xl border border-blue-100 bg-white px-4 py-4 shadow-sm">
+            <div className="text-sm font-bold text-slate-900">照著 3 步驟完成回報</div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-semibold leading-4 text-slate-600">
+              <div className="rounded-xl bg-blue-50 px-2 py-2"><span className="block text-base text-blue-600">1</span>出席人數</div>
+              <div className="rounded-xl bg-blue-50 px-2 py-2"><span className="block text-base text-blue-600">2</span>課程進度</div>
+              <div className="rounded-xl bg-blue-50 px-2 py-2"><span className="block text-base text-blue-600">3</span>孩子亮點</div>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">完成這三項就能送出；交接、照片與特殊事件需要時再填。</p>
+          </div>
+        )}
         {needsStudentCount && (
           <section className="rounded-2xl bg-white p-4 shadow-sm">
-            <label className="text-sm font-semibold text-slate-800">出席人數</label>
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
+              <label className="text-sm font-bold text-slate-900">填寫出席人數</label>
+            </div>
             <div className="mt-2 flex items-stretch gap-2">
               <button type="button" disabled={locked} onClick={() => adjustStudentCount(-1)}
                 className="w-14 rounded-xl border border-slate-200 text-2xl font-bold text-slate-500 active:bg-slate-100 disabled:opacity-40">−</button>
@@ -753,7 +767,10 @@ export default function TeacherReportPage() {
         <div className={assistantCountOnly ? "hidden" : "contents"}>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">{isKindergarten ? "今日課程進度" : "今天訓練什麼"}</label>
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{needsStudentCount ? "2" : "1"}</span>
+            <label className="text-sm font-bold text-slate-900">{isKindergarten ? "選擇今天上到哪一堂" : "填寫今天訓練內容"}</label>
+          </div>
           <p className="mt-1 text-xs text-slate-500">
             {isKindergarten ? "請點選今天上到哪一堂，若沒有適合的內容再自訂輸入。" : "簡短填寫今天訓練內容即可。"}
           </p>
@@ -792,10 +809,14 @@ export default function TeacherReportPage() {
         </section>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">孩子今日亮點</label>
-          <p className="mt-1 text-xs leading-5 text-slate-500">請寫本堂真正看到的一個具體變化，避免與上週相同。</p>
-          <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-            可寫：哪個挑戰最投入？從不會到會了什麼？合作、專注或動作哪裡有進步？下堂想挑戰什麼？
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{needsStudentCount ? "3" : "2"}</span>
+            <label className="text-sm font-bold text-slate-900">寫下孩子今日亮點</label>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-500">寫一個今天真的看到的變化，至少 15 字。</p>
+          <div className="mt-3 rounded-xl bg-amber-50 px-3 py-3 text-xs leading-5 text-amber-900">
+            <div className="font-bold">照這個順序寫就好：</div>
+            <div className="mt-1">做了什麼 → 孩子有什麼進步 → 下次挑戰什麼</div>
           </div>
           <textarea value={form.outcomeText} disabled={locked} onChange={(e) => setForm({ ...form, outcomeText: e.target.value })}
             className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none focus:border-[#2563EB]"
@@ -803,10 +824,13 @@ export default function TeacherReportPage() {
         </section>
 
         {/* 課後交接：只給下一堂授課老師看，不會進到園所／家長的回報內容 */}
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <label className="text-sm font-semibold text-slate-800">交接事項（非必填）</label>
+        <details className="rounded-2xl bg-white shadow-sm">
+          <summary className="cursor-pointer list-none px-4 py-4 text-sm font-bold text-slate-800 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between">交接給下堂老師 <span className="text-xs font-medium text-slate-400">選填 ＋</span></span>
+          </summary>
+          <section className="border-t border-slate-100 px-4 pb-4 pt-3">
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            只在下一堂課前傳給上課的老師，<span className="font-semibold text-slate-600">不會</span>出現在園所與家長的回報裡。
+            只傳給下一堂老師，不會出現在園所與家長的回報裡。
           </p>
           <textarea value={form.handoffNote} disabled={locked} maxLength={500}
             onChange={(e) => setForm({ ...form, handoffNote: e.target.value })}
@@ -826,19 +850,18 @@ export default function TeacherReportPage() {
               </div>
             </div>
           )}
-        </section>
+          </section>
+        </details>
 
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-800">課堂活動照片（建議附上，非必填）</div>
+        <details className="rounded-2xl bg-white shadow-sm">
+          <summary className="cursor-pointer list-none px-4 py-4 text-sm font-bold text-slate-800 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between">加入課堂活動照片 <span className="text-xs font-medium text-slate-400">選填 ＋</span></span>
+          </summary>
+          <section className="border-t border-slate-100 px-4 pb-4 pt-3">
           <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700">
             ⚠️ 點名表請傳到 LINE 官方帳號，這裡只上傳課堂活動照片。
           </div>
-          <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-700">
-            📸 建議老師附上孩子上課的活動照片，讓園所與家長更容易看見課程成果；若當天不方便拍攝，仍可直接送出回報。
-          </div>
-          <p className="mt-2 text-xs leading-5 text-slate-500">
-            每堂課最多 {PHOTO_LIMIT} 張，系統會先壓縮再上傳到雲端圖片空間，不會存進 GitHub 或 Vercel 部署檔。
-          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">最多 {PHOTO_LIMIT} 張；當天不方便拍攝也可以直接送出。</p>
           {photos.length > 0 && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               {photos.map((url) => (
@@ -876,7 +899,8 @@ export default function TeacherReportPage() {
               placeholder="https://...（送出時會一併加入照片）"
             />
           </details>
-        </section>
+          </section>
+        </details>
 
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">今天是否有特殊事件？</div>
