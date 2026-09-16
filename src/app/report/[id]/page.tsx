@@ -825,6 +825,43 @@ export default function TeacherReportPage() {
             placeholder="例：今天守門遊戲中，原本不敢接球的孩子主動站到球門前，第二輪已能看準方向移動擋球；下堂會加入雙人合作挑戰。" />
         </section>
 
+        {isKindergarten && (
+          <section className="overflow-hidden rounded-2xl border border-blue-200 bg-white shadow-sm">
+            <div className="bg-blue-600 px-4 py-3 text-white">
+              <div className="text-sm font-bold">園所會收到這些內容</div>
+              <div className="mt-1 text-xs text-blue-100">這裡是即時預覽，不需要另外開啟連結。</div>
+            </div>
+            <div className="space-y-3 p-4 text-sm">
+              <div>
+                <div className="text-xs font-semibold text-slate-400">園所／課程</div>
+                <div className="mt-1 font-semibold text-slate-800">{info.school}｜{info.courseName}</div>
+                <div className="mt-1 text-xs text-slate-500">{info.date}｜授課老師：{info.teacherName}</div>
+              </div>
+              {needsStudentCount && (
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <span className="text-xs text-slate-500">出席人數</span>
+                  <div className="mt-0.5 font-bold text-slate-800">{form.studentCount ? `${form.studentCount} 人` : "尚未填寫"}</div>
+                </div>
+              )}
+              <div className="rounded-xl bg-blue-50 px-3 py-3">
+                <div className="text-xs font-bold text-blue-700">今天上到哪裡</div>
+                <div className={`mt-1 leading-6 ${form.progress.trim() ? "text-slate-800" : "text-slate-400"}`}>
+                  {form.progress.trim() || "尚未選擇課程進度"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-amber-50 px-3 py-3">
+                <div className="text-xs font-bold text-amber-700">孩子今日亮點</div>
+                <div className={`mt-1 whitespace-pre-wrap leading-6 ${form.outcomeText.trim() ? "text-slate-800" : "text-slate-400"}`}>
+                  {form.outcomeText.trim() || "尚未填寫孩子亮點"}
+                </div>
+              </div>
+              {!locked && !done && (
+                <div className="text-xs leading-5 text-slate-500">送出前請再確認一次；送出後以上內容會提供給園所查看。</div>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* 課後交接：只給下一堂授課老師看，不會進到園所／家長的回報內容 */}
         <details className="rounded-2xl bg-white shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-4 text-sm font-bold text-slate-800 [&::-webkit-details-marker]:hidden">
