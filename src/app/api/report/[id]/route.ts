@@ -8,6 +8,7 @@ import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTi
 import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED_MESSAGE } from "@/lib/reportWindow";
 import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, supportsSchoolSignature, validSignatureData } from "@/lib/schoolSignature";
 import { readHandoffNotes, writeHandoffNote } from "@/lib/lessonHandoff";
+import { queueAttendanceSheetSync, syncAttendanceToGoogleSheet } from "@/lib/attendanceSheetSync";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -353,6 +354,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         afterData: { studentCount },
         diffSummary: "助教回填出席人數（併入主教同一筆出勤）",
       });
+      await queueAttendanceSheetSync(attendance.id);
+      after(() => syncAttendanceToGoogleSheet(attendance.id).catch((error) => console.error("background Google Sheet sync failed", error)));
       return NextResponse.json({ ok: true, studentCount, assistantCountOnly: true });
     }
     const kindergarten = isKindergarten(attendance.course.department);
@@ -465,6 +468,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
       diffSummary: `老師送出課後回報：${attendance.course.school} ${courseLabel(attendance.course.courseType)}`,
     });
+    await queueAttendanceSheetSync(attendance.id);
 
     // 效能：園所 LINE 通知移到回應之後的背景執行，老師送出回報不必等整條通知鏈
     const willNotify = shouldNotifySchool(attendance.course.department);
@@ -477,6 +481,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
       });
     }
+    after(() => syncAttendanceToGoogleSheet(attendance.id).catch((error) => console.error("background Google Sheet sync failed", error)));
     const shouldAskAssessment = await isFinalKindergartenAttendance(attendance);
     return NextResponse.json({
       ok: true,

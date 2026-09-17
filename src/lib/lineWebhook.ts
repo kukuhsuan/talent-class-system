@@ -42,6 +42,7 @@ import { pushAdminAlert, raiseSystemAlert } from "@/lib/systemAlerts";
 import { respondToCourseChange } from "@/lib/courseChangeRequests";
 import { requiresSchoolSignature } from "@/lib/schoolSignature";
 import { deleteLineConversationState, getLineConversationStateRecord, setLineConversationState } from "@/lib/lineConversationState";
+import { queueAttendanceSheetSync, syncAttendanceToGoogleSheet } from "@/lib/attendanceSheetSync";
 
 type LineEvent = {
   type: string;
@@ -656,6 +657,8 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       });
       if (att) {
         await prisma.attendance.update({ where: { id: att.id }, data: { studentCount: count } });
+        await queueAttendanceSheetSync(att.id);
+        await syncAttendanceToGoogleSheet(att.id).catch((error) => console.error("Google Sheet sync failed", error));
         await replyMessage(replyToken, [{ type: "text", text: `✅ 已記錄 ${dept} 出席 ${count} 人！` }], token);
       } else {
         await replyMessage(replyToken, [{ type: "text", text: "找不到今日課程紀錄，請管理員先建立出勤紀錄。" }], token);
@@ -1265,6 +1268,8 @@ async function handleCountSubmit(
       where: { id: attendanceId },
       data: { studentCountB: count, studentCount: total } as never,
     });
+    await queueAttendanceSheetSync(attendanceId);
+    await syncAttendanceToGoogleSheet(attendanceId).catch((error) => console.error("Google Sheet sync failed", error));
     await replyMessage(replyToken, [{
       type: "text",
       text: `✅ 出席人數已記錄！\nA班：${countA} 人 ＋ B班：${count} 人 ＝ 合計 ${total} 人`,
@@ -1278,6 +1283,8 @@ async function handleCountSubmit(
     where: { id: attendanceId },
     data: { studentCount: count },
   });
+  await queueAttendanceSheetSync(attendanceId);
+  await syncAttendanceToGoogleSheet(attendanceId).catch((error) => console.error("Google Sheet sync failed", error));
   const attInfo = await prisma.attendance.findUnique({
     where: { id: attendanceId }, include: { course: true },
   }) as unknown as { course: { department: string } } | null;
