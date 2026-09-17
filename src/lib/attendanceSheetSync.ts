@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel, COURSE_OPTIONS } from "@/lib/courseMeta";
 import { weekdayOfIso } from "@/lib/courseDates";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
-import { readSheetValues, writeSheetValue } from "@/lib/googleSheetsClient";
+import { readSheetValues, readSpreadsheetSheetNames, writeSheetValue } from "@/lib/googleSheetsClient";
 
 export const SHEET_SYNC_STATUS = {
   pending: "待同步", synced: "已同步", same: "已一致", conflict: "人數不一致，待核對",
@@ -56,6 +56,18 @@ function tabMap() {
   catch { return {}; }
 }
 
+async function resolveSheetName(spreadsheetId: string, dateIso: string) {
+  const yearMonth = dateIso.slice(0, 7);
+  const configured = tabMap()[yearMonth]?.trim();
+  if (configured) return configured;
+  const year = Number(dateIso.slice(0, 4));
+  const month = Number(dateIso.slice(5, 7));
+  const exactMonthlyTitle = `${year - 1911}-${month}月`;
+  const sheets = await readSpreadsheetSheetNames(spreadsheetId);
+  const matches = sheets.filter((sheet) => !sheet.hidden && sheet.title.trim() === exactMonthlyTitle);
+  return matches.length === 1 ? matches[0].title : "";
+}
+
 function columnLetter(index: number) {
   let n = index + 1, out = "";
   while (n > 0) { n--; out = String.fromCharCode(65 + (n % 26)) + out; n = Math.floor(n / 26); }
@@ -94,12 +106,13 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
   const attendance = await prisma.attendance.findUnique({ where: { id: attendanceId }, include: { course: true } });
   if (!attendance || attendance.cancelled) return;
   const dateIso = attendance.date.toISOString().slice(0, 10);
-  const sheetName = tabMap()[dateIso.slice(0, 7)];
-  if (!sheetName) {
-    await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { systemValue: attendance.studentCount, message: `未設定 ${dateIso.slice(0, 7)} 對應分頁` });
-    return;
-  }
+  let sheetName = "";
   try {
+    sheetName = await resolveSheetName(spreadsheetId, dateIso);
+    if (!sheetName) {
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { systemValue: attendance.studentCount, message: `找不到唯一且未隱藏的 ${Number(dateIso.slice(0, 4)) - 1911}-${Number(dateIso.slice(5, 7))}月 分頁` });
+      return;
+    }
     const rows = await readSheetValues(spreadsheetId, `'${sheetName.replace(/'/g, "''")}'!A1:AB1200`);
     const header = rows[0] ?? [];
     const indices = { school: header.findIndex((v) => normalize(v) === "學校"), item: header.findIndex((v) => normalize(v) === "項目"), weekday: header.findIndex((v) => normalize(v) === "星期幾"), time: header.findIndex((v) => normalize(v) === "時間") };

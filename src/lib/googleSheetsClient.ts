@@ -51,6 +51,13 @@ export async function readSheetValues(spreadsheetId: string, range: string) {
   return (body as { values?: unknown[][] }).values ?? [];
 }
 
+export async function readSpreadsheetSheetNames(spreadsheetId: string) {
+  const body = await sheetsRequest(`/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties(title,hidden)`);
+  return ((body as { sheets?: Array<{ properties?: { title?: string; hidden?: boolean } }> }).sheets ?? [])
+    .map((sheet) => sheet.properties)
+    .filter((properties): properties is { title: string; hidden?: boolean } => Boolean(properties?.title));
+}
+
 export async function writeSheetValue(spreadsheetId: string, range: string, value: number) {
   await sheetsRequest(`/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
     method: "PUT",
