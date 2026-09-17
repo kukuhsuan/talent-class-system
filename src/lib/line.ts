@@ -742,6 +742,73 @@ export function buildLeaveCourseSelectMessage(opts: {
   };
 }
 
+export function buildLeaveReasonSelectMessage(opts: { attendanceId: number; semesterLeaveCount: number }) {
+  const reasons = ["身體不適", "家中有事", "私人行程"];
+  return {
+    type: "flex",
+    altText: "請選擇請假原因",
+    contents: {
+      type: "bubble",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: "#DDEDEA", paddingAll: "16px",
+        contents: [{ type: "text", text: "選擇請假原因", color: "#244B52", weight: "bold", size: "xl" }],
+      },
+      body: {
+        type: "box", layout: "vertical", backgroundColor: "#FBFCFA", paddingAll: "16px", spacing: "sm",
+        contents: [
+          { type: "text", text: "請先選擇原因，最後確認送出前都不會建立請假紀錄。", size: "sm", color: "#52656A", wrap: true },
+          { type: "text", text: `本學期已請假 ${opts.semesterLeaveCount} 次；本次確認送出後才會累計為 ${opts.semesterLeaveCount + 1} 次。`, size: "xs", color: "#7B8B90", wrap: true },
+          ...reasons.map((reason) => ({
+            type: "button", style: "secondary" as const, height: "sm" as const, color: "#EAF4F2",
+            action: { type: "postback", label: reason, data: `action=leave_reason&id=${opts.attendanceId}&reason=${encodeURIComponent(reason)}`, displayText: `請假原因：${reason}` },
+          })),
+          { type: "button", style: "secondary" as const, height: "sm" as const, color: "#FFF3D6", action: { type: "postback", label: "其他", data: `action=leave_reason_other&id=${opts.attendanceId}`, displayText: "請假原因：其他" } },
+          { type: "button", style: "secondary" as const, height: "sm" as const, color: "#FDECEC", action: { type: "postback", label: "取消", data: `action=leave_flow_cancel&id=${opts.attendanceId}`, displayText: "取消請假流程" } },
+        ],
+      },
+    },
+  };
+}
+
+export function buildLeaveNotePromptMessage(opts: { attendanceId: number; reason: string }) {
+  return {
+    type: "flex", altText: "請假補充說明（選填）",
+    contents: {
+      type: "bubble",
+      header: { type: "box", layout: "vertical", backgroundColor: "#DDEDEA", paddingAll: "16px", contents: [{ type: "text", text: "補充說明（選填）", color: "#244B52", weight: "bold", size: "xl" }] },
+      body: { type: "box", layout: "vertical", backgroundColor: "#FBFCFA", paddingAll: "16px", spacing: "sm", contents: [
+        { type: "text", text: `已選原因：${opts.reason}`, size: "sm", color: "#263B40", weight: "bold", wrap: true },
+        { type: "text", text: "如需補充可直接輸入文字；不需補充請按下方按鈕。此時仍未送出請假。", size: "sm", color: "#52656A", wrap: true },
+        { type: "button", style: "primary" as const, height: "sm" as const, color: "#2F6B61", action: { type: "postback", label: "不需補充，前往確認", data: `action=leave_note_skip&id=${opts.attendanceId}`, displayText: "不需補充，前往確認" } },
+        { type: "button", style: "secondary" as const, height: "sm" as const, action: { type: "postback", label: "重新選擇原因", data: `action=leave_restart&id=${opts.attendanceId}`, displayText: "重新選擇請假原因" } },
+        { type: "button", style: "secondary" as const, height: "sm" as const, color: "#FDECEC", action: { type: "postback", label: "取消", data: `action=leave_flow_cancel&id=${opts.attendanceId}`, displayText: "取消請假流程" } },
+      ] },
+    },
+  };
+}
+
+export function buildLeaveConfirmationMessage(opts: { attendanceId: number; date: string; time: string; school: string; courseType: string; reason: string; notes?: string }) {
+  const reasonText = opts.notes ? `${opts.reason}（${opts.notes}）` : opts.reason;
+  return {
+    type: "flex", altText: `請確認請假資料：${opts.date} ${opts.school}`,
+    contents: {
+      type: "bubble",
+      header: { type: "box", layout: "vertical", backgroundColor: "#FFF3D6", paddingAll: "16px", contents: [{ type: "text", text: "請確認請假資料", color: "#7A4B00", weight: "bold", size: "xl" }] },
+      body: { type: "box", layout: "vertical", backgroundColor: "#FBFCFA", paddingAll: "16px", spacing: "sm", contents: [
+        { type: "text", text: `日期｜${opts.date}`, size: "sm", color: "#263B40", wrap: true },
+        { type: "text", text: `時間｜${opts.time || "時間未填"}`, size: "sm", color: "#263B40", wrap: true },
+        { type: "text", text: `園所｜${opts.school}`, size: "sm", color: "#263B40", wrap: true },
+        { type: "text", text: `課程｜${courseLabel(opts.courseType)}`, size: "sm", color: "#263B40", wrap: true },
+        { type: "text", text: `原因｜${reasonText}`, size: "sm", color: "#263B40", wrap: true },
+        { type: "text", text: "按下「確認送出」後才會建立請假、累計次數並通知行政。", size: "xs", color: "#9A6700", wrap: true, margin: "md" },
+        { type: "button", style: "primary" as const, height: "sm" as const, color: "#2F6B61", action: { type: "postback", label: "確認送出", data: `action=leave_confirm&id=${opts.attendanceId}`, displayText: "確認送出請假申請" } },
+        { type: "button", style: "secondary" as const, height: "sm" as const, action: { type: "postback", label: "重新填寫", data: `action=leave_restart&id=${opts.attendanceId}`, displayText: "重新填寫請假資料" } },
+        { type: "button", style: "secondary" as const, height: "sm" as const, color: "#FDECEC", action: { type: "postback", label: "取消", data: `action=leave_flow_cancel&id=${opts.attendanceId}`, displayText: "取消請假流程" } },
+      ] },
+    },
+  };
+}
+
 export function buildLeaveCancelSelectMessage(opts: {
   teacherName: string;
   leaves: Array<{ id: number; date: string; time: string; school: string; courseType: string; role?: string; status: string }>;

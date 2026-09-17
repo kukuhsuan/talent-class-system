@@ -15,6 +15,9 @@ async function ensureLineConversationStateTable() {
       PRIMARY KEY ("lineUserId", "action")
     )
   `);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "LineConversationState" ADD COLUMN "payload" TEXT NOT NULL DEFAULT ''`,
+  ).catch(() => undefined);
   tableReady = true;
 }
 
@@ -22,23 +25,40 @@ export async function setLineConversationState(input: {
   lineUserId: string;
   action: string;
   referenceId: number;
+  payload?: string;
   ttlMinutes?: number;
 }) {
   await ensureLineConversationStateTable();
   const ttlMinutes = Math.max(1, Math.min(120, input.ttlMinutes ?? 30));
   await prisma.$executeRawUnsafe(
     `INSERT INTO "LineConversationState"
-      ("lineUserId", "action", "referenceId", "expiresAt", "createdAt", "updatedAt")
-     VALUES (?, ?, ?, datetime('now', ?), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ("lineUserId", "action", "referenceId", "payload", "expiresAt", "createdAt", "updatedAt")
+     VALUES (?, ?, ?, ?, datetime('now', ?), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
      ON CONFLICT("lineUserId", "action") DO UPDATE SET
        "referenceId" = excluded."referenceId",
+       "payload" = excluded."payload",
        "expiresAt" = excluded."expiresAt",
        "updatedAt" = CURRENT_TIMESTAMP`,
     input.lineUserId,
     input.action,
     input.referenceId,
+    input.payload ?? "",
     `+${ttlMinutes} minutes`,
   );
+}
+
+export async function getLineConversationStateRecord(lineUserId: string, action: string) {
+  await ensureLineConversationStateTable();
+  const rows = await prisma.$queryRawUnsafe<Array<{ referenceId: number; payload: string }>>(
+    `SELECT "referenceId", "payload" FROM "LineConversationState"
+     WHERE "lineUserId" = ? AND "action" = ? AND "expiresAt" > CURRENT_TIMESTAMP
+     LIMIT 1`,
+    lineUserId,
+    action,
+  );
+  return rows.length
+    ? { referenceId: Number(rows[0].referenceId), payload: rows[0].payload ?? "" }
+    : null;
 }
 
 export async function getLineConversationState(lineUserId: string, action: string) {

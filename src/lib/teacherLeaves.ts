@@ -367,7 +367,7 @@ export async function cancellableLeaveChoices(teacherId: number) {
      FROM "TeacherLeaveRequest" lr
      JOIN "Course" c ON c."id" = lr."courseId"
      WHERE lr."teacherId" = ?
-       AND lr."status" NOT IN ('${LEAVE_STATUS.cancelled}', '${LEAVE_STATUS.rejected}')
+       AND lr."status" IN ('${LEAVE_STATUS.pending}', '${LEAVE_STATUS.approved}')
      ORDER BY lr."leaveDate" ASC, lr."id" ASC
      LIMIT 10`,
     teacherId,
@@ -391,8 +391,8 @@ export async function cancelLeaveRequestByTeacher(input: { leaveRequestId: numbe
   if (leave.teacherId !== input.teacherId) throw new Error("這筆請假申請不是您的，無法取消");
   if (leave.status === LEAVE_STATUS.cancelled) return { alreadyCancelled: true, leave };
   if (leave.status === LEAVE_STATUS.rejected) throw new Error("這筆請假已被駁回，不需要取消");
-  if (leave.status === LEAVE_STATUS.found) {
-    throw new Error("此請假已找到代課老師，不能由老師端直接取消，請聯絡行政重新處理。");
+  if (![LEAVE_STATUS.pending, LEAVE_STATUS.approved].includes(leave.status as typeof LEAVE_STATUS.pending | typeof LEAVE_STATUS.approved)) {
+    throw new Error("這筆請假已進入代課安排，不能由老師端直接取消，請聯絡行政重新處理。");
   }
   await prisma.$executeRawUnsafe(
     `UPDATE "TeacherLeaveRequest"

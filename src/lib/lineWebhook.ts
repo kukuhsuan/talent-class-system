@@ -6,6 +6,7 @@ import {
   replyMessage,
   buildReportRequestMessage, buildCurriculumSelectMessage, buildProgressSelectMessage, buildStudentCountBoard, buildTwoMonthScheduleMessage, generateBindCode,
   buildLeaveCourseSelectMessage, buildLeaveCancelSelectMessage,
+  buildLeaveReasonSelectMessage, buildLeaveNotePromptMessage, buildLeaveConfirmationMessage,
   buildEquipmentFlowAcceptedMessage,
   isSchoolLineRegion,
 } from "@/lib/line";
@@ -40,7 +41,7 @@ import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { pushAdminAlert, raiseSystemAlert } from "@/lib/systemAlerts";
 import { respondToCourseChange } from "@/lib/courseChangeRequests";
 import { requiresSchoolSignature } from "@/lib/schoolSignature";
-import { deleteLineConversationState, getLineConversationState, setLineConversationState } from "@/lib/lineConversationState";
+import { deleteLineConversationState, getLineConversationStateRecord, setLineConversationState } from "@/lib/lineConversationState";
 
 type LineEvent = {
   type: string;
@@ -55,6 +56,13 @@ const pendingDetails = new Map<string, number>();
 // Track teachers who've submitted A班, now awaiting B班 (userId -> attendanceId)
 const pendingGroupB = new Map<string, number>();
 const LEAVE_REASON_ACTION = "teacher_leave_reason";
+type PendingLeavePayload = {
+  phase: "choose_reason" | "other_reason" | "optional_note" | "confirmation";
+  reason?: string;
+  notes?: string;
+};
+const LEAVE_FLOW_CANCEL_WORDS = new Set(["取消", "不用了", "返回"]);
+const INVALID_LEAVE_TEXTS = new Set(["喔", "哦", "好", "嗯", "恩", "還沒回來"]);
 const UNAUTHORIZED_ATTENDANCE_REPLY = "此課程資料無法由您的帳號回報，請聯繫行政確認。";
 
 // LINE 是對外介面：只把可由老師自行處理的業務提示回傳，避免資料庫、
@@ -69,6 +77,7 @@ const TEACHER_SAFE_ERROR_PATTERNS = [
   /^這筆請假申請不是您的/,
   /^這筆請假已被駁回/,
   /^此請假已找到代課老師/,
+  /^這筆請假已進入代課安排/,
   /^找不到這筆課程異動/,
   /^這筆課程異動不是發送給您的/,
   /^這筆課程異動已經處理/,
@@ -81,6 +90,64 @@ function teacherSafeError(error: unknown, fallback: string, context: string) {
   }
   console.error(`[line webhook] ${context}:`, error);
   return fallback;
+}
+
+function parsePendingLeavePayload(value: string): PendingLeavePayload {
+  try {
+    const parsed = JSON.parse(value) as PendingLeavePayload;
+    if (parsed?.phase) return parsed;
+  } catch {}
+  return { phase: "choose_reason" };
+}
+
+function validLeaveText(value: string) {
+  const normalized = value.trim();
+  return normalized.length >= 2
+    && !INVALID_LEAVE_TEXTS.has(normalized)
+    && !normalized.includes("還沒回來");
+}
+
+async function leaveAttendanceSummary(attendanceId: number) {
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+    include: { course: true },
+  });
+  if (!attendance) return null;
+  const timeMap = await attendanceScheduledTimeMap([attendance.id]);
+  return {
+    attendanceId: attendance.id,
+    date: attendance.date.toISOString().slice(0, 10),
+    time: effectiveAttendanceTime({
+      scheduledTime: timeMap.get(attendance.id),
+      courseTime: attendance.course.time,
+      attendanceHours: attendance.hours,
+      isPayrollLocked: attendance.isPayrollLocked,
+      reportContent: attendance.reportContent,
+      reportSentAt: attendance.reportSentAt,
+      studentCount: attendance.studentCount,
+      studentCountA: attendance.studentCountA,
+      studentCountB: attendance.studentCountB,
+    }),
+    school: attendance.course.school,
+    courseType: attendance.course.courseType,
+  };
+}
+
+async function showLeaveConfirmation(userId: string, attendanceId: number, payload: PendingLeavePayload, replyToken: string, token: string) {
+  const summary = await leaveAttendanceSummary(attendanceId);
+  if (!summary || !payload.reason) {
+    await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
+    await replyMessage(replyToken, [{ type: "text", text: "找不到要請假的課程，請重新選擇。" }], token);
+    return;
+  }
+  await setLineConversationState({
+    lineUserId: userId,
+    action: LEAVE_REASON_ACTION,
+    referenceId: attendanceId,
+    payload: JSON.stringify({ ...payload, phase: "confirmation" }),
+    ttlMinutes: 30,
+  });
+  await replyMessage(replyToken, [buildLeaveConfirmationMessage({ ...summary, reason: payload.reason, notes: payload.notes })], token);
 }
 
 async function teacherCanAccessAttendance(lineUserId: string, attendanceId: number) {
@@ -220,36 +287,31 @@ async function handleText(userId: string, text: string, replyToken: string, regi
     return;
   }
 
-  const pendingLeaveAttendanceId = await getLineConversationState(userId, LEAVE_REASON_ACTION);
-  if (pendingLeaveAttendanceId) {
-    if (!text.trim()) {
-      await replyMessage(replyToken, [{ type: "text", text: "請輸入請假原因，原因為必填。" }], token);
+  const pendingLeave = await getLineConversationStateRecord(userId, LEAVE_REASON_ACTION);
+  if (pendingLeave) {
+    const payload = parsePendingLeavePayload(pendingLeave.payload);
+    if (LEAVE_FLOW_CANCEL_WORDS.has(text)) {
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
+      await replyMessage(replyToken, [{ type: "text", text: "已取消這次請假流程，沒有建立任何請假紀錄。" }], token);
       return;
     }
-    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number; name: string } | null;
-    if (!teacher) {
-      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
-      await replyMessage(replyToken, [{ type: "text", text: "找不到您的老師資料，請先完成綁定。" }], token);
+    if (payload.phase === "other_reason") {
+      if (!validLeaveText(text)) {
+        await replyMessage(replyToken, [{ type: "text", text: "請簡單說明請假原因，例如：家中有事、身體不適、已有其他行程等。\n\n若不申請了，可輸入「取消」。" }], token);
+        return;
+      }
+      await showLeaveConfirmation(userId, pendingLeave.referenceId, { phase: "confirmation", reason: text }, replyToken, token);
       return;
     }
-    try {
-      const result = await createLeaveRequestFromAttendance({
-        attendanceId: pendingLeaveAttendanceId,
-        teacherId: teacher.id,
-        reason: text,
-      });
-      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
-      await replyMessage(replyToken, [{
-        type: "text",
-        text: `✅ 已送出請假申請，行政審核後會再通知您。\n本學期請假累計：${result.semesterLeaveCountAtSubmit} 次。\n\n若要取消請假，請傳「取消請假」。`,
-      }], token);
-    } catch (error) {
-      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
-      await replyMessage(replyToken, [{
-        type: "text",
-        text: teacherSafeError(error, "請假申請送出失敗，請稍後再試或聯絡行政。", "leave request failed"),
-      }], token);
+    if (payload.phase === "optional_note") {
+      if (!validLeaveText(text)) {
+        await replyMessage(replyToken, [{ type: "text", text: "這段補充說明太短或不明確，請再說明一次；若不需補充，請點「不需補充，前往確認」。" }], token);
+        return;
+      }
+      await showLeaveConfirmation(userId, pendingLeave.referenceId, { ...payload, phase: "confirmation", notes: text }, replyToken, token);
+      return;
     }
+    await replyMessage(replyToken, [{ type: "text", text: payload.phase === "confirmation" ? "請使用上一則訊息的「確認送出」、「重新填寫」或「取消」按鈕。" : "請使用上一則訊息的按鈕選擇請假原因。" }], token);
     return;
   }
 
@@ -724,16 +786,98 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
       return;
     }
     const leaveCount = await semesterLeaveCount(teacher.id);
+    if (!(await teacherCanAccessAttendance(userId, attendanceId))) {
+      await replyMessage(replyToken, [{ type: "text", text: "這堂課不是您的課程，無法申請請假。" }], token);
+      return;
+    }
     await setLineConversationState({
       lineUserId: userId,
       action: LEAVE_REASON_ACTION,
       referenceId: attendanceId,
+      payload: JSON.stringify({ phase: "choose_reason" } satisfies PendingLeavePayload),
       ttlMinutes: 30,
     });
-    await replyMessage(replyToken, [{
-      type: "text",
-      text: `請輸入請假原因（必填）。\n\n提醒：您本學期已請假 ${leaveCount} 次，本次送出後將累計為 ${leaveCount + 1} 次。`,
-    }], token);
+    await replyMessage(replyToken, [buildLeaveReasonSelectMessage({ attendanceId, semesterLeaveCount: leaveCount })], token);
+    return;
+  }
+
+  if (action === "leave_reason" || action === "leave_reason_other") {
+    const pending = await getLineConversationStateRecord(userId, LEAVE_REASON_ACTION);
+    if (!pending || pending.referenceId !== attendanceId || !(await teacherCanAccessAttendance(userId, attendanceId))) {
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
+      await replyMessage(replyToken, [{ type: "text", text: "這次請假操作已失效，請重新傳送「請假」開始。" }], token);
+      return;
+    }
+    if (action === "leave_reason_other") {
+      await setLineConversationState({
+        lineUserId: userId, action: LEAVE_REASON_ACTION, referenceId: attendanceId,
+        payload: JSON.stringify({ phase: "other_reason" } satisfies PendingLeavePayload), ttlMinutes: 30,
+      });
+      await replyMessage(replyToken, [{ type: "text", text: "請輸入請假原因（必填）。\n例如：家中有事、身體不適、已有其他行程等。\n\n輸入「取消」可停止申請。" }], token);
+      return;
+    }
+    const reason = (params.get("reason") ?? "").trim();
+    if (!["身體不適", "家中有事", "私人行程"].includes(reason)) {
+      await replyMessage(replyToken, [{ type: "text", text: "請假原因無效，請重新選擇。" }], token);
+      return;
+    }
+    await setLineConversationState({
+      lineUserId: userId, action: LEAVE_REASON_ACTION, referenceId: attendanceId,
+      payload: JSON.stringify({ phase: "optional_note", reason } satisfies PendingLeavePayload), ttlMinutes: 30,
+    });
+    await replyMessage(replyToken, [buildLeaveNotePromptMessage({ attendanceId, reason })], token);
+    return;
+  }
+
+  if (action === "leave_note_skip") {
+    const pending = await getLineConversationStateRecord(userId, LEAVE_REASON_ACTION);
+    if (!pending || pending.referenceId !== attendanceId) {
+      await replyMessage(replyToken, [{ type: "text", text: "這次請假操作已失效，請重新傳送「請假」開始。" }], token);
+      return;
+    }
+    const payload = parsePendingLeavePayload(pending.payload);
+    await showLeaveConfirmation(userId, attendanceId, payload, replyToken, token);
+    return;
+  }
+
+  if (action === "leave_restart") {
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number } | null;
+    if (!teacher || !(await teacherCanAccessAttendance(userId, attendanceId))) {
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
+      await replyMessage(replyToken, [{ type: "text", text: "這次請假操作已失效，請重新傳送「請假」開始。" }], token);
+      return;
+    }
+    const leaveCount = await semesterLeaveCount(teacher.id);
+    await setLineConversationState({ lineUserId: userId, action: LEAVE_REASON_ACTION, referenceId: attendanceId, payload: JSON.stringify({ phase: "choose_reason" } satisfies PendingLeavePayload), ttlMinutes: 30 });
+    await replyMessage(replyToken, [buildLeaveReasonSelectMessage({ attendanceId, semesterLeaveCount: leaveCount })], token);
+    return;
+  }
+
+  if (action === "leave_flow_cancel") {
+    await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
+    await replyMessage(replyToken, [{ type: "text", text: "已取消這次請假流程，沒有建立任何請假紀錄。" }], token);
+    return;
+  }
+
+  if (action === "leave_confirm") {
+    const pending = await getLineConversationStateRecord(userId, LEAVE_REASON_ACTION);
+    const teacher = await prisma.teacher.findFirst({ where: { lineUserId: userId } } as never) as { id: number } | null;
+    if (!pending || pending.referenceId !== attendanceId || !teacher) {
+      await replyMessage(replyToken, [{ type: "text", text: "這次請假操作已失效，請重新傳送「請假」開始。" }], token);
+      return;
+    }
+    const payload = parsePendingLeavePayload(pending.payload);
+    if (payload.phase !== "confirmation" || !payload.reason) {
+      await replyMessage(replyToken, [{ type: "text", text: "請先完成原因填寫與資料確認。" }], token);
+      return;
+    }
+    try {
+      const result = await createLeaveRequestFromAttendance({ attendanceId, teacherId: teacher.id, reason: payload.reason, notes: payload.notes });
+      await deleteLineConversationState(userId, LEAVE_REASON_ACTION);
+      await replyMessage(replyToken, [{ type: "text", text: `✅ 已送出請假申請，行政審核後會再通知您。\n本學期請假累計：${result.semesterLeaveCountAtSubmit} 次。\n\n若要取消請假，請傳「取消請假」。` }], token);
+    } catch (error) {
+      await replyMessage(replyToken, [{ type: "text", text: teacherSafeError(error, "請假申請送出失敗，請稍後再試或聯絡行政。", "leave confirmation failed") }], token);
+    }
     return;
   }
 
