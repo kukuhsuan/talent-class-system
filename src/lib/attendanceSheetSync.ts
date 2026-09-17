@@ -74,8 +74,8 @@ function weekContains(header: string, dateIso: string) {
 function existingCount(value: unknown) {
   const text = String(value ?? "").trim();
   if (!text) return { kind: "empty" as const };
-  if (/^\d+$/.test(text)) return { kind: "count" as const, value: Number(text) };
-  const named = text.match(/[（(](\d+)[）)]\s*$/);
+  if (/^\d+(?:\.\d+)?$/.test(text)) return { kind: "count" as const, value: Number(text) };
+  const named = text.match(/[（(](\d+(?:\.\d+)?)[）)]\s*$/);
   if (named) return { kind: "count" as const, value: Number(named[1]) };
   return { kind: "other" as const };
 }
@@ -92,7 +92,7 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
     return;
   }
   const attendance = await prisma.attendance.findUnique({ where: { id: attendanceId }, include: { course: true } });
-  if (!attendance || attendance.cancelled || attendance.studentCount == null) return;
+  if (!attendance || attendance.cancelled) return;
   const dateIso = attendance.date.toISOString().slice(0, 10);
   const sheetName = tabMap()[dateIso.slice(0, 7)];
   if (!sheetName) {
@@ -108,16 +108,36 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
     const schools = schoolCandidates(attendance.course.school, courseLabel(attendance.course.courseType));
     const items = itemCandidates(attendance.course.courseType);
     const weekday = normalize(weekdayOfIso(dateIso));
-    const matches = rows.map((row, index) => ({ row, index })).filter(({ row, index }) => index > 0
-      && schools.has(normalize(row[indices.school])) && items.has(normalize(row[indices.item]))
-      && normalize(row[indices.weekday]).replace(/[（(].*$/, "") === weekday && normalize(row[indices.time]) === normalize(time));
+    const internalMarkerIndex = rows.findIndex((row) => row.some((value) => normalize(value).includes("課內課")));
+    const internalRows = new Set<number>();
+    if (internalMarkerIndex >= 0) {
+      for (let index = internalMarkerIndex + 1; index < rows.length; index++) {
+        const row = rows[index] ?? [];
+        const looksLikeInternalCourse = Boolean(normalize(row[2])) && normalize(row[3]).includes(":")
+          && Boolean(normalize(row[4])) && normalize(row[5]).startsWith("星期") && Boolean(normalize(row[6]));
+        if (!looksLikeInternalCourse) break;
+        internalRows.add(index);
+      }
+    }
+    const matches = rows.map((row, index) => {
+      const isInternal = internalRows.has(index);
+      const rowIndices = isInternal ? { school: 2, time: 3, item: 4, weekday: 5 } : indices;
+      return { row, index, isInternal, rowIndices };
+    }).filter(({ row, index, rowIndices }) => index > 0
+      && schools.has(normalize(row[rowIndices.school])) && items.has(normalize(row[rowIndices.item]))
+      && normalize(row[rowIndices.weekday]).replace(/[（(].*$/, "") === weekday && normalize(row[rowIndices.time]) === normalize(time));
     if (matches.length !== 1) {
       await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { sheetName, systemValue: attendance.studentCount, message: `符合列數：${matches.length}（不寫入）` });
       return;
     }
+    const syncValue = matches[0].isInternal ? attendance.hours : attendance.studentCount;
+    if (syncValue == null) {
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { sheetName, message: matches[0].isInternal ? "課內課缺少上課時數" : "一般課程缺少實到人數" });
+      return;
+    }
     const weekIndex = header.findIndex((value) => weekContains(String(value ?? ""), dateIso));
     if (weekIndex < 0) {
-      await saveStatus(attendanceId, SHEET_SYNC_STATUS.noWeek, { sheetName, systemValue: attendance.studentCount, message: `${dateIso} 找不到週次欄` });
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.noWeek, { sheetName, systemValue: syncValue, message: `${dateIso} 找不到週次欄` });
       return;
     }
     const rowNumber = matches[0].index + 1;
@@ -125,12 +145,12 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
     const existing = matches[0].row[weekIndex];
     const parsed = existingCount(existing);
     if (parsed.kind === "empty") {
-      await writeSheetValue(spreadsheetId, `'${sheetName.replace(/'/g, "''")}'!${cell}`, attendance.studentCount);
-      await saveStatus(attendanceId, SHEET_SYNC_STATUS.synced, { sheetName, cell, systemValue: attendance.studentCount, sheetValue: String(existing ?? ""), synced: true });
-    } else if (parsed.kind === "count" && parsed.value === attendance.studentCount) {
-      await saveStatus(attendanceId, SHEET_SYNC_STATUS.same, { sheetName, cell, systemValue: attendance.studentCount, sheetValue: String(existing), synced: true });
+      await writeSheetValue(spreadsheetId, `'${sheetName.replace(/'/g, "''")}'!${cell}`, syncValue);
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.synced, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing ?? ""), message: matches[0].isInternal ? "課內課已同步時數" : "已同步實到人數", synced: true });
+    } else if (parsed.kind === "count" && parsed.value === syncValue) {
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.same, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing), message: matches[0].isInternal ? "課內課時數一致" : "實到人數一致", synced: true });
     } else {
-      await saveStatus(attendanceId, SHEET_SYNC_STATUS.conflict, { sheetName, cell, systemValue: attendance.studentCount, sheetValue: String(existing), message: "Google Sheet 已有不同內容，未覆蓋" });
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.conflict, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing), message: "Google Sheet 已有不同內容，未覆蓋" });
     }
   } catch (error) {
     await saveStatus(attendanceId, SHEET_SYNC_STATUS.error, { sheetName, systemValue: attendance.studentCount, message: error instanceof Error ? error.message.slice(0, 500) : "未知錯誤" });

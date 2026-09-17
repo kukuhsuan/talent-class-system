@@ -156,8 +156,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   });
   const countChanged = record.studentCount !== current.studentCount
     || record.studentCountA !== current.studentCountA
-    || record.studentCountB !== current.studentCountB;
-  if (countChanged && record.studentCount != null) {
+    || record.studentCountB !== current.studentCountB
+    || record.hours !== current.hours;
+  if (countChanged && (record.studentCount != null || record.hours != null)) {
     await queueAttendanceSheetSync(record.id);
     await syncAttendanceToGoogleSheet(record.id).catch((error) => console.error("Google Sheet sync failed", error));
   }
