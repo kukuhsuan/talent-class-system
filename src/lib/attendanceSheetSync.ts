@@ -50,9 +50,22 @@ function normalize(value: unknown) {
 }
 
 function schoolCandidates(school: string, item: string) {
-  const values = new Set([normalize(school)]);
+  const normalizedSchool = normalize(school);
+  const values = new Set([normalizedSchool]);
   const suffixes = [`(${item})`, `（${item}）`].map(normalize);
-  for (const suffix of suffixes) if (normalize(school).endsWith(suffix)) values.add(normalize(school).slice(0, -suffix.length));
+  for (const suffix of suffixes) if (normalizedSchool.endsWith(suffix)) values.add(normalizedSchool.slice(0, -suffix.length));
+
+  // 試算表常以園所簡稱登記，例如系統「何嘉仁臨沂幼兒園」、表內「臨沂」。
+  // 只產生去除行政／品牌／機構字樣後的明確簡稱，後續仍須同時吻合課程、星期與時間。
+  for (const candidate of [...values]) {
+    const withoutRegion = candidate.replace(/^(?:台北市|新北市|桃園市|台中市|新竹市|高雄市|基隆市|彰化縣|新竹縣|苗栗縣)?(?:私立|市立|縣立)?/, "");
+    values.add(withoutRegion);
+    const withoutKindergarten = withoutRegion.replace(/(?:幼兒園|幼稚園|幼校)$/, "");
+    values.add(withoutKindergarten);
+    if (withoutKindergarten.startsWith("何嘉仁") && withoutKindergarten.length > 3) {
+      values.add(withoutKindergarten.slice(3));
+    }
+  }
   return values;
 }
 
@@ -200,9 +213,9 @@ export async function retryPendingAttendanceSheetSync(limit = 200) {
   const rows = await prisma.$queryRawUnsafe<Array<{ attendanceId: number }>>(
     `SELECT s."attendanceId" FROM "AttendanceSheetSync" s
      LEFT JOIN "Attendance" a ON a."id" = s."attendanceId"
-     WHERE s."status" IN (?,?,?,?,?)
+     WHERE s."status" IN (?,?,?,?,?,?,?)
      ORDER BY
-       CASE WHEN s."status" IN (?,?,?) THEN 0 ELSE 1 END,
+       CASE WHEN s."status" IN (?,?,?,?,?) THEN 0 ELSE 1 END,
        CASE WHEN date(a."date") >= date('now', '-45 days') THEN 0 ELSE 1 END,
        s."updatedAt" ASC
      LIMIT ?`,
@@ -211,9 +224,13 @@ export async function retryPendingAttendanceSheetSync(limit = 200) {
     SHEET_SYNC_STATUS.conflict,
     SHEET_SYNC_STATUS.synced,
     SHEET_SYNC_STATUS.same,
+    SHEET_SYNC_STATUS.noMatch,
+    SHEET_SYNC_STATUS.noWeek,
     SHEET_SYNC_STATUS.pending,
     SHEET_SYNC_STATUS.error,
     SHEET_SYNC_STATUS.conflict,
+    SHEET_SYNC_STATUS.noMatch,
+    SHEET_SYNC_STATUS.noWeek,
     limit,
   );
   const cache = createSheetSyncCache();
