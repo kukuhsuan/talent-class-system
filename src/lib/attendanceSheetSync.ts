@@ -160,7 +160,19 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
 
 export async function retryPendingAttendanceSheetSync(limit = 30) {
   await ensureTable();
-  const rows = await prisma.$queryRawUnsafe<Array<{ attendanceId: number }>>(`SELECT "attendanceId" FROM "AttendanceSheetSync" WHERE "status" IN (?,?) ORDER BY "updatedAt" ASC LIMIT ?`, SHEET_SYNC_STATUS.pending, SHEET_SYNC_STATUS.error, limit);
+  // 除了失敗重試，也輪流複查已同步紀錄。若有人事後清空 Google Sheet，
+  // 下一輪會重新讀到空白並補回；已有不同內容時仍只標示衝突、不覆蓋。
+  const rows = await prisma.$queryRawUnsafe<Array<{ attendanceId: number }>>(
+    `SELECT "attendanceId" FROM "AttendanceSheetSync"
+     WHERE "status" IN (?,?,?,?,?)
+     ORDER BY "updatedAt" ASC LIMIT ?`,
+    SHEET_SYNC_STATUS.pending,
+    SHEET_SYNC_STATUS.error,
+    SHEET_SYNC_STATUS.conflict,
+    SHEET_SYNC_STATUS.synced,
+    SHEET_SYNC_STATUS.same,
+    limit,
+  );
   const results = await Promise.allSettled(rows.map((row) => syncAttendanceToGoogleSheet(Number(row.attendanceId))));
   return { attempted: rows.length, failed: results.filter((item) => item.status === "rejected").length };
 }
