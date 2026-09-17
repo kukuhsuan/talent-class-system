@@ -59,7 +59,7 @@
     },
     {
       "path": "/api/cron/google-sheets-attendance-sync",
-      "schedule": "*/30 * * * *"
+      "schedule": "30 10 * * *"
     }
   ]
 }

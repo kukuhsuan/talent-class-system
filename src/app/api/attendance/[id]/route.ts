@@ -13,7 +13,7 @@ import { syncSubstituteWithAttendance } from "@/lib/substituteAssignment";
 import { schoolSignatureMap } from "@/lib/schoolSignature";
 import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
 import { notifySchoolCourseChange } from "@/lib/schoolNotification";
-import { queueAttendanceSheetSync, syncAttendanceToGoogleSheet } from "@/lib/attendanceSheetSync";
+import { queueAttendanceSheetSync } from "@/lib/attendanceSheetSync";
 
 // 單堂出勤（供電子簽到表列印頁使用）
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -160,7 +160,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     || record.hours !== current.hours;
   if (countChanged && (record.studentCount != null || record.hours != null)) {
     await queueAttendanceSheetSync(record.id);
-    await syncAttendanceToGoogleSheet(record.id).catch((error) => console.error("Google Sheet sync failed", error));
   }
   const schoolNotifications: Promise<unknown>[] = [];
   if (!current.cancelled && record.cancelled) {
