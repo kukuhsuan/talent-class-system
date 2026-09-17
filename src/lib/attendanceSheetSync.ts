@@ -165,15 +165,19 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number, cache?: 
         internalRows.add(index);
       }
     }
-    const matches = rows.map((row, index) => {
+    const candidateRows = rows.map((row, index) => {
       const isInternal = internalRows.has(index);
       const rowIndices = isInternal ? { school: 2, time: 3, item: 4, weekday: 5 } : indices;
       return { row, index, isInternal, rowIndices };
     }).filter(({ row, index, rowIndices }) => index > 0
-      && schools.has(normalize(row[rowIndices.school])) && items.has(normalize(row[rowIndices.item]))
+      && items.has(normalize(row[rowIndices.item]))
       && normalize(row[rowIndices.weekday]).replace(/[（(].*$/, "") === weekday && normalize(row[rowIndices.time]) === normalize(time));
+    const schoolMatches = candidateRows.filter(({ row, rowIndices }) => schools.has(normalize(row[rowIndices.school])));
+    // 園所慣用簡稱未必能由正式全名規則化取得。先採園所吻合的結果；若完全對不上，
+    // 才以「項目＋星期＋時間」作唯一性備援。只要出現兩列以上就拒絕寫入，避免猜錯園所。
+    const matches = schoolMatches.length > 0 ? schoolMatches : candidateRows.length === 1 ? candidateRows : [];
     if (matches.length !== 1) {
-      await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { sheetName, systemValue: attendance.studentCount, message: `符合列數：${matches.length}（不寫入）` });
+      await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { sheetName, systemValue: attendance.studentCount, message: `園所符合列數：${schoolMatches.length}；項目／星期／時間符合列數：${candidateRows.length}（不寫入）` });
       return;
     }
     const syncValue = matches[0].isInternal ? attendance.hours : attendance.studentCount;
