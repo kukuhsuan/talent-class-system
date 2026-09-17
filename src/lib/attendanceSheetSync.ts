@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { courseLabel, COURSE_OPTIONS } from "@/lib/courseMeta";
 import { weekdayOfIso } from "@/lib/courseDates";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
-import { readSheetValues, readSpreadsheetSheetNames, writeSheetValue } from "@/lib/googleSheetsClient";
+import { readSheetValues, readSpreadsheetSheetNames, writeHighlightedSheetValue } from "@/lib/googleSheetsClient";
 
 export const SHEET_SYNC_STATUS = {
   pending: "待同步", synced: "已同步", same: "已一致", conflict: "人數不一致，待核對",
@@ -158,7 +158,7 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
     const existing = matches[0].row[weekIndex];
     const parsed = existingCount(existing);
     if (parsed.kind === "empty") {
-      await writeSheetValue(spreadsheetId, `'${sheetName.replace(/'/g, "''")}'!${cell}`, syncValue);
+      await writeHighlightedSheetValue(spreadsheetId, sheetName, cell, syncValue);
       await saveStatus(attendanceId, SHEET_SYNC_STATUS.synced, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing ?? ""), message: matches[0].isInternal ? "課內課已同步時數" : "已同步實到人數", synced: true });
     } else if (parsed.kind === "count" && parsed.value === syncValue) {
       await saveStatus(attendanceId, SHEET_SYNC_STATUS.same, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing), message: matches[0].isInternal ? "課內課時數一致" : "實到人數一致", synced: true });

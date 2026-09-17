@@ -52,15 +52,50 @@ export async function readSheetValues(spreadsheetId: string, range: string) {
 }
 
 export async function readSpreadsheetSheetNames(spreadsheetId: string) {
-  const body = await sheetsRequest(`/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties(title,hidden)`);
-  return ((body as { sheets?: Array<{ properties?: { title?: string; hidden?: boolean } }> }).sheets ?? [])
+  const body = await sheetsRequest(`/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties(sheetId,title,hidden)`);
+  return ((body as { sheets?: Array<{ properties?: { sheetId?: number; title?: string; hidden?: boolean } }> }).sheets ?? [])
     .map((sheet) => sheet.properties)
-    .filter((properties): properties is { title: string; hidden?: boolean } => Boolean(properties?.title));
+    .filter((properties): properties is { sheetId: number; title: string; hidden?: boolean } => typeof properties?.sheetId === "number" && Boolean(properties.title));
 }
 
-export async function writeSheetValue(spreadsheetId: string, range: string, value: number) {
-  await sheetsRequest(`/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
-    method: "PUT",
-    body: JSON.stringify({ range, majorDimension: "ROWS", values: [[value]] }),
+function columnIndexFromLetters(letters: string) {
+  return letters.toUpperCase().split("").reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+}
+
+export async function writeHighlightedSheetValue(spreadsheetId: string, sheetName: string, cell: string, value: number) {
+  const match = cell.match(/^([A-Z]+)(\d+)$/i);
+  if (!match) throw new Error(`無效的 Google Sheet 儲存格：${cell}`);
+  const sheets = await readSpreadsheetSheetNames(spreadsheetId);
+  const sheet = sheets.find((item) => item.title === sheetName);
+  if (!sheet) throw new Error(`找不到 Google Sheet 分頁：${sheetName}`);
+  const columnIndex = columnIndexFromLetters(match[1]);
+  const rowIndex = Number(match[2]) - 1;
+  await sheetsRequest(`/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [{
+        updateCells: {
+          range: {
+            sheetId: sheet.sheetId,
+            startRowIndex: rowIndex,
+            endRowIndex: rowIndex + 1,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          rows: [{
+            values: [{
+              userEnteredValue: { numberValue: value },
+              userEnteredFormat: {
+                textFormat: {
+                  bold: true,
+                  foregroundColorStyle: { rgbColor: { red: 0.85, green: 0.19, blue: 0.15 } },
+                },
+              },
+            }],
+          }],
+          fields: "userEnteredValue,userEnteredFormat.textFormat(bold,foregroundColorStyle)",
+        },
+      }],
+    }),
   });
 }
