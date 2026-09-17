@@ -4,6 +4,18 @@ import { weekdayOfIso } from "@/lib/courseDates";
 import { effectiveAttendanceTime, usableScheduledTime } from "@/lib/attendanceTime";
 import { readSheetValues, readSpreadsheetSheetNames, writeHighlightedSheetValue } from "@/lib/googleSheetsClient";
 
+type SheetMetadata = Awaited<ReturnType<typeof readSpreadsheetSheetNames>>;
+type SheetRows = Awaited<ReturnType<typeof readSheetValues>>;
+
+type SheetSyncCache = {
+  sheetMetadata?: Promise<SheetMetadata>;
+  rowsBySheet: Map<string, Promise<SheetRows>>;
+};
+
+function createSheetSyncCache(): SheetSyncCache {
+  return { rowsBySheet: new Map() };
+}
+
 export const SHEET_SYNC_STATUS = {
   pending: "待同步", synced: "已同步", same: "已一致", conflict: "人數不一致，待核對",
   noMatch: "找不到唯一對應列", noWeek: "找不到週次欄", skipped: "未設定", error: "同步失敗",
@@ -56,14 +68,16 @@ function tabMap() {
   catch { return {}; }
 }
 
-async function resolveSheetName(spreadsheetId: string, dateIso: string) {
+async function resolveSheetName(spreadsheetId: string, dateIso: string, cache?: SheetSyncCache) {
   const yearMonth = dateIso.slice(0, 7);
   const configured = tabMap()[yearMonth]?.trim();
   if (configured) return configured;
   const year = Number(dateIso.slice(0, 4));
   const month = Number(dateIso.slice(5, 7));
   const exactMonthlyTitle = `${year - 1911}-${month}月`;
-  const sheets = await readSpreadsheetSheetNames(spreadsheetId);
+  const sheets = cache
+    ? await (cache.sheetMetadata ??= readSpreadsheetSheetNames(spreadsheetId))
+    : await readSpreadsheetSheetNames(spreadsheetId);
   const matches = sheets.filter((sheet) => !sheet.hidden && sheet.title.trim() === exactMonthlyTitle);
   return matches.length === 1 ? matches[0].title : "";
 }
@@ -96,7 +110,7 @@ export async function queueAttendanceSheetSync(attendanceId: number) {
   await saveStatus(attendanceId, SHEET_SYNC_STATUS.pending);
 }
 
-export async function syncAttendanceToGoogleSheet(attendanceId: number) {
+export async function syncAttendanceToGoogleSheet(attendanceId: number, cache?: SheetSyncCache) {
   const enabled = process.env.GOOGLE_SHEETS_SYNC_ENABLED === "true";
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim() ?? "";
   if (!enabled || !spreadsheetId) {
@@ -108,12 +122,18 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
   const dateIso = attendance.date.toISOString().slice(0, 10);
   let sheetName = "";
   try {
-    sheetName = await resolveSheetName(spreadsheetId, dateIso);
+    sheetName = await resolveSheetName(spreadsheetId, dateIso, cache);
     if (!sheetName) {
       await saveStatus(attendanceId, SHEET_SYNC_STATUS.noMatch, { systemValue: attendance.studentCount, message: `找不到唯一且未隱藏的 ${Number(dateIso.slice(0, 4)) - 1911}-${Number(dateIso.slice(5, 7))}月 分頁` });
       return;
     }
-    const rows = await readSheetValues(spreadsheetId, `'${sheetName.replace(/'/g, "''")}'!A1:AB1200`);
+    const sheetRange = `'${sheetName.replace(/'/g, "''")}'!A1:AB1200`;
+    let rowsPromise = cache?.rowsBySheet.get(sheetName);
+    if (!rowsPromise) {
+      rowsPromise = readSheetValues(spreadsheetId, sheetRange);
+      cache?.rowsBySheet.set(sheetName, rowsPromise);
+    }
+    const rows = await rowsPromise;
     const header = rows[0] ?? [];
     const indices = { school: header.findIndex((v) => normalize(v) === "學校"), item: header.findIndex((v) => normalize(v) === "項目"), weekday: header.findIndex((v) => normalize(v) === "星期幾"), time: header.findIndex((v) => normalize(v) === "時間") };
     if (Object.values(indices).some((v) => v < 0)) throw new Error("試算表缺少學校／項目／星期幾／時間欄位");
@@ -159,6 +179,8 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
     const parsed = existingCount(existing);
     if (parsed.kind === "empty") {
       await writeHighlightedSheetValue(spreadsheetId, sheetName, cell, syncValue);
+      // 同一輪的其他紀錄會共用這份快取；寫入後同步更新快取，避免再次誤判為空白。
+      matches[0].row[weekIndex] = syncValue;
       await saveStatus(attendanceId, SHEET_SYNC_STATUS.synced, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing ?? ""), message: matches[0].isInternal ? "課內課已同步時數" : "已同步實到人數", synced: true });
     } else if (parsed.kind === "count" && parsed.value === syncValue) {
       await saveStatus(attendanceId, SHEET_SYNC_STATUS.same, { sheetName, cell, systemValue: syncValue, sheetValue: String(existing), message: matches[0].isInternal ? "課內課時數一致" : "實到人數一致", synced: true });
@@ -171,21 +193,30 @@ export async function syncAttendanceToGoogleSheet(attendanceId: number) {
   }
 }
 
-export async function retryPendingAttendanceSheetSync(limit = 30) {
+export async function retryPendingAttendanceSheetSync(limit = 200) {
   await ensureTable();
-  // 除了失敗重試，也輪流複查已同步紀錄。若有人事後清空 Google Sheet，
-  // 下一輪會重新讀到空白並補回；已有不同內容時仍只標示衝突、不覆蓋。
+  // 待同步／失敗／衝突優先，其次先複查最近 45 天的課程，再輪流檢查歷史紀錄。
+  // 同一分頁只讀取一次，因此可以在一輪內安全檢查更多筆，不會為每堂課重複讀整張表。
   const rows = await prisma.$queryRawUnsafe<Array<{ attendanceId: number }>>(
-    `SELECT "attendanceId" FROM "AttendanceSheetSync"
-     WHERE "status" IN (?,?,?,?,?)
-     ORDER BY "updatedAt" ASC LIMIT ?`,
+    `SELECT s."attendanceId" FROM "AttendanceSheetSync" s
+     LEFT JOIN "Attendance" a ON a."id" = s."attendanceId"
+     WHERE s."status" IN (?,?,?,?,?)
+     ORDER BY
+       CASE WHEN s."status" IN (?,?,?) THEN 0 ELSE 1 END,
+       CASE WHEN date(a."date") >= date('now', '-45 days') THEN 0 ELSE 1 END,
+       s."updatedAt" ASC
+     LIMIT ?`,
     SHEET_SYNC_STATUS.pending,
     SHEET_SYNC_STATUS.error,
     SHEET_SYNC_STATUS.conflict,
     SHEET_SYNC_STATUS.synced,
     SHEET_SYNC_STATUS.same,
+    SHEET_SYNC_STATUS.pending,
+    SHEET_SYNC_STATUS.error,
+    SHEET_SYNC_STATUS.conflict,
     limit,
   );
-  const results = await Promise.allSettled(rows.map((row) => syncAttendanceToGoogleSheet(Number(row.attendanceId))));
+  const cache = createSheetSyncCache();
+  const results = await Promise.allSettled(rows.map((row) => syncAttendanceToGoogleSheet(Number(row.attendanceId), cache)));
   return { attempted: rows.length, failed: results.filter((item) => item.status === "rejected").length };
 }
