@@ -49,11 +49,59 @@ function normalize(value: unknown) {
   return String(value ?? "").trim().replace(/[　\s]+/g, "").replace(/[：]/g, ":").replace(/[－–—~～]/g, "-");
 }
 
+// 試算表使用的園所簡稱 ↔ 系統正式名稱。兩邊都加入候選值，因此不論資料庫或
+// 試算表哪一側使用簡稱，都能先以園所對照命中，再核對項目、星期與時間。
+const SCHOOL_NAME_ALIASES: ReadonlyArray<readonly [string, string]> = [
+  ["新南", "何嘉仁新南幼兒園"],
+  ["臨沂", "何嘉仁臨沂幼兒園"],
+  ["林口勁寶兒", "林口勁寶兒幼兒園"],
+  ["淡水何", "何嘉仁國際幼兒園-淡水"],
+  ["清福", "清福幼兒園"],
+  ["文心", "文心幼兒園"],
+  ["千愛", "千愛幼兒園"],
+  ["艾倫戴爾", "艾倫戴爾"],
+  ["喬米", "喬米幼兒園"],
+  ["二重", "二重幼兒園"],
+  ["輔仁", "苗栗輔仁幼兒園"],
+  ["艾丁堡", "艾丁堡幼兒園"],
+  ["快樂地", "新竹快樂地幼兒園"],
+  ["科蔓", "竹科蔓幼兒園"],
+  ["大甲熊", "熊寶寶幼兒園"],
+  ["明典", "明典幼兒園"],
+  ["葳格", "葳格幼兒園"],
+  ["大甲何", "何嘉仁大甲幼校"],
+  ["好兒美", "好兒美幼兒園"],
+  ["安心", "安心幼兒園"],
+  ["馬克", "台中市私立馬克幼兒園"],
+  ["小叮噹", "小叮噹幼兒園"],
+  ["清水馬丁", "台中市私立馬丁幼兒園"],
+  ["有志", "私立有志幼兒園"],
+  ["哈拿", "哈拿幼兒園"],
+  ["哈利", "私立哈利準公共幼兒園"],
+  ["漢家", "漢家幼兒園"],
+  ["葛雷妮", "葛蕾尼藝術人文幼兒園"],
+  ["東園何", "東園何嘉仁幼兒園"],
+  ["福斯", "臺中市私立福瑞斯特藝術幼兒園"],
+  ["頂尖", "彰化縣私立頂尖保進幼兒園"],
+  ["仁保", "仁武保進幼兒園"],
+  ["松保", "中和松柏幼兒園"],
+  ["開普保", "臺中市私立開普敦幼兒園"],
+];
+
 function schoolCandidates(school: string, item: string) {
   const normalizedSchool = normalize(school);
   const values = new Set([normalizedSchool]);
   const suffixes = [`(${item})`, `（${item}）`].map(normalize);
   for (const suffix of suffixes) if (normalizedSchool.endsWith(suffix)) values.add(normalizedSchool.slice(0, -suffix.length));
+
+  for (const [shortName, fullName] of SCHOOL_NAME_ALIASES) {
+    const normalizedShortName = normalize(shortName);
+    const normalizedFullName = normalize(fullName);
+    if (values.has(normalizedShortName) || values.has(normalizedFullName)) {
+      values.add(normalizedShortName);
+      values.add(normalizedFullName);
+    }
+  }
 
   // 試算表常以園所簡稱登記，例如系統「何嘉仁臨沂幼兒園」、表內「臨沂」。
   // 只產生去除行政／品牌／機構字樣後的明確簡稱，後續仍須同時吻合課程、星期與時間。
