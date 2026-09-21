@@ -56,10 +56,6 @@
     {
       "path": "/api/cron/teacher-document-retention",
       "schedule": "20 19 * * *"
-    },
-    {
-      "path": "/api/cron/google-sheets-attendance-sync",
-      "schedule": "30 10 * * *"
     }
   ]
 }

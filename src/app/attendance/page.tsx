@@ -78,6 +78,7 @@ export default function AttendancePage() {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [syncingSheet, setSyncingSheet] = useState(false);
   const [signaturePreview, setSignaturePreview] = useState<Attendance | null>(null);
   const { toast, showToast } = useToast();
   const showToastRef = useRef(showToast);
@@ -208,6 +209,25 @@ export default function AttendancePage() {
     void loadRecords();
   };
 
+  const syncGoogleSheet = async () => {
+    if (syncingSheet) return;
+    setSyncingSheet(true);
+    try {
+      const res = await fetch("/api/cron/google-sheets-attendance-sync", { method: "POST" });
+      if (!res.ok) throw new Error(await readApiError(res, "Google Sheet 同步失敗"));
+      const data = await res.json() as { attempted?: number; failed?: number };
+      const attempted = Number(data.attempted) || 0;
+      const failed = Number(data.failed) || 0;
+      showToast(failed > 0 ? "error" : "success", failed > 0
+        ? `同步完成：檢查 ${attempted} 筆，${failed} 筆失敗，請再核對`
+        : `同步完成：已檢查 ${attempted} 筆資料`, 4200);
+    } catch (error) {
+      showToast("error", (error as Error).message || "Google Sheet 同步失敗", 4200);
+    } finally {
+      setSyncingSheet(false);
+    }
+  };
+
   // 安親班課程：產生專屬評分連結並複製，方便用 LINE 傳給安親班
   const copyRatingLink = async (r: Attendance) => {
     try {
@@ -314,7 +334,9 @@ export default function AttendancePage() {
     if (r.cancelled) return true;
     // 還沒下課就不算完成，避免預先填的人數（含 0）讓未來的課顯示已出課
     if (r.reportEnded === false) return false;
-    const hasReport = Boolean(r.reportContent?.trim());
+    const reportText = r.reportContent?.trim();
+    // 「正常上課」只是出勤狀態，備註也不屬於正式課程回報。
+    const hasReport = Boolean(reportText && reportText !== "正常上課");
     if (!isCountRequired(r)) return hasReport;
     // 課後課 / 營隊：人數 + 課程進度兩者都需要
     return r.studentCount !== null && hasReport;
@@ -430,7 +452,15 @@ export default function AttendancePage() {
             {loadingOptions && <span className="ml-2 text-xs text-slate-400">課程/老師選項載入中</span>}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={syncGoogleSheet}
+            disabled={syncingSheet}
+            className="bg-amber-500 hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+          >
+            {syncingSheet ? "同步中…" : "同步 Google Sheet"}
+          </button>
           <button
             onClick={() => {
               if (!filterSchool) { showToast("error", "請先選擇園所，再匯出簽名核對表", 3200); return; }
@@ -749,7 +779,7 @@ export default function AttendancePage() {
                               : "bg-slate-100 text-slate-500"
                             }`}>{statusLabel(r)}</span>
                           </div>
-                          {isCountRequired(r) && r.reportFillStatus && <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.reportFillStatus}</div>}
+                          {!r.cancelled && isCountRequired(r) && r.reportFillStatus && <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.reportFillStatus}</div>}
                           {r.schoolSignatureData && <button type="button" onClick={() => setSignaturePreview(r)} className="mt-2 block rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">園所已簽 · {r.schoolVerifierName || "已確認"}</button>}
                           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                             <div className="rounded-lg bg-slate-50 px-3 py-2"><div className="text-xs text-slate-400">人數</div><div className="font-medium">{countDisplay(r)}{r.expectedStudentCount != null && <span className="ml-1 text-xs font-normal text-blue-500">預計 {r.expectedStudentCount}</span>}</div></div>
@@ -821,7 +851,7 @@ export default function AttendancePage() {
                                     : isReportComplete(r) ? "bg-green-100 text-green-600"
                                     : "bg-slate-100 text-slate-500"
                                   }`}>{statusLabel(r)}</span>
-                                  {isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
+                                  {!r.cancelled && isCountRequired(r) && r.reportFillStatus && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{r.reportFillStatus}</span>}
                                   {r.schoolSignatureData && (
                                     <button type="button" onClick={() => setSignaturePreview(r)} className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700" title={r.schoolSignedAt ? `簽名時間：${new Date(r.schoolSignedAt).toLocaleString("zh-TW")}` : ""}>
                                       園所已簽 · {r.schoolVerifierName || "已確認"}
