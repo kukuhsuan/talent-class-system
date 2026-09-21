@@ -4,7 +4,13 @@ let cachedToken: { value: string; expiresAt: number } | null = null;
 
 function credentials() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() ?? "";
-  const privateKey = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+  const rawPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim() ?? "";
+  // Vercel 的多行環境變數容易在 CLI 更新時遺失換行；同時接受原始 PEM、
+  // 含跳脫換行的 PEM，以及 Base64 編碼後的單行 PEM。
+  const decodedPrivateKey = rawPrivateKey.includes("BEGIN PRIVATE KEY")
+    ? rawPrivateKey
+    : Buffer.from(rawPrivateKey, "base64").toString("utf8");
+  const privateKey = decodedPrivateKey.replace(/\\n/g, "\n");
   if (!clientEmail || !privateKey) throw new Error("Google Sheets 服務帳戶尚未設定");
   return { clientEmail, privateKey };
 }
