@@ -241,8 +241,10 @@ export async function semesterLeaveCount(teacherId: number) {
 export async function upcomingLeaveCourseChoices(teacherId: number, limit = 25) {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  // 範圍涵蓋本月與下個月（例如 7 月時可申請 7-8 月的課程）
-  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 1));
+  // 開放本月起最多四個月份，但不跨過當年年底；例如 9 月可選 9–12 月課程。
+  const rollingEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 4, 1));
+  const yearEnd = new Date(Date.UTC(today.getUTCFullYear() + 1, 0, 1));
+  const end = rollingEnd < yearEnd ? rollingEnd : yearEnd;
   const rows = await prisma.attendance.findMany({
     where: {
       cancelled: false,

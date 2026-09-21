@@ -351,7 +351,7 @@ async function handleText(userId: string, text: string, replyToken: string, regi
       semesterLeaveCount(teacher.id),
     ]);
     if (courses.length === 0) {
-      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前找不到本月與下個月可申請請假的課程。若課程尚未建立出勤紀錄，請聯絡行政協助。` }], token);
+      await replyMessage(replyToken, [{ type: "text", text: `${teacher.name} 老師，目前找不到本月起至 12 月底可申請請假的課程。若課程尚未建立出勤紀錄，請聯絡行政協助。` }], token);
       return;
     }
     await replyMessage(replyToken, [buildLeaveCourseSelectMessage({
