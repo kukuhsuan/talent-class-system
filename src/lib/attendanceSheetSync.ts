@@ -287,5 +287,7 @@ export async function retryPendingAttendanceSheetSync(limit = 200) {
   );
   const cache = createSheetSyncCache();
   const results = await Promise.allSettled(rows.map((row) => syncAttendanceToGoogleSheet(Number(row.attendanceId), cache)));
-  return { attempted: rows.length, failed: results.filter((item) => item.status === "rejected").length };
+  const rejected = results.filter((item): item is PromiseRejectedResult => item.status === "rejected");
+  const errors = [...new Set(rejected.map((item) => item.reason instanceof Error ? item.reason.message : String(item.reason)))].slice(0, 3);
+  return { attempted: rows.length, failed: rejected.length, errors };
 }

@@ -215,11 +215,11 @@ export default function AttendancePage() {
     try {
       const res = await fetch("/api/cron/google-sheets-attendance-sync", { method: "POST" });
       if (!res.ok) throw new Error(await readApiError(res, "Google Sheet 同步失敗"));
-      const data = await res.json() as { attempted?: number; failed?: number };
+      const data = await res.json() as { attempted?: number; failed?: number; errors?: string[] };
       const attempted = Number(data.attempted) || 0;
       const failed = Number(data.failed) || 0;
       showToast(failed > 0 ? "error" : "success", failed > 0
-        ? `同步完成：檢查 ${attempted} 筆，${failed} 筆失敗，請再核對`
+        ? `同步失敗：${data.errors?.[0] || `${failed} 筆無法同步，請再核對`}`
         : `同步完成：已檢查 ${attempted} 筆資料`, 4200);
     } catch (error) {
       showToast("error", (error as Error).message || "Google Sheet 同步失敗", 4200);
