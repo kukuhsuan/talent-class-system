@@ -2,6 +2,7 @@
 import { StatusTag } from "@/components/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { courseLabel } from "@/lib/courseMeta";
+import Image from "next/image";
 
 // 客服批次通知中心：批次發送／老師綁定／園所綁定／發送紀錄
 
@@ -47,6 +48,7 @@ type PreviewData = {
   recipients: Array<{
     id: number; name: string; lineBound: boolean; maskedLineId: string; lineRegion: string;
     message: string; skipped: string; ackButton?: boolean;
+    imageUrl?: string;
     flexPre?: string; flexPost?: string;
     flexBlocks?: Array<{ title: string; lines: string[]; color: string; bg: string }>;
     linkButtons?: Array<{ label: string; url: string; primary?: boolean }>;
@@ -829,6 +831,11 @@ function BatchSendTab({ onDone }: { onDone: (msg: string) => void }) {
                     </div>
                   )}
                 </div>
+                {previewRecipient?.imageUrl && (
+                  <div className="max-w-sm overflow-hidden rounded-2xl border bg-white shadow-sm">
+                    <Image src={previewRecipient.imageUrl} alt="LINE 賀卡圖片預覽" width={1254} height={1254} className="h-auto w-full" unoptimized />
+                  </div>
+                )}
 
                 {/* 接續送出的教學課表：預覽照 LINE 的分頁方式呈現（每 5 堂一張、整份一則訊息） */}
                 {(previewRecipient?.lessonPlans ?? []).map((plan) => {

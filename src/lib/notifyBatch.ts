@@ -530,6 +530,9 @@ export async function runNotifyBatch(opts: RunOptions) {
         const payload: object[] = r.ackToken || r.flexBlocks?.length || r.linkButtons?.length
           ? [buildAckFlex(opts.templateLabel || "通知", r)]
           : [{ type: "text", text: r.message }];
+        if (r.imageUrl) {
+          payload.push({ type: "image", originalContentUrl: r.imageUrl, previewImageUrl: r.imageUrl });
+        }
         // 教學課表接在主卡片後面；每則最多 5 堂並依 LINE 單次最多 5 則分批送出。
         for (const card of r.lessonPlans ?? []) {
           if (card.items.length === 0) continue;

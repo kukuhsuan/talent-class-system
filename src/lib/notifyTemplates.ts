@@ -16,6 +16,7 @@ export type NotifyTemplateKey =
   | "class_notes"
   | "coach_rules"
   | "line_official_binding"
+  | "mid_autumn_teacher_day"
   | "typhoon"
   | "school_term"
   | "school_links"
@@ -30,6 +31,7 @@ export type NotifyTemplateDef = {
   editable: boolean;          // 是否允許客服修改內文
   needsTyphoonStatus?: boolean;
   needsAck?: boolean;         // 每位收件人附專屬「確認收到」連結
+  imagePath?: string;         // 隨通知附上的公開圖片（LINE 圖片訊息）
   description: string;
   defaultBody: string;
 };
@@ -213,6 +215,15 @@ export const NOTIFY_TEMPLATES: NotifyTemplateDef[] = [
     ].join("\n"),
   },
   {
+    key: "mid_autumn_teacher_day",
+    label: "中秋節・教師節賀卡",
+    target: "teacher",
+    editable: true,
+    imagePath: "/images/mid-autumn-teacher-day-2026.png",
+    description: "老師專用節慶賀卡；預覽後由客服手動發送，不會自動排程或群發",
+    defaultBody: "{姓名} 老師，中秋節與教師節快樂！謝謝您用專業與熱情陪伴孩子成長。WaysLeader 敬上 🌕💐",
+  },
+  {
     key: "typhoon",
     label: "颱風／停課緊急通知",
     target: "teacher",
@@ -352,6 +363,7 @@ export type BatchRecipientMessage = {
   flexBlocks?: FlexBlock[];       // 卡片：課程色塊
   linkButtons?: FlexLinkButton[]; // 卡片：連結按鈕（新學期開課通知）
   lessonPlans?: LessonPlanCard[]; // 附加訊息：整學期教學課表（第一堂課通知）
+  imageUrl?: string;            // 附加訊息：節慶賀卡圖片
 };
 
 // 依課程名稱固定配色（同課程每次同色）
@@ -686,6 +698,7 @@ export async function buildBatchMessages(opts: BuildOptions): Promise<BatchRecip
       return {
         id, name: t.name, lineUserId: t.lineUserId, lineRegion: t.lineRegion || "north",
         message: finalizeMessage(teacherBody, vars), ackToken, ackUrl,
+        ...(template.imagePath ? { imageUrl: `${appUrl()}${template.imagePath}` } : {}),
         ...(flexParts ? { ...flexParts, flexBlocks: items.map((i) => i.block) } : {}),
         ...(linkButtons.length > 0 ? { linkButtons } : {}),
         ...(lessonPlans.length > 0 ? { lessonPlans } : {}),
