@@ -43,6 +43,7 @@ import { respondToCourseChange } from "@/lib/courseChangeRequests";
 import { requiresSchoolSignature } from "@/lib/schoolSignature";
 import { deleteLineConversationState, getLineConversationStateRecord, setLineConversationState } from "@/lib/lineConversationState";
 import { queueAttendanceSheetSync } from "@/lib/attendanceSheetSync";
+import { specialCourseCurriculum } from "@/lib/specialCourseCurriculum";
 
 type LineEvent = {
   type: string;
@@ -1114,13 +1115,18 @@ async function handlePostback(userId: string, data: string, replyToken: string, 
     if (!(await ensureTeacherCanSubmitReport(userId, attendanceId, replyToken, token))) return;
     const attForCurriculum = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { course: true },
-    }) as unknown as { course: { courseType: string } } | null;
+      include: { course: { include: { teacher: true } } },
+    }) as unknown as { course: { school: string; courseType: string; teacher: { name: string } } } | null;
     const courseType = attForCurriculum?.course?.courseType ?? "";
-    const curriculum = await prisma.courseProgress.findMany({
-      where: { courseType: courseLabel(courseType) },
-      orderBy: { lesson: "asc" },
-    }) as Array<{ lesson: number; title: string }>;
+    const specialCurriculum = attForCurriculum ? specialCourseCurriculum({
+      school: attForCurriculum.course.school,
+      courseType,
+      teacherName: attForCurriculum.course.teacher.name,
+    }) : null;
+    const curriculum = specialCurriculum ?? await prisma.courseProgress.findMany({
+        where: { courseType: courseLabel(courseType) },
+        orderBy: { lesson: "asc" },
+      }) as Array<{ lesson: number; title: string }>;
     await replyMessage(replyToken, [buildCurriculumSelectMessage(attendanceId, courseType, curriculum)], token);
     return;
   }

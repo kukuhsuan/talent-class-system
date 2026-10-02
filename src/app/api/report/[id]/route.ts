@@ -9,6 +9,7 @@ import { attendanceReportWindow, REPORT_LINK_EXPIRED_MESSAGE, REPORT_NOT_STARTED
 import { ensureSchoolSignatureColumns, requiresSchoolSignature, saveSchoolSignature, schoolSignatureMap, supportsSchoolSignature, validSignatureData } from "@/lib/schoolSignature";
 import { readHandoffNotes, writeHandoffNote } from "@/lib/lessonHandoff";
 import { queueAttendanceSheetSync } from "@/lib/attendanceSheetSync";
+import { lessonNumberFromProgress, specialCourseCurriculum } from "@/lib/specialCourseCurriculum";
 
 type ReportPayload = {
   studentCount?: number | null;
@@ -116,7 +117,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const { attendanceId, reportRole } = verifyReportAccessToken(decodeURIComponent(id));
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { course: true, actualTeacher: true },
+      include: { course: { include: { teacher: true } }, actualTeacher: true },
     });
 
     if (!attendance) {
@@ -139,7 +140,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: REPORT_LINK_EXPIRED_MESSAGE }, { status: 410 });
     }
     const normalizedCourseType = courseLabel(attendance.course.courseType);
-    let progressRows = await prisma.courseProgress.findMany({
+    const specialCurriculum = specialCourseCurriculum({
+      school: attendance.course.school,
+      courseType: attendance.course.courseType,
+      teacherName: attendance.course.teacher.name,
+    });
+    let progressRows = specialCurriculum?.map((item) => ({
+      id: 0,
+      courseType: normalizedCourseType,
+      lesson: item.lesson,
+      title: item.title,
+      focus: item.focus,
+      skills: item.skills,
+      activityDirection: item.activityDirection,
+      createdAt: new Date(),
+    })) ?? await prisma.courseProgress.findMany({
       where: { courseType: normalizedCourseType },
       orderBy: { lesson: "asc" },
       select: { id: true, courseType: true, lesson: true, title: true, createdAt: true },
@@ -302,7 +317,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { attendanceId, reportRole } = verifyReportAccessToken(decodeURIComponent(id));
     const attendance = await prisma.attendance.findUnique({
       where: { id: attendanceId },
-      include: { course: true, actualTeacher: true, assistantTeacher: true },
+      include: { course: { include: { teacher: true } }, actualTeacher: true, assistantTeacher: true },
     });
 
     if (!attendance) {
@@ -382,8 +397,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const incidentProcess = String(data.incidentProcess ?? "").trim();
     const incidentAction = String(data.incidentAction ?? "").trim();
     const incidentNotified = String(data.incidentNotified ?? "").trim();
+    const specialLesson = specialCourseCurriculum({
+      school: attendance.course.school,
+      courseType: attendance.course.courseType,
+      teacherName: attendance.course.teacher.name,
+    })?.find((item) => item.lesson === lessonNumberFromProgress(progress));
     const lessonTemplate = kindergarten
-      ? await (await import("@/lib/lessonTemplates")).getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
+      ? specialLesson ?? await (await import("@/lib/lessonTemplates")).getLessonTemplateForReport(prisma, attendance.course.courseType, progress)
       : null;
     const skillFocus = kindergarten
       ? normalizeAbilities(safeJsonArray(data.skillFocus), 4)
