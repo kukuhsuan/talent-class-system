@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (!String(data.reason ?? "").trim()) return NextResponse.json({ error: "請填寫補發／扣款原因" }, { status: 400 });
   // 課程固定車資已由出勤自動計算，不允許再以「車資／交通」名義人工補一筆，避免月底重複發放。
   const adjustmentText = `${data.type ?? ""} ${data.reason ?? ""} ${data.notes ?? ""}`;
-  if (amount > 0 && /(車資|交通|車馬)/.test(adjustmentText)) {
+  if (amount > 0 && data.targetMonth >= "2026-10" && /(車資|交通|車馬)/.test(adjustmentText)) {
     await ensureCourseTravelFeeColumn();
     const [targetYear, targetMonth] = String(data.targetMonth).split("-").map(Number);
     const start = new Date(Date.UTC(targetYear, targetMonth - 1, 1));

@@ -745,7 +745,7 @@ export default function CoursesPage() {
             <div>
               <label htmlFor="courses-travel-fee">每堂固定車資</label>
               <input id="courses-travel-fee" type="number" min="0" step="1" value={form.travelFee} onChange={(e) => setForm({ ...form, travelFee: e.target.value })} placeholder="空白沿用老師原設定" />
-              <p className="mt-1 text-xs text-slate-500">0＝無車資；填入金額後，只在完成上課時自動計給實際授課老師。</p>
+              <p className="mt-1 text-xs text-slate-500">2026 年 10 月起生效。0＝無車資；填入金額後，只在完成上課時自動計給實際授課老師。</p>
             </div>
             <div>
               <label htmlFor="courses-f11">類別</label>

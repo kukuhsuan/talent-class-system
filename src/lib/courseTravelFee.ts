@@ -2,6 +2,13 @@ import { prisma } from "@/lib/prisma";
 
 let courseTravelFeeColumnReady = false;
 
+/** 9 月薪資已人工處理；課程固定車資只套用在 2026-10-01 起的出勤。 */
+export const COURSE_TRAVEL_FEE_START = new Date(Date.UTC(2026, 9, 1));
+
+export function courseTravelFeeIsEffective(attendanceDate: Date) {
+  return attendanceDate >= COURSE_TRAVEL_FEE_START;
+}
+
 /** 舊資料庫可在不中斷服務的情況下補上課程固定車資欄位。 */
 export async function ensureCourseTravelFeeColumn() {
   if (courseTravelFeeColumnReady) return;

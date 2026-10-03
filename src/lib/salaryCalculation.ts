@@ -6,7 +6,7 @@ import { normalizeCategory } from "@/lib/courseMeta";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 import { visibleOperationalAttendanceWhere } from "@/lib/attendanceVisibility";
-import { attendanceHasCompletedReport, ensureCourseTravelFeeColumn, resolvedTravelFee } from "@/lib/courseTravelFee";
+import { attendanceHasCompletedReport, courseTravelFeeIsEffective, ensureCourseTravelFeeColumn, resolvedTravelFee } from "@/lib/courseTravelFee";
 
 export type SalaryDetail = {
   id: number;
@@ -190,7 +190,8 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     // 車費是「每堂固定」，不隨時數變動：老師跑一趟就是一趟，上 1 小時和 2 小時的
     // 交通成本一樣。原本寫成 payableHours * travelFee，1.5 小時的課會發 1.5 倍車費。
     const travelFee = resolvedTravelFee({
-      courseTravelFee: row.course.travelFee,
+      // 2026 年 9 月已由行政人工完成，課程固定車資從 10 月出勤才開始套用。
+      courseTravelFee: courseTravelFeeIsEffective(row.date) ? row.course.travelFee : null,
       legacyTeacherTravelFee: teacher.travelFee,
       completed: attendanceHasCompletedReport(row),
       eligible: role === "主教" && !isDemo && !hours.needsReview,
