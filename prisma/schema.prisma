@@ -262,6 +262,8 @@ model Course {
   weekday            String                    @default("")
   time               String                    @default("")
   payrollHours       Float?
+  // null＝沿用老師舊車資；0＝無車資；正數＝完成一堂課的固定車資。
+  travelFee          Int?
   category           String                    @default("課後")
   department         String                    @default("幼兒園")
   enrollCount        String                    @default("")

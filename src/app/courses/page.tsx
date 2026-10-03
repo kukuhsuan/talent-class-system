@@ -24,7 +24,7 @@ type School = { id: number; name: string; type: string; region: string; address:
 type CourseOption = { code: string; label: string };
 type Course = {
   id: number; code: string; region: string; teacher: Teacher; teacherId: number; assistantTeacher?: Teacher | null; assistantTeacherId?: number | null;
-  school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string; payrollHours: number | null;
+  school: string; schoolId: number | null; courseType: string; address: string; dayOfWeek: string; time: string; payrollHours: number | null; travelFee: number | null;
   category: string; department: string; enrollCount: string; isActive: boolean; notes: string;
   academicTermOverride?: string;
   courseConfirmationSummary?: string;
@@ -51,7 +51,7 @@ const DATE_MODES = [
 
 const EMPTY_FORM = {
   code: "", region: "", teacherId: 0, assistantTeacherId: null as number | null, school: "", schoolId: null as number | null,
-  courseType: "", address: "", dayOfWeek: "星期一", time: "", payrollHours: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "", academicTermOverride: "",
+  courseType: "", address: "", dayOfWeek: "星期一", time: "", payrollHours: "", travelFee: "", category: "課後", department: "幼兒園" as DeptOption, enrollCount: "", isActive: true, notes: "", academicTermOverride: "",
   // 樂觀鎖版本號：按下編輯時記下當下的版本，儲存時原樣送回給後端比對。
   // 新增課程沒有版本可比，維持 null，後端會略過檢查。
   version: null as number | null,
@@ -513,7 +513,7 @@ export default function CoursesPage() {
     const recurrenceEnd = fullCourse.endDate?.slice(0, 10) || inferredWeekly?.end || "";
     const recurrenceDays = sanitizeCourseWeekdays(fullCourse.weekday?.split(",").filter(Boolean) || inferredWeekly?.days || [fullCourse.dayOfWeek || "星期一"]);
     const nextForm: CourseForm = { code: fullCourse.code, region: normalizeRegion(fullCourse.region), teacherId: fullCourse.teacherId, assistantTeacherId: fullCourse.assistantTeacherId ?? null, school: fullCourse.school, schoolId: fullCourse.schoolId,
-      courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), category: normalizeCategory(fullCourse.category),
+      courseType: fullCourse.courseType, address: fullCourse.address || "", dayOfWeek: fullCourse.dayOfWeek, time: fullCourse.time, payrollHours: fullCourse.payrollHours == null ? "" : String(fullCourse.payrollHours), travelFee: fullCourse.travelFee == null ? "" : String(fullCourse.travelFee), category: normalizeCategory(fullCourse.category),
       department: coerceDept(fullCourse.department || "幼兒園"), enrollCount: fullCourse.enrollCount, isActive: fullCourse.isActive, notes: fullCourse.notes.replace(/\s*\[\[TERM:[^\]]+\]\]\s*/g, " ").trim(), academicTermOverride: fullCourse.academicTermOverride ?? "",
       version: fullCourse.version ?? null,
       dateMode, scheduledDateText: "", scheduledDateYear: existingDates[0] ? Number(existingDates[0].slice(0, 4)) : new Date().getFullYear(), scheduledDates: dateMode === "weekly" ? [] : existingDates,
@@ -741,6 +741,11 @@ export default function CoursesPage() {
               <label htmlFor="courses-f10">計薪時數</label>
               <input id="courses-f10" type="number" min="0" step="0.5" value={form.payrollHours} onChange={(e) => setForm({ ...form, payrollHours: e.target.value })} placeholder="空白則依時間估算" />
               <p className="mt-1 text-xs text-slate-500">手動填寫後，薪資一律以此為準。</p>
+            </div>
+            <div>
+              <label htmlFor="courses-travel-fee">每堂固定車資</label>
+              <input id="courses-travel-fee" type="number" min="0" step="1" value={form.travelFee} onChange={(e) => setForm({ ...form, travelFee: e.target.value })} placeholder="空白沿用老師原設定" />
+              <p className="mt-1 text-xs text-slate-500">0＝無車資；填入金額後，只在完成上課時自動計給實際授課老師。</p>
             </div>
             <div>
               <label htmlFor="courses-f11">類別</label>

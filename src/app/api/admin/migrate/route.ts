@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     'ALTER TABLE School ADD COLUMN portalTokenVersion INTEGER NOT NULL DEFAULT 1',
     'ALTER TABLE Course ADD COLUMN address TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE Course ADD COLUMN assistantTeacherId INTEGER',
+    'ALTER TABLE Course ADD COLUMN travelFee INTEGER',
     'ALTER TABLE Attendance ADD COLUMN assistantTeacherId INTEGER',
     'ALTER TABLE Attendance ADD COLUMN studentCountA INTEGER',
     'ALTER TABLE Attendance ADD COLUMN studentCountB INTEGER',

@@ -10,9 +10,11 @@ import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
 import { invalidVersionResponse, isRecordNotFound, parseExpectedVersion, versionConflictResponse, versionWhere } from "@/lib/optimisticLock";
 import { courseScheduleConflictMessage, findCourseScheduleConflict } from "@/lib/courseScheduleConflict";
+import { ensureCourseTravelFeeColumn, parseCourseTravelFee } from "@/lib/courseTravelFee";
 
 // GET /api/courses/[id] — returns single course with scheduledDates (for edit form)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await ensureCourseTravelFeeColumn();
   const { id } = await params;
   const course = await prisma.course.findUnique({
     where: { id: Number(id) },
@@ -38,6 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await ensureCourseTravelFeeColumn();
     const { id } = await params;
     const { schoolRel, teacher, assistantTeacher, scheduledDates, ...data } = await req.json();
     void schoolRel; void teacher; void assistantTeacher;
@@ -94,6 +97,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const dayOfWeek = allScheduled[0] ? weekdayOfIso(allScheduled[0]) : (data.dayOfWeek ?? "");
     const newTime = String(data.time ?? "");
     const payrollHours = parsePayrollHours(data.payrollHours);
+    const travelFee = parseCourseTravelFee(data.travelFee);
     const recurrence = recurrenceFields(data, allScheduled);
     const oldPayrollMap = await coursePayrollHoursMap([courseId]);
     const oldPayrollHours = oldPayrollMap.get(courseId) ?? null;
@@ -144,6 +148,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         dayOfWeek,
         ...recurrence,
         time: newTime,
+        travelFee,
         category: normalizeCategory(data.category),
         department: normalizeDepartment(data.department),
         enrollCount: data.enrollCount ?? "",
@@ -166,14 +171,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       targetId: course.id,
       targetLabel: `${course.code} ${course.school} ${course.courseType}`,
       beforeData: currentCourse,
-      afterData: { ...course, payrollHours },
-      diffSummary: diffSummary(currentCourse as unknown as Record<string, unknown>, { ...course, payrollHours } as unknown as Record<string, unknown>, {
+      afterData: { ...course, payrollHours, travelFee },
+      diffSummary: diffSummary(currentCourse as unknown as Record<string, unknown>, { ...course, payrollHours, travelFee } as unknown as Record<string, unknown>, {
         teacherId: "主教",
         assistantTeacherId: "助教",
         time: "上課時間",
         school: "園所",
         courseType: "課程",
         payrollHours: "計薪時數",
+        travelFee: "固定車資",
       }) || `修改課程：${course.code}`,
     });
 
@@ -270,7 +276,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         warnings.push(`多餘未來日期移除略過：${message}`);
       }
     }
-    return NextResponse.json({ ...course, payrollHours, warnings });
+    return NextResponse.json({ ...course, payrollHours, travelFee, warnings });
   } catch (e) {
     console.error("course update failed", e);
     return NextResponse.json({ error: `課程儲存失敗：${(e as Error).message}` }, { status: 500 });

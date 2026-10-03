@@ -6,6 +6,7 @@ import { normalizeCategory } from "@/lib/courseMeta";
 import { salaryHoursFromValues } from "@/lib/salaryHours";
 import { isWaitingTeacherName } from "@/lib/teacherAssignment";
 import { visibleOperationalAttendanceWhere } from "@/lib/attendanceVisibility";
+import { attendanceHasCompletedReport, ensureCourseTravelFeeColumn, resolvedTravelFee } from "@/lib/courseTravelFee";
 
 export type SalaryDetail = {
   id: number;
@@ -55,7 +56,7 @@ type AttendanceRow = {
   category: string; hours: number; notes: string; isPayrollLocked: boolean; reportContent: string; reportSentAt: Date | null;
   studentCount: number | null; studentCountA: number | null; studentCountB: number | null;
   scheduledTime: string | null;
-  course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string; time: string; payrollHours: number | null; isActive: boolean };
+  course: { id: number; school: string; courseType: string; teacherId: number; category: string; department: string; time: string; payrollHours: number | null; travelFee: number | null; isActive: boolean };
 };
 
 export type SalaryResult = {
@@ -72,6 +73,7 @@ export type SalaryResult = {
 };
 
 export async function calculateSalaryMonth(year: number, month: number, options: { teacherId?: number; includeDetails?: boolean } = {}) {
+  await ensureCourseTravelFeeColumn();
   // 出勤日期以 YYYY-MM-DD 的 UTC 午夜儲存；固定用 UTC 月界線，避免 Vercel 時區造成跨月。
   const start = new Date(Date.UTC(year, month - 1, 1));
   const end = new Date(Date.UTC(year, month, 1));
@@ -140,6 +142,7 @@ export async function calculateSalaryMonth(year: number, month: number, options:
             department: true,
             time: true,
             payrollHours: true,
+            travelFee: true,
             isActive: true,
           },
         },
@@ -186,7 +189,12 @@ export async function calculateSalaryMonth(year: number, month: number, options:
     const rate = role === "助教" ? teacher.assistantFee : isDemo ? teacher.rateDemo : category === "課內" ? teacher.rateInSchool : teacher.rateAfterSchool;
     // 車費是「每堂固定」，不隨時數變動：老師跑一趟就是一趟，上 1 小時和 2 小時的
     // 交通成本一樣。原本寫成 payableHours * travelFee，1.5 小時的課會發 1.5 倍車費。
-    const travelFee = role === "助教" || isDemo || hours.needsReview ? 0 : teacher.travelFee;
+    const travelFee = resolvedTravelFee({
+      courseTravelFee: row.course.travelFee,
+      legacyTeacherTravelFee: teacher.travelFee,
+      completed: attendanceHasCompletedReport(row),
+      eligible: role === "主教" && !isDemo && !hours.needsReview,
+    });
     // 代課與原課都依老師對應身份的時薪 × 計薪時數計算。
     // Substitute.fee 是舊代課流程留下的參考欄位，代課頁也明示不會自動加入薪資；
     // 不得讓其中的殘值（例如 1）偷偷覆蓋正常薪資。特殊加給統一走 SalaryAdjustment，

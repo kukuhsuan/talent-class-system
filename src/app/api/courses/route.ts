@@ -14,8 +14,10 @@ import { writeAuditLog } from "@/lib/auditLog";
 import { courseTermOverride, notesWithCourseTerm } from "@/lib/courseTerm";
 import { courseScheduleConflictMessage, findCourseScheduleConflict } from "@/lib/courseScheduleConflict";
 import { REMOVED_FROM_COURSE_SCHEDULE_REASON } from "@/lib/attendanceVisibility";
+import { ensureCourseTravelFeeColumn, parseCourseTravelFee } from "@/lib/courseTravelFee";
 
 export async function GET(req: NextRequest) {
+  await ensureCourseTravelFeeColumn();
   const { searchParams } = new URL(req.url);
   const dept = searchParams.get("dept") ?? "";
   const page = Math.max(1, Number(searchParams.get("page") ?? "0") || 0);
@@ -102,6 +104,7 @@ export async function GET(req: NextRequest) {
         courseType: true,
         time: true,
         payrollHours: true,
+        travelFee: true,
         category: true,
         teacherId: true,
         assistantTeacherId: true,
@@ -167,6 +170,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureCourseTravelFeeColumn();
     const body = await req.json();
     const { schoolRel, teacher, assistantTeacher, scheduledDates, ...data } = body;
     void schoolRel; void teacher; void assistantTeacher;
@@ -210,6 +214,7 @@ export async function POST(req: NextRequest) {
     const allScheduled = [...new Set([...scheduled, ...parsed, ...range, ...weekly])].sort();
     const dayOfWeek = allScheduled[0] ? weekdayOfIso(allScheduled[0]) : (data.dayOfWeek ?? "");
     const payrollHours = parsePayrollHours(data.payrollHours);
+    const travelFee = parseCourseTravelFee(data.travelFee);
     const recurrence = recurrenceFields(data, allScheduled);
     const teacherId = Number(data.teacherId);
     const assistantTeacherId = data.assistantTeacherId ? Number(data.assistantTeacherId) : null;
@@ -241,6 +246,7 @@ export async function POST(req: NextRequest) {
         dayOfWeek,
         ...recurrence,
         time: data.time ?? "",
+        travelFee,
         category: normalizeCategory(data.category),
         department: normalizeDepartment(data.department),
         enrollCount: data.enrollCount ?? "",
@@ -278,10 +284,10 @@ export async function POST(req: NextRequest) {
       targetType: "Course",
       targetId: course.id,
       targetLabel: `${course.code} ${course.school} ${course.courseType}`,
-      afterData: { ...course, payrollHours },
+      afterData: { ...course, payrollHours, travelFee },
       diffSummary: `新增課程：${course.code} ${course.school} ${course.courseType}`,
     });
-    return NextResponse.json({ ...course, payrollHours, warnings }, { status: 201 });
+    return NextResponse.json({ ...course, payrollHours, travelFee, warnings }, { status: 201 });
   } catch (e) {
     console.error("course create failed", e);
     return NextResponse.json({ error: `課程新增失敗：${(e as Error).message}` }, { status: 500 });
