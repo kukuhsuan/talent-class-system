@@ -66,7 +66,7 @@ export async function generatePortalCode(schoolId: number): Promise<string> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO SchoolPortalAuth (schoolId, codeHash, enabled, failCount, lockedUntil, updatedAt)
      VALUES (?, ?, 1, 0, NULL, CURRENT_TIMESTAMP)
-     ON CONFLICT(schoolId) DO UPDATE SET codeHash = excluded.codeHash, enabled = 1, failCount = 0, lockedUntil = NULL, updatedAt = CURRENT_TIMESTAMP`,
+     ON CONFLICT(schoolId) DO UPDATE SET codeHash = excluded.codeHash, enabled = 1, failCount = 0, lockedUntil = NULL, sessionVersion = SchoolPortalAuth.sessionVersion + 1, updatedAt = CURRENT_TIMESTAMP`,
     schoolId, hash,
   );
   return code;
@@ -75,7 +75,7 @@ export async function generatePortalCode(schoolId: number): Promise<string> {
 export async function disablePortalCode(schoolId: number) {
   await ensurePortalAuthTable();
   await prisma.$executeRawUnsafe(
-    "UPDATE SchoolPortalAuth SET enabled = 0, updatedAt = CURRENT_TIMESTAMP WHERE schoolId = ?", schoolId,
+    "UPDATE SchoolPortalAuth SET enabled = 0, sessionVersion = sessionVersion + 1, updatedAt = CURRENT_TIMESTAMP WHERE schoolId = ?", schoolId,
   );
 }
 
@@ -87,7 +87,7 @@ export async function logoutAllDevices(schoolId: number) {
   );
 }
 
-export type VerifyResult = { ok: true } | { ok: false; error: string; locked?: boolean };
+export type VerifyResult = { ok: true; sessionVersion: number } | { ok: false; error: string; locked?: boolean };
 
 export async function verifyPortalCode(schoolId: number, code: string): Promise<VerifyResult> {
   const row = await getPortalAuthRow(schoolId);
@@ -119,13 +119,14 @@ export async function verifyPortalCode(schoolId: number, code: string): Promise<
     "UPDATE SchoolPortalAuth SET failCount = 0, lockedUntil = NULL, lastVerifiedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE schoolId = ?",
     schoolId,
   );
-  return { ok: true };
+  return { ok: true, sessionVersion: row.sessionVersion };
 }
 
 const secret = () => new TextEncoder().encode(createHash("sha256").update(`portal-session:${requiredAuthSecret()}`).digest("hex"));
 
-export async function createPortalSessionCookie(schoolId: number, remember: boolean): Promise<{ name: string; value: string; options: Record<string, unknown> }> {
+export async function createPortalSessionCookie(schoolId: number, remember: boolean, verifiedVersion: number): Promise<{ name: string; value: string; options: Record<string, unknown> }> {
   const row = await getPortalAuthRow(schoolId);
+  if (!row?.enabled || !row.codeHash || row.sessionVersion !== verifiedVersion) throw new Error("Portal verification changed");
   const jwt = await new SignJWT({ type: "portal-session", schoolId, sv: row?.sessionVersion ?? 1 })
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime(remember ? "30d" : "12h")
@@ -143,26 +144,6 @@ export async function createPortalSessionCookie(schoolId: number, remember: bool
   };
 }
 
-/**
- * 這個園所有沒有「啟用中的驗證碼」。
- *
- * 只有行政在後台按下產生驗證碼，SchoolPortalAuth 才會有資料列；停用時 enabled = 0。
- * 換句話說：沒產過碼的園所永遠不可能通過 hasValidPortalSession。
- * 所以 /api/school-portal/[token] 的 GET/POST/PUT 都不能無條件擋，必須先問這一題 ——
- * 否則一上線，所有還沒設定驗證碼的園所會直接看到 401 錯誤頁，等於整個園所端掛掉。
- *
- * 注意：這個豁免對讀取和寫入一視同仁。未啟用驗證碼的園所，寫入（送出異動申請、
- * 存開學確認）同樣只靠連結權杖保護，和改動前一樣 —— 也就是說，
- * **在行政把所有園所的驗證碼都產生出來之前，這個豁免本身就是殘留的風險**。
- * 這是為了不讓上線當天全面中斷而做的取捨，不是終點。
- *
- * 例外：同層的 changes/route.ts 是無條件要求驗證的（既有行為，未更動）。
- */
-export async function portalVerificationRequired(schoolId: number): Promise<boolean> {
-  const row = await getPortalAuthRow(schoolId);
-  return Boolean(row && row.enabled && row.codeHash);
-}
-
 // POST API 後端驗證：cookie 有效、schoolId 相符、sessionVersion 未被登出
 export async function hasValidPortalSession(req: NextRequest, schoolId: number): Promise<boolean> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
@@ -171,33 +152,22 @@ export async function hasValidPortalSession(req: NextRequest, schoolId: number):
     const { payload } = await jwtVerify(token, secret());
     if (payload.type !== "portal-session" || Number(payload.schoolId) !== schoolId) return false;
     const row = await getPortalAuthRow(schoolId);
-    if (!row || !row.enabled) return false;
+    if (!row || !row.enabled || !row.codeHash) return false;
     return Number(payload.sv) === row.sessionVersion;
   } catch {
     return false;
   }
 }
 
-/**
- * 園所端 API 的統一驗證閘門。放行回 null，擋下來回 401 JSON。
- *
- * 原本只有 /api/school-portal/[token] 主路由做這件事，底下的 reports、ratings、
- * summary、photo、certificate 子路由完全沒檢查 —— 等於就算園所已經啟用驗證碼，
- * 光靠原始連結還是能把月報表、評分與課程照片全部讀走。連結會在 LINE 群組轉貼，
- * 「有連結」不等於「是園所人員」，所以每一支回傳園所資料的路由都要自己再問一次。
- *
- * 豁免規則沿用 portalVerificationRequired：沒產過驗證碼的園所照舊放行，
- * 否則上線當天所有還沒設定的園所會集體看到 401。這是過渡期的取捨，
- * 行政把驗證碼補齊後豁免就自動失效。
- *
- * 例外：manifest（PWA 設定檔，不含園所資料，且加入主畫面時瀏覽器不帶 cookie）
- * 與 verify（驗證碼本身的入口）不套用。
- */
+// 園所資料一律要求驗證；尚未設定或已停用的園所不可退回僅靠連結存取。
 export async function requirePortalVerification(
   req: NextRequest,
   schoolId: number,
 ): Promise<NextResponse | null> {
-  if (!(await portalVerificationRequired(schoolId))) return null;
+  const row = await getPortalAuthRow(schoolId);
+  if (!row?.enabled || !row.codeHash) {
+    return NextResponse.json({ error: "園所存取尚未啟用或已停用，請聯繫承辦人員" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
   if (await hasValidPortalSession(req, schoolId)) return null;
-  return NextResponse.json({ error: "請先完成園所驗證", requiresVerify: true }, { status: 401 });
+  return NextResponse.json({ error: "請先完成園所驗證", requiresVerify: true }, { status: 401, headers: { "Cache-Control": "no-store" } });
 }

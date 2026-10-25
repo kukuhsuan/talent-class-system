@@ -11,7 +11,7 @@ import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
 
-type Params = { id: string } | Promise<{ id: string }>;
+type Params = Promise<{ id: string }>;
 
 // 存摺：待審核 →（已完成／需補件）
 // 委任書：待審核 → 行政已確認 →（已完成／需補件）

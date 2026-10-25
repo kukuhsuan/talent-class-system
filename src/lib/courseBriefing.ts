@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
+import { TEACHER_LINE_STOPPED_MESSAGE, teacherLineNotificationsStopped } from "@/lib/teacherReminderCutoff";
+import { taipeiDateIso } from "@/lib/courseDates";
 
 export type CourseBriefingRow = {
   id: number;
@@ -167,6 +169,7 @@ export async function confirmCourseBriefingByLineUser(token: string, lineUserId:
 }
 
 export async function sendCourseBriefing(row: CourseBriefingRow, kind: "immediate" | "dayBefore" | "sameDay") {
+  if (teacherLineNotificationsStopped(taipeiDateIso())) throw new Error(TEACHER_LINE_STOPPED_MESSAGE);
   if (!row.teacherLineUserId) throw new Error(`${row.teacherName} 尚未綁定 LINE`);
   const region = (row.teacherLineRegion || "north") as LineRegion;
   const token = getLineConfig(region).token;

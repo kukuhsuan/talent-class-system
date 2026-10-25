@@ -21,9 +21,11 @@ export function visibleOperationalAttendanceWhere(): Prisma.AttendanceWhereInput
               {
                 OR: [
                   { cancelled: true },
-                  { studentCount: { not: null } },
-                  { studentCountA: { not: null } },
-                  { studentCountB: { not: null } },
+                  // 預排堂次可能已填入 0；0 本身不是完成出勤的證據。
+                  // 真正的零人回報仍由下方回報／停課／鎖薪條件保留。
+                  { studentCount: { gt: 0 } },
+                  { studentCountA: { gt: 0 } },
+                  { studentCountB: { gt: 0 } },
                   { reportContent: { not: "" } },
                   { reportSentAt: { not: null } },
                   { isPayrollLocked: true },

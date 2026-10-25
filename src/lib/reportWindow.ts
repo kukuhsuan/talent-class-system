@@ -76,8 +76,9 @@ export function isAttendanceReportComplete(attendance: ReportAttendanceLike, tim
   // 「正常上課」只是出勤狀態，不是課程進度。
   const hasReport = Boolean(reportText && reportText !== "正常上課");
   if (!requiresStudentCount(reportCategory(attendance))) return hasReport;
-  // 課後課 / 營隊的行政必要回報是實際出席人數。
-  return hasAttendanceCount(attendance);
+  // 課後課 / 營隊必須同時有實際出席人數與正式課程回報才算完成。
+  // Attendance.notes 是行政備註，不得參與完成判定。
+  return hasAttendanceCount(attendance) && hasReport;
 }
 
 export function attendanceReportWindow(attendance: ReportAttendanceLike, timeText = "", now = new Date()) {

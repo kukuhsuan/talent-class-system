@@ -1,10 +1,8 @@
 {
-  "regions": ["pdx1"],
+  "regions": [
+    "pdx1"
+  ],
   "crons": [
-    {
-      "path": "/api/cron/operations-daily",
-      "schedule": "0 0 * * *"
-    },
     {
       "path": "/api/cron/salary-reminder",
       "schedule": "0 1 28 * *"

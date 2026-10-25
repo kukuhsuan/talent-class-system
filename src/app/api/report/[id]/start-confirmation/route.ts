@@ -1,3 +1,4 @@
+import { reportMaintenanceResponse } from "@/lib/reportMaintenance";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyPublicAccessToken } from "@/lib/publicAccessToken";
@@ -55,6 +56,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 // 老師端：送出開課前確認（同課程本學期僅能一次）
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const maintenance = reportMaintenanceResponse();
+  if (maintenance) return maintenance;
   try {
     const { id } = await params;
     const attendance = await loadAttendance(id);

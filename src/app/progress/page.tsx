@@ -114,22 +114,22 @@ export default function ProgressPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await ensureOk(res, "課程內容庫儲存失敗");
+      await ensureOk(res, "課程進度儲存失敗");
       await reloadTemplates();
       setTemplateForm({ id: 0, lesson: "", title: "", focus: "", skills: "", activityDirection: "", aiStyle: "" });
-      showToast("success", "課程內容庫已儲存");
+      showToast("success", "課程進度已儲存");
     } catch (e) {
-      showToast("error", (e as Error).message || "課程內容庫儲存失敗", 3000);
+      showToast("error", (e as Error).message || "課程進度儲存失敗", 3000);
     } finally {
       setSavingTemplate(false);
     }
   }
 
   async function deleteTemplate(id: number) {
-    if (!confirm("確定刪除此堂課的內容庫？")) return;
+    if (!confirm("確定刪除此堂課的進度？")) return;
     await fetch(`/api/lesson-templates/${id}`, { method: "DELETE" });
     setTemplateRows((rows) => rows.filter((r) => r.id !== id));
-    showToast("success", "課程內容庫已刪除");
+    showToast("success", "課程進度已刪除");
   }
 
   function editTemplate(row: LessonTemplate) {
@@ -202,16 +202,16 @@ export default function ProgressPage() {
       <Toast toast={toast} />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">課程內容與成果</h1>
-          <p className="text-sm text-slate-500">統一管理每堂課內容，教練回報與園所成果都使用這裡的資料。</p>
+          <h1 className="text-xl font-bold text-slate-800">課程進度表</h1>
+          <p className="text-sm text-slate-500">依序管理第 1 堂、第 2 堂…的課程名稱與簡短學習重點；此處不顯示教案或詳細教學流程。</p>
         </div>
       </div>
 
       <div ref={formRef} className={`bg-white rounded-xl border shadow-sm p-4 mb-6 ${templateForm.id ? "border-blue-200 ring-2 ring-blue-50" : "border-slate-200"}`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-slate-800">{templateForm.id ? "正在編輯每堂課內容" : "每堂課內容"}</h2>
-            <p className="text-xs text-slate-500">只維護一份資料：教練選堂、成果回報與園所成果都使用這裡。</p>
+            <h2 className="font-semibold text-slate-800">{templateForm.id ? "正在編輯課程進度" : "每堂課進度"}</h2>
+            <p className="text-xs text-slate-500">只保留堂次、課程名稱、學習重點與能力培養，供老師選擇與園所查看。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select value={manageCourse} onChange={(e) => {
@@ -242,11 +242,8 @@ export default function ProgressPage() {
             className="min-h-28 border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
           <input value={templateForm.skills} onChange={(e) => setTemplateForm({ ...templateForm, skills: e.target.value })}
             placeholder="能力培養，用頓號分隔，例如：手眼協調、專注力、肢體協調" className="border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
-          <textarea value={templateForm.activityDirection} onChange={(e) => setTemplateForm({ ...templateForm, activityDirection: e.target.value })}
-            placeholder="成果回報短文，建議 2～3 行，不要寫太長。"
-            className="min-h-24 border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2" />
           <div className="md:col-span-2">
-            <SaveButton saving={savingTemplate} onClick={saveTemplate} idleText={templateForm.id ? "更新內容" : "新增內容"} savingText="儲存中…" />
+            <SaveButton saving={savingTemplate} onClick={saveTemplate} idleText={templateForm.id ? "更新進度" : "新增進度"} savingText="儲存中…" />
           </div>
         </div>
 
@@ -256,7 +253,7 @@ export default function ProgressPage() {
               <tr>
                 <th className="px-3 py-2 text-left w-24">堂數</th>
                 <th className="px-3 py-2 text-left w-48">課程名稱</th>
-                <th className="px-3 py-2 text-left">本堂重點 / 成果短文</th>
+                <th className="px-3 py-2 text-left">本堂學習重點</th>
                 <th className="px-3 py-2 text-left w-44">能力培養</th>
                 <th className="px-3 py-2 text-right w-32">操作</th>
               </tr>
@@ -267,8 +264,7 @@ export default function ProgressPage() {
                   <td className="px-3 py-2 whitespace-nowrap">第 {row.lesson} 堂</td>
                   <td className="px-3 py-2 font-medium text-slate-700">{row.title}</td>
                   <td className="px-3 py-2 text-xs leading-5 text-slate-500">
-                    <div className="line-clamp-2">{row.focus || "尚未填寫本堂重點"}</div>
-                    {row.activityDirection && <div className="mt-1 rounded bg-slate-50 px-2 py-1 text-slate-600">{row.activityDirection}</div>}
+                    <div className="line-clamp-2">{row.focus || "尚未填寫本堂學習重點"}</div>
                   </td>
                   <td className="px-3 py-2 text-xs text-slate-600">{row.skills.length ? row.skills.join("、") : "—"}</td>
                   <td className="px-3 py-2 text-right">
@@ -277,7 +273,7 @@ export default function ProgressPage() {
                   </td>
                 </tr>
               ))}
-              {templateRows.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-slate-400">尚無內容，請新增第一筆</td></tr>}
+              {templateRows.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-slate-400">尚無課程進度，請新增第一堂</td></tr>}
             </tbody>
           </table>
         </div>

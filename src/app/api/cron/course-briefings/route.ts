@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listCourseBriefings, sendCourseBriefing } from "@/lib/courseBriefing";
 import { taipeiDateIso } from "@/lib/courseDates";
+import { TEACHER_LINE_STOPPED_MESSAGE, teacherLineNotificationsStopped } from "@/lib/teacherReminderCutoff";
 
 function addDays(iso: string, days: number) {
   const date = new Date(`${iso}T00:00:00+08:00`);
@@ -14,6 +15,9 @@ export async function GET(req: NextRequest) {
   }
   const mode = req.nextUrl.searchParams.get("mode") === "tomorrow" ? "tomorrow" : "today";
   const targetDate = addDays(taipeiDateIso(), mode === "tomorrow" ? 1 : 0);
+  if (teacherLineNotificationsStopped(targetDate)) {
+    return NextResponse.json({ ok: true, stopped: true, mode, targetDate, sent: 0, reason: TEACHER_LINE_STOPPED_MESSAGE });
+  }
   const rows = (await listCourseBriefings({ from: targetDate, to: targetDate, limit: 200 }))
     .filter((row) => row.status === "pending")
     .filter((row) => mode === "tomorrow" ? !row.dayBeforeSentAt : !row.sameDaySentAt);

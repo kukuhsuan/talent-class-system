@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getTeacherResume, upsertTeacherResume } from "@/lib/teacherResume";
 import { verifyTeacherResumeToken } from "@/lib/publicAccessToken";
 
-type Params = { token: string } | Promise<{ token: string }>;
+type Params = Promise<{ token: string }>;
 
 async function context(token: string) {
   const { teacherId } = verifyTeacherResumeToken(decodeURIComponent(token));

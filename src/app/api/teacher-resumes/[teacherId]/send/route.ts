@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { signTeacherResumeToken } from "@/lib/publicAccessToken";
 import { ADMIN_ROLES, requireRole } from "@/lib/permissions";
 
-type Params = { teacherId: string } | Promise<{ teacherId: string }>;
+type Params = Promise<{ teacherId: string }>;
 
 function appUrl() {
   return (process.env.NEXT_PUBLIC_APP_URL || "https://talent-class-system.vercel.app").replace(/\/$/, "");

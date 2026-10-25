@@ -3,7 +3,7 @@ import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { getTeacherResume, upsertTeacherResume } from "@/lib/teacherResume";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
 
-type Params = { teacherId: string } | Promise<{ teacherId: string }>;
+type Params = Promise<{ teacherId: string }>;
 
 export async function GET(_req: NextRequest, { params }: { params: Params }) {
   const auth = await requireRole(BACKOFFICE_ROLES);

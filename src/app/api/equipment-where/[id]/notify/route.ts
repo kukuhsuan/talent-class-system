@@ -5,7 +5,7 @@ import { buildEquipmentFlowInquiryMessage, getLineConfig, normalizeLineRegion, p
 import { ADMIN_ROLES, requireRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
-type NotifyParams = { id: string } | Promise<{ id: string }>;
+type NotifyParams = Promise<{ id: string }>;
 
 async function findFlowFallback(snapshot: Record<string, unknown> | null | undefined) {
   const equipmentName = String(snapshot?.equipmentName ?? "").trim();

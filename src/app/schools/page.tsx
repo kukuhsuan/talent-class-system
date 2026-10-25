@@ -532,8 +532,8 @@ function PortalAuthModal({ school, onClose }: { school: { id: number; name: stri
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   async function act(action: "generate" | "disable" | "logoutAll") {
-    if (action === "generate" && status?.enabled && !confirm("產生新驗證碼後，舊驗證碼會立即失效。確定要繼續？")) return;
-    if (action === "disable" && !confirm("停用後園所將無法送出評分與異動申請。確定要停用？")) return;
+    if (action === "generate" && status?.enabled && !confirm("產生新驗證碼後，舊驗證碼及已登入裝置會立即失效。確定要繼續？")) return;
+    if (action === "disable" && !confirm("停用後園所將無法查看資料或提交回報，已登入裝置也會失效。確定要停用？")) return;
     setBusy(true); setError("");
     try {
       const res = await fetch(`/api/schools/${school.id}/portal-auth`, {
@@ -552,7 +552,7 @@ function PortalAuthModal({ school, onClose }: { school: { id: number; name: stri
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-gray-800">園所驗證碼管理｜{school.name}</h3>
-        <p className="mt-1 text-xs text-gray-400">園所首次送出評分或異動申請時，需輸入 6 位數驗證碼。</p>
+        <p className="mt-1 text-xs text-gray-400">園所查看資料或送出申請前，需先輸入 6 位數驗證碼。</p>
         {status && (
           <div className="mt-3 space-y-1 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
             <p>狀態：{status.enabled ? <span className="font-bold text-emerald-600">已啟用</span> : <span className="font-bold text-slate-400">未啟用</span>}{locked ? <span className="ml-2 font-bold text-red-600">已鎖定 15 分鐘</span> : null}</p>
@@ -564,14 +564,14 @@ function PortalAuthModal({ school, onClose }: { school: { id: number; name: stri
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
             <p className="text-xs font-bold text-amber-700">新驗證碼（只顯示這一次，請立即提供給園所）</p>
             <p className="mt-1 text-3xl font-black tracking-[0.3em] text-gray-800">{code}</p>
-            <button onClick={() => { navigator.clipboard.writeText(`${school.name} 園所驗證碼：${code}（送出評分或異動申請時輸入）`); }} className="mt-2 text-xs font-bold text-indigo-600 underline">複製通知文字</button>
+            <button onClick={() => { navigator.clipboard.writeText(`${school.name} 園所驗證碼：${code}（開啟園所頁面時輸入）`); }} className="mt-2 text-xs font-bold text-indigo-600 underline">複製通知文字</button>
           </div>
         )}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         <div className="mt-4 grid gap-2">
           <button disabled={busy} onClick={() => act("generate")} className="rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">{status?.enabled ? "重新產生驗證碼" : "產生驗證碼"}</button>
           {status?.enabled && <button disabled={busy} onClick={() => act("logoutAll")} className="rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-600 disabled:opacity-50">登出所有已驗證裝置</button>}
-          {status?.enabled && <button disabled={busy} onClick={() => act("disable")} className="rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 disabled:opacity-50">停用驗證碼</button>}
+          {status?.enabled && <button disabled={busy} onClick={() => act("disable")} className="rounded-xl border border-red-200 py-2.5 text-sm font-bold text-red-600 disabled:opacity-50">停用園所存取</button>}
           <button onClick={onClose} className="rounded-xl py-2 text-sm text-slate-400">關閉</button>
         </div>
       </div>

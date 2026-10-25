@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const body = await req.json().catch(() => ({}));
     const result = await verifyPortalCode(schoolId, String(body.code ?? ""));
     if (!result.ok) return NextResponse.json({ error: result.error, locked: result.locked ?? false }, { status: 401 });
-    const cookie = await createPortalSessionCookie(schoolId, body.remember !== false);
+    const cookie = await createPortalSessionCookie(schoolId, body.remember !== false, result.sessionVersion);
     const res = NextResponse.json({ ok: true });
     res.cookies.set(cookie.name, cookie.value, cookie.options);
     return res;

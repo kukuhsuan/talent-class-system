@@ -13,6 +13,7 @@ import { equipmentByAttendanceIds } from "@/lib/equipmentReminder";
 import { expectedStudentCountMap } from "@/lib/expectedStudentCount";
 import type { EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { recordAutomationRun } from "@/lib/automationHealth";
+import { TEACHER_REMINDER_STOPPED_MESSAGE, teacherReminderStopped } from "@/lib/teacherReminderCutoff";
 import { previousLessonRecapMap, type LessonRecap } from "@/lib/lessonHandoff";
 import { upcomingLessonMap, type UpcomingLesson } from "@/lib/lessonProgress";
 
@@ -101,6 +102,9 @@ export async function GET(req: NextRequest) {
   const dayOffsetRaw = Number(req.nextUrl.searchParams.get("dayOffset") ?? "0");
   const dayOffset = Number.isFinite(dayOffsetRaw) ? Math.max(0, Math.min(1, dayOffsetRaw)) : 0;
   const targetIso = addIsoDays(taipeiDateIso(), dayOffset);
+  if (teacherReminderStopped(targetIso)) {
+    return NextResponse.json({ ok: true, stopped: true, targetDate: targetIso, sent: 0, reason: TEACHER_REMINDER_STOPPED_MESSAGE });
+  }
   const targetDate = new Date(`${targetIso}T00:00:00.000Z`);
   const targetName = dayNameOfIso(targetIso);
   const { start: dayStart, end: dayEnd } = dayBounds(targetIso);

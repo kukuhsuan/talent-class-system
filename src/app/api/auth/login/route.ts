@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
   const adminPassword = legacyAllowed ? (process.env.ADMIN_PASSWORD?.trim() || "") : "";
 
   if (adminPassword && rawPassword === adminPassword) {
-    const token = await signToken({ role: "admin", username: "legacy-admin", name: "系統管理員" });
+    const token = await signToken({ role: "admin", username: "legacy-admin", name: "系統管理員" }, adminPassword);
     const res = NextResponse.json({ ok: true, user: { username: "legacy-admin", name: "系統管理員", role: "admin" } });
     await clearRateLimit(req);
     await writeAuditLog(req, {
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         });
         return NextResponse.json({ error: "帳號或密碼錯誤" }, { status: 401 });
       }
-      const token = await signToken({ role: user.role, userId: user.id, username: user.username, name: user.name });
+      const token = await signToken({ role: user.role, userId: user.id, username: user.username, name: user.name }, user.passwordHash);
       const res = NextResponse.json({ ok: true, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
       await clearRateLimit(req);
       await prisma.userAccount.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => undefined);

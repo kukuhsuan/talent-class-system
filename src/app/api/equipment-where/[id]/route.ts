@@ -3,7 +3,7 @@ import { diffSummary, writeAuditLog } from "@/lib/auditLog";
 import { deleteEquipmentFlow, getEquipmentFlow, listEquipmentFlows, updateEquipmentFlow, updateEquipmentFlowStatus } from "@/lib/equipmentFlow";
 import { ADMIN_ROLES, BACKOFFICE_ROLES, requireRole } from "@/lib/permissions";
 
-type RouteParams = { id: string } | Promise<{ id: string }>;
+type RouteParams = Promise<{ id: string }>;
 
 async function flowId(params: RouteParams) {
   const resolved = await params;

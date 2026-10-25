@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { reportMaintenanceResponse } from "@/lib/reportMaintenance";
 import { prisma } from "@/lib/prisma";
 import { courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { normalizeAbilities } from "@/lib/abilityMap";
@@ -70,17 +71,6 @@ function reportPhotoUrls(value: string | null | undefined, token: string): strin
   return parseStoredPhotos(value).map((stored) => storedPhotoToUrl(stored, token));
 }
 
-function sanitizePhotoUrl(value: string) {
-  const raw = value.trim();
-  if (!raw || raw.startsWith("data:")) return "";
-  try {
-    const url = new URL(raw);
-    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
-  } catch {
-    return "";
-  }
-}
-
 async function isFinalKindergartenAttendance(attendance: { id: number; date: Date; courseId: number; course: { department: string } }) {
   if (!isKindergarten(attendance.course.department)) return false;
   const { assessmentSemesterRange } = await import("@/lib/kindergartenAssessment");
@@ -111,6 +101,8 @@ async function assessmentCount(attendanceId: number) {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const maintenance = reportMaintenanceResponse();
+  if (maintenance) return maintenance;
   try {
     await ensureSchoolSignatureColumns();
     const { id } = await params;
@@ -239,6 +231,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const maintenance = reportMaintenanceResponse();
+  if (maintenance) return maintenance;
   try {
     const { id } = await params;
     const { attendanceId } = verifyReportAccessToken(decodeURIComponent(id));
@@ -311,6 +305,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const maintenance = reportMaintenanceResponse();
+  if (maintenance) return maintenance;
   try {
     await ensureSchoolSignatureColumns();
     const { id } = await params;
@@ -374,7 +370,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const kindergarten = isKindergarten(attendance.course.department);
     const classStatus = kindergarten ? normalizeClassStatus(String(data.classStatus ?? "穩定學習").trim()) : "";
-    const representativePhotoUrl = sanitizePhotoUrl(String(data.representativePhotoUrl ?? data.reportPhotos ?? "").trim());
+    // Only the private photo handlers may change photos. Ignore legacy form URLs
+    // so an old form cannot re-add an image that was deleted after it loaded.
     const incident = Boolean(data.incident);
     const signatureRequired = requiresSchoolSignature(attendance.course.department, attendance.actualTeacher.name);
     const schoolVerifierName = String(data.schoolVerifierName ?? "").trim();
@@ -455,10 +452,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         incidentProcess: incident ? incidentProcess : "",
         incidentAction: incident ? incidentAction : "",
         incidentNotified: incident ? incidentNotified : "",
-        // 上傳照片已即時寫入 reportPhotos；此處只把「公開圖片連結」附加進陣列（上限 4，不覆蓋已上傳照片）
-        ...(representativePhotoUrl && !parseStoredPhotos(attendance.reportPhotos).includes(representativePhotoUrl)
-          ? { reportPhotos: JSON.stringify([...parseStoredPhotos(attendance.reportPhotos), representativePhotoUrl].slice(0, 4)) }
-          : {}),
         aiSummary: "",
         aiSkillFocus: "",
         aiTeachingNote: "",

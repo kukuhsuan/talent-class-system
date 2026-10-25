@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NOTIFY_ROLES, requireRole, sameOriginOk } from "@/lib/permissions";
 import { writeAuditLog } from "@/lib/auditLog";
+import { taipeiDateIso } from "@/lib/courseDates";
+import { TEACHER_REMINDER_STOPPED_MESSAGE, teacherReminderStopped } from "@/lib/teacherReminderCutoff";
 
 export async function POST(req: NextRequest) {
   const { user, response } = await requireRole(NOTIFY_ROLES);
@@ -12,6 +14,10 @@ export async function POST(req: NextRequest) {
   // 指定老師補發：略過去重直接重送給這一位，供「排程跑完才加課」時人工救援
   const teacherIdRaw = Number(body.teacherId);
   const teacherId = Number.isInteger(teacherIdRaw) && teacherIdRaw > 0 ? teacherIdRaw : null;
+  const targetDate = new Date(Date.now() + dayOffset * 86400000);
+  if (teacherReminderStopped(taipeiDateIso(targetDate))) {
+    return NextResponse.json({ error: TEACHER_REMINDER_STOPPED_MESSAGE }, { status: 410 });
+  }
   if (!process.env.CRON_SECRET) return NextResponse.json({ error: "提醒排程密鑰尚未設定" }, { status: 500 });
 
   const label = dayOffset === 1 ? "明日" : "今日";

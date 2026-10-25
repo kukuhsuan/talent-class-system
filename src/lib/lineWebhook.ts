@@ -1,3 +1,4 @@
+import { isReportMaintenanceEnabled, isTeacherReportAction, REPORT_MAINTENANCE_MESSAGE } from "@/lib/reportMaintenance";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifySchoolCourseChange, notifySchoolReport } from "@/lib/schoolNotification";
@@ -186,6 +187,10 @@ async function ensureTeacherCanAccessAttendance(lineUserId: string, attendanceId
 }
 
 async function ensureTeacherCanSubmitReport(lineUserId: string, attendanceId: number, replyToken: string, token: string) {
+  if (isReportMaintenanceEnabled()) {
+    await replyMessage(replyToken, [{ type: "text", text: REPORT_MAINTENANCE_MESSAGE }], token);
+    return false;
+  }
   if (!(await teacherCanAccessAttendance(lineUserId, attendanceId))) {
     await replyMessage(replyToken, [{ type: "text", text: UNAUTHORIZED_ATTENDANCE_REPLY }], token);
     return false;
@@ -641,6 +646,10 @@ async function handleText(userId: string, text: string, replyToken: string, regi
   // Fallback: legacy "幼兒園 16" / "安親 8" text-based count (kept for manual entry)
   const countMatch = text.match(/^(幼兒園|國小|安親)\s+(\d+)$/);
   if (countMatch) {
+    if (isReportMaintenanceEnabled()) {
+      await replyMessage(replyToken, [{ type: "text", text: REPORT_MAINTENANCE_MESSAGE }], token);
+      return;
+    }
     const dept = countMatch[1];
     const count = parseInt(countMatch[2]);
     try {
@@ -711,6 +720,10 @@ async function handleText(userId: string, text: string, replyToken: string, regi
 async function handlePostback(userId: string, data: string, replyToken: string, region: LineRegion, token: string) {
   const params = new URLSearchParams(data);
   const action = params.get("action");
+  if (isReportMaintenanceEnabled() && isTeacherReportAction(action)) {
+    await replyMessage(replyToken, [{ type: "text", text: REPORT_MAINTENANCE_MESSAGE }], token);
+    return;
+  }
   const attendanceId = Number(params.get("id"));
 
   if (action === "school_change_ack") {

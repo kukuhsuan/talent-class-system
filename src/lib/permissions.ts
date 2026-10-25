@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 export const OWNER_ROLES = ["owner", "super_admin", "developer"] as const;
 // 一般員工可執行所有日常營運操作；系統管理三項由 OWNER_ROLES 另行限制。
@@ -32,24 +31,7 @@ export async function currentSessionUser() {
   const session = await getSession();
   if (!session) return null;
   const userId = session.userId == null ? null : Number(session.userId);
-  // 帳號被停用或角色被調整時，讓舊 token 立即失效（不用等 7 天過期）
-  if (userId != null) {
-    try {
-      const account = await prisma.userAccount.findUnique({
-        where: { id: userId },
-        select: { isActive: true, role: true },
-      });
-      if (!account || !account.isActive) return null;
-      return {
-        userId,
-        username: String(session.username ?? ""),
-        name: String(session.name ?? session.username ?? ""),
-        role: account.role,
-      };
-    } catch {
-      // 資料表尚未建立時退回 token 內的資訊
-    }
-  }
+  // getSession already validates active state and the current password fingerprint.
   return {
     userId,
     username: String(session.username ?? ""),

@@ -3,7 +3,7 @@ import { writeAuditLog } from "@/lib/auditLog";
 import { getRecruitmentCampaign, sendRecruitmentCampaign } from "@/lib/recruitment";
 import { ADMIN_ROLES, requireRole } from "@/lib/permissions";
 
-type Params = { id: string } | Promise<{ id: string }>;
+type Params = Promise<{ id: string }>;
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
   const auth = await requireRole(ADMIN_ROLES);

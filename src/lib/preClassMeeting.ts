@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getLineConfig, pushMessage, type LineRegion } from "@/lib/line";
 import { courseDateWindowWhere, courseIdsWithAnyAttendance, dayBounds, dayNameOfIso } from "@/lib/scheduleLogic";
 import { taipeiDateIso } from "@/lib/courseDates";
+import { TEACHER_LINE_STOPPED_MESSAGE, teacherLineNotificationsStopped } from "@/lib/teacherReminderCutoff";
 
 // 課前會議：每週五 12:30–13:00 線上會議，通知下週有課教練。
 // 特殊安排：2026-07-20（一）通知本週(7/20–7/26)有課教練；2026-07-24（五）通知下週(7/27–8/2)。
@@ -308,6 +309,9 @@ export function buildMeetingInviteMessage(opts: {
 
 // 發送通知給單一參加者；回傳結果並更新通知狀態
 export async function notifyAttendee(meeting: MeetingRow, attendee: AttendeeRow, opts?: { isReminder?: boolean }) {
+  if (teacherLineNotificationsStopped(taipeiDateIso())) {
+    return { ok: false as const, teacherName: `老師#${attendee.teacherId}`, reason: TEACHER_LINE_STOPPED_MESSAGE };
+  }
   const teacher = await prisma.teacher.findUnique({
     where: { id: attendee.teacherId },
     select: { id: true, name: true, lineUserId: true, lineRegion: true },

@@ -926,18 +926,7 @@ export default function TeacherReportPage() {
               {photoError}
             </div>
           )}
-          <details className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-            <summary className="cursor-pointer text-xs font-semibold text-slate-500">已有公開圖片連結？</summary>
-            <input
-              type="url"
-              inputMode="url"
-              value={form.representativePhotoUrl}
-              disabled={locked}
-              onChange={(e) => setForm({ ...form, representativePhotoUrl: e.target.value })}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563EB]"
-              placeholder="https://...（送出時會一併加入照片）"
-            />
-          </details>
+          <p className="mt-3 text-xs text-slate-500">照片請透過上方上傳，僅供獲授權的老師與園所查看。</p>
           </section>
         </details>}
 

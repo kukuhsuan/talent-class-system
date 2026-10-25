@@ -26,7 +26,6 @@ const GROUPS = [
       { href: "/teacher-leaves", label: "老師請假" },
       { href: "/substitutes", label: "代課紀錄" },
       { href: "/equipment", label: "器材管理" },
-      { href: "/pre-class-meeting", label: "課前會議" },
       { href: "/course-briefings", label: "課前交辦" },
     ],
   },
@@ -37,7 +36,6 @@ const GROUPS = [
       { href: "/salary", label: "薪資計算", salaryOnly: true },
       { href: "/teachers", label: "老師管理" },
       { href: "/teacher-resumes", label: "老師簡歷" },
-      { href: "/recruitment", label: "全民招募" },
     ],
   },
   {
@@ -47,7 +45,6 @@ const GROUPS = [
       { href: "/school-stats", label: "園所人數" },
       { href: "/school-invoices", label: "園所請款單", schoolInvoiceOnly: true },
       { href: "/notify", label: "LINE 通知" },
-      { href: "/ratings", label: "安親班評分" },
     ],
   },
   {
@@ -56,7 +53,6 @@ const GROUPS = [
       { href: "/alerts", label: "異常管理", ownerOnly: true },
       { href: "/users", label: "帳號管理", ownerOnly: true },
       { href: "/admin/audit-logs", label: "操作歷程", ownerOnly: true },
-      { href: "/admin/lesson-sync", label: "教案庫同步", ownerOnly: true },
       { href: "/admin/settings", label: "系統設定", ownerOnly: true },
     ],
   },

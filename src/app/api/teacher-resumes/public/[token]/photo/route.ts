@@ -5,7 +5,7 @@ import { verifyTeacherResumeToken } from "@/lib/publicAccessToken";
 
 export const runtime = "nodejs";
 
-type Params = { token: string } | Promise<{ token: string }>;
+type Params = Promise<{ token: string }>;
 
 function blobToken() {
   return process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_READ_WRITE_TOKEN ?? "";

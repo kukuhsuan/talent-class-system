@@ -5,7 +5,7 @@ import { teacherTeachingProfiles } from "@/lib/teacherTeachingProfile";
 import { verifyTeacherCardToken } from "@/lib/publicAccessToken";
 import { currentSessionUser } from "@/lib/permissions";
 
-type Params = { teacherId: string } | Promise<{ teacherId: string }>;
+type Params = Promise<{ teacherId: string }>;
 
 /**
  * 老師簡歷卡片。

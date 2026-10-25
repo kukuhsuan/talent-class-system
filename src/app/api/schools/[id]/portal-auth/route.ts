@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ADMIN_ROLES, requireRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import {
   disablePortalCode,
@@ -25,6 +26,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(ADMIN_ROLES);
+  if (auth.response) return auth.response;
   const { id } = await params;
   const schoolId = Number(id);
   const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { id: true, name: true } });

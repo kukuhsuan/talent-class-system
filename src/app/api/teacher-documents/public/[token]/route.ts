@@ -18,7 +18,7 @@ import { getTeacherResume } from "@/lib/teacherResume";
 
 export const runtime = "nodejs";
 
-type Params = { token: string } | Promise<{ token: string }>;
+type Params = Promise<{ token: string }>;
 
 // 老師正常補件一小時內不會超過這個數字；超過就是有人在洗版
 const PUBLIC_UPLOAD_LIMIT_PER_HOUR = 12;

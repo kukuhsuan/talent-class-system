@@ -1,3 +1,18 @@
 .next
 .next 2
 talent-class-system-backup-*.json
+.env*
+.claude
+.stellar-build
+Claude outputs
+output
+outputs
+tmp
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+*.pem
+*.key
+public/number-detective
+src/lib/schoolInvoices.fix.ts

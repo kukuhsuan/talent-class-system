@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isReportMaintenanceEnabled } from "@/lib/reportMaintenance";
 import { prisma } from "@/lib/prisma";
 import { buildReportRequestMessage, getLineConfig, pushMessage } from "@/lib/line";
 import type { LineRegion } from "@/lib/line";
@@ -6,6 +7,7 @@ import { taipeiDateIso } from "@/lib/courseDates";
 import { dayBounds } from "@/lib/scheduleLogic";
 import { effectiveAttendanceTime } from "@/lib/attendanceTime";
 import { attendanceMissingItems } from "@/lib/reportWindow";
+import { TEACHER_LINE_STOPPED_MESSAGE, teacherLineNotificationsStopped } from "@/lib/teacherReminderCutoff";
 
 async function ensureTeacherReportReminderDeliveryTable() {
   await prisma.$executeRawUnsafe(`
@@ -25,6 +27,12 @@ export async function GET(req: NextRequest) {
   }
 
   const dateIso = taipeiDateIso();
+  if (teacherLineNotificationsStopped(dateIso)) {
+    return NextResponse.json({ ok: true, stopped: true, date: dateIso, teacherReminderSent: 0, reason: TEACHER_LINE_STOPPED_MESSAGE });
+  }
+  if (isReportMaintenanceEnabled()) {
+    return NextResponse.json({ skipped: true, reason: "REPORT_MAINTENANCE", teacherReminderSent: 0 });
+  }
   const pendingFromIso = new Date(`${dateIso}T00:00:00.000Z`);
   pendingFromIso.setUTCDate(pendingFromIso.getUTCDate() - 2);
   const { end } = dayBounds(dateIso);

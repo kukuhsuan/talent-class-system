@@ -7,7 +7,7 @@ import { writeAuditLogStrict } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
 
-type Params = { id: string } | Promise<{ id: string }>;
+type Params = Promise<{ id: string }>;
 
 // 存摺／委任書原檔的唯一出口。前端永遠只拿得到這個網址，拿不到 blob 原始路徑。
 export async function GET(req: NextRequest, { params }: { params: Params }) {

@@ -4,9 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveSchoolPortalParam } from "@/lib/schoolPortalAccess";
 import { requirePortalVerification } from "@/lib/portalAuth";
 
-function blobToken() {
-  return process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_READ_WRITE_TOKEN ?? "";
-}
+import { reportPhotoToken } from "@/lib/reportPhotoStorage";
 
 function includesPrivatePhoto(value: string | null | undefined, pathname: string) {
   const raw = String(value ?? "").trim();
@@ -45,12 +43,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       return NextResponse.json({ error: "找不到照片" }, { status: 404 });
     }
 
-    const blob = await get(pathname, { access: "private", token: blobToken() });
+    const blob = await get(pathname, { access: "private", token: reportPhotoToken(), useCache: false });
     if (!blob?.stream) return NextResponse.json({ error: "找不到照片" }, { status: 404 });
     return new NextResponse(blob.stream as BodyInit, {
       headers: {
         "Content-Type": blob.blob.contentType ?? "image/jpeg",
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": "private, no-store",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

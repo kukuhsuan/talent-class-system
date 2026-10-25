@@ -5,7 +5,7 @@ import { currentSessionUser } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 
-type Params = { teacherId: string } | Promise<{ teacherId: string }>;
+type Params = Promise<{ teacherId: string }>;
 
 export async function GET(req: NextRequest, { params }: { params: Params }) {
   const { teacherId } = await params;

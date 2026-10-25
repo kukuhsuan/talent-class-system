@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createRecruitmentReferral, getRecruitmentCampaign } from "@/lib/recruitment";
 import { verifyRecruitmentToken } from "@/lib/publicAccessToken";
 
-type Params = { token: string } | Promise<{ token: string }>;
+type Params = Promise<{ token: string }>;
 
 async function context(token: string) {
   const verified = verifyRecruitmentToken(decodeURIComponent(token));

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isReportMaintenanceEnabled } from "@/lib/reportMaintenance";
 import { COURSE_LABEL, courseLabel, requiresStudentCount } from "@/lib/courseMeta";
 import { equipmentFirstClassText, type EquipmentReminderData } from "@/lib/equipmentReminderCore";
 import { signReportAccessToken } from "@/lib/publicAccessToken";
@@ -426,6 +427,7 @@ export function buildReminderMessage(opts: {
     } | null;
   }>;
 }) {
+  const reportsPaused = isReportMaintenanceEnabled();
   const courses = opts.courses?.length ? opts.courses : [{
     school: opts.school ?? "園所待確認", time: opts.time ?? "待確認",
     courseType: opts.courseType, date: opts.date, dayOfWeek: opts.dayOfWeek,
@@ -521,7 +523,7 @@ export function buildReminderMessage(opts: {
           type: "box", layout: "vertical", spacing: "xs", backgroundColor: "#F3F8F4", cornerRadius: "10px", paddingAll: "13px",
           contents: [
             { type: "text", text: "課後必做", size: "sm", weight: "bold", color: "#4F7A5F" },
-            { type: "text", text: "✓ 回傳紙本點名表\n✓ 完成課程回報", size: "sm", color: "#3F5145", wrap: true, margin: "sm" },
+            { type: "text", text: reportsPaused ? "✓ 回傳紙本點名表" : "✓ 回傳紙本點名表\n✓ 完成課程回報", size: "sm", color: "#3F5145", wrap: true, margin: "sm" },
           ],
         },
         // 📦 器材提醒：第一堂 / 需組裝
@@ -536,12 +538,12 @@ export function buildReminderMessage(opts: {
           type: "box", layout: "vertical", backgroundColor: "#FFF8E8", cornerRadius: "10px", paddingAll: "13px",
           contents: [
             { type: "text", text: "薪資提醒", size: "sm", weight: "bold", color: "#A16207" },
-            { type: "text", text: "⚠️ 請儘速完成課程回報，行政將依回報內容核對薪資。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
+            { type: "text", text: reportsPaused ? "薪資如有疑問，請聯繫行政人員核對。" : "⚠️ 請儘速完成課程回報，行政將依回報內容核對薪資。", size: "xs", color: "#92400E", wrap: true, margin: "sm" },
           ],
         },
       ],
     },
-    ...(course.attendanceId || course.reportUrl ? {
+    ...((course.attendanceId || course.reportUrl) && (!reportsPaused || course.address || (course.attendanceId && course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly))) ? {
       footer: {
         type: "box", layout: "vertical", paddingAll: "14px", backgroundColor: "#F5F9FC",
         spacing: "sm",
@@ -554,14 +556,14 @@ export function buildReminderMessage(opts: {
               uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${course.address} ${course.school}`.trim())}`,
             },
           }] : []),
-          {
+          ...(!reportsPaused ? [{
             type: "button", style: "primary", color: "#2C82B8", height: "sm",
             action: {
               type: "uri",
               label: course.reportRole === "assistant" ? "填寫出席人數" : "課後回報",
               uri: course.reportUrl || `${appUrl()}/report/${encodeURIComponent(signReportAccessToken(course.attendanceId!, course.reportRole ?? "lead"))}`,
             },
-          },
+          }] : []),
           // 器材確認按鈕（postback）
           ...(course.attendanceId && course.equipment && (course.equipment.isFirstClass || course.equipment.needsAssembly) ? [{
             type: "button" as const, style: "secondary" as const, height: "sm" as const,
@@ -607,6 +609,23 @@ export function buildReportRequestMessage(opts: {
   reportRole?: "lead" | "assistant";
 }) {
   const label = courseLabel(opts.courseType);
+  if (isReportMaintenanceEnabled()) {
+    return {
+      type: "flex",
+      altText: `課程資訊｜${opts.school} ${label}`,
+      contents: {
+        type: "bubble",
+        body: {
+          type: "box", layout: "vertical", spacing: "md", paddingAll: "16px",
+          contents: [
+            { type: "text", text: "課程資訊", weight: "bold", size: "lg" },
+            { type: "text", text: `地點｜${opts.school}`, wrap: true },
+            { type: "text", text: `課程｜${label}`, wrap: true },
+          ],
+        },
+      },
+    };
+  }
   const countRequired = requiresStudentCount(opts.category);
   const taskLabel = countRequired ? "回報上課人數" : "回報課程進度";
   const taskDescription = countRequired

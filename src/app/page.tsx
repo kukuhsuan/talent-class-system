@@ -213,8 +213,8 @@ export default function Home() {
     .filter(Boolean);
   const tomorrowStr = taipeiDateIso(new Date(now.getTime() + 86400000));
   const automationCards = [
-    { jobKey: "operations-daily:0", targetDate: todayStr, label: "營運人員今日摘要", time: "08:00" },
-    { jobKey: "teacher-reminder:1", targetDate: tomorrowStr, label: "明日老師提醒", time: "18:00" },
+    // 營運人員今日摘要已停用；明日老師提醒只到 10/26 的課，之後改人工通知。
+    ...(tomorrowStr <= "2026-10-26" ? [{ jobKey: "teacher-reminder:1", targetDate: tomorrowStr, label: "明日老師提醒", time: "18:00" }] : []),
     ...(now.getDate() === 28 ? [{ jobKey: "salary-reminder", targetDate: todayStr, label: "月底薪資提醒", time: "09:00" }] : []),
   ].map((card) => ({
     ...card,

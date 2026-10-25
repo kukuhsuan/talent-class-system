@@ -4,9 +4,9 @@ import { courseLabel } from "@/lib/courseMeta";
 import { COURSE_CURRICULUM } from "@/lib/line";
 
 async function ensureDefaultProgress() {
-  const count = await prisma.courseProgress.count();
-  if (count > 0) return;
-
+  // 每次補齊缺少的標準課綱，而不是只在整張表為空時初始化。
+  // 這樣後續新增棒球等課程時，既有環境也能取得新課綱；update 留空，
+  // 不會覆蓋行政已經自行調整過的進度名稱。
   for (const [courseType, items] of Object.entries(COURSE_CURRICULUM)) {
     for (const item of items) {
       await prisma.courseProgress.upsert({

@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
-    "@prisma/adapter-libsql": "7.9.1",
-    "@prisma/client": "7.9.1",
+    "@prisma/adapter-libsql": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@types/nodemailer": "^8.0.0",
     "@vercel/blob": "^2.4.0",
     "bcryptjs": "^3.0.3",
@@ -21,10 +21,11 @@
     "exceljs": "^4.4.0",
     "html-to-image": "^1.11.13",
     "jose": "^6.2.3",
-    "next": "^16.2.12",
-    "nodemailer": "^9.0.3",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "next": "^16.4.2",
+    "nodemailer": "^10.2.1",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -33,9 +34,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.12",
-    "prisma": "7.9.1",
+    "eslint-config-next": "16.4.2",
+    "prisma": "7.10.1",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

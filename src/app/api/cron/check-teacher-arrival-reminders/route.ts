@@ -8,6 +8,8 @@ import {
   markArrivalReminderSent,
   reminderKindForDetail,
 } from "@/lib/attendanceArrival";
+import { TEACHER_LINE_STOPPED_MESSAGE, teacherLineNotificationsStopped } from "@/lib/teacherReminderCutoff";
+import { taipeiDateIso } from "@/lib/courseDates";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -20,6 +22,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (teacherLineNotificationsStopped(taipeiDateIso())) {
+    return NextResponse.json({ ok: true, stopped: true, reason: TEACHER_LINE_STOPPED_MESSAGE });
+  }
   const details = await arrivalDetailsForDate({ createMissing: true });
   const nowTaipei = new Intl.DateTimeFormat("zh-TW", {
     timeZone: "Asia/Taipei",
